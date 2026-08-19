@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Incident Analytics Dashboard</title>
+
+    <link
+        rel="stylesheet"
+        href="/static/style.css"
+    >
+
+</head>
+
+
+<body>
+
+<div class="container">
+
+    <!-- =========================
+         HEADER
+    ========================== -->
+
+    <header>
+
+        <h1>Scalable Incident Platform</h1>
+
+        <p class="subtitle">
+            Common Event Model - Multi Analytics Incident Dashboard
+        </p>
+
+    </header>
+
+
+    <!-- =========================
+         EVENT SIMULATION
+    ========================== -->
+
+    <section class="simulation-section">
+
+        <h2>Simulate Analytics Events</h2>
+
+        <p>
+            Generate sample analytics incidents using the
+            same Common Event Model and ingestion API.
+        </p>
+
+
+        <div class="buttons">
+
+            <button onclick="simulateEvent('intrusion')">
+                Simulate Intrusion
+            </button>
+
+            <button onclick="simulateEvent('ppe')">
+                Simulate PPE
+            </button>
+
+            <button onclick="simulateEvent('crowd')">
+                Simulate Crowd
+            </button>
+
+        </div>
+
+
+        <p id="simulation-status"></p>
+
+    </section>
+
+
+    <!-- =========================
+         SUMMARY
+    ========================== -->
+
+    <section class="summary-section">
+
+        <div class="summary-card">
+
+            <h3>Total Incidents</h3>
+
+            <p class="summary-number">
+                {{ events | length }}
+            </p>
+
+        </div>
+
+    </section>
+
+
+    <!-- =========================
+         INCIDENT TABLE
+    ========================== -->
+
+    <section class="incident-section">
+
+        <h2>Recent Incidents</h2>
+
+
+        {% if events %}
+
+        <div class="table-container">
+
+            <table>
+
+                <thead>
+
+                    <tr>
+
+                        <th>Event ID</th>
+
+                        <th>Tenant</th>
+
+                        <th>Site</th>
+
+                        <th>Source</th>
+
+                        <th>Source Name</th>
+
+                        <th>Analytics Type</th>
+
+                        <th>Event Type</th>
+
+                        <th>Severity</th>
+
+                        <th>Confidence</th>
+
+                        <th>Description</th>
+
+                        <th>Evidence URI</th>
+
+                        <th>Timestamp</th>
+
+                    </tr>
+
+                </thead>
+
+
+                <tbody>
+
+                    {% for event in events %}
+
+                    <tr>
+
+                        <td>
+                            {{ event["event_id"] }}
+                        </td>
+
+
+                        <td>
+                            {{ event["tenant_id"] }}
+                        </td>
+
+
+                        <td>
+                            {{ event["site_id"] }}
+                        </td>
+
+
+                        <td>
+                            {{ event["source_id"] }}
+                        </td>
+
+
+                        <td>
+                            {{ event["source_name"] }}
+                        </td>
+
+
+                        <td>
+                            {{ event["analytics_type"] }}
+                        </td>
+
+
+                        <td>
+                            {{ event["event_type"] }}
+                        </td>
+
+
+                        <td>
+                            {{ event["severity"] }}
+                        </td>
+
+
+                        <td>
+
+                            {% if event["confidence"] is not none %}
+
+                                {{ "%.2f"|format(event["confidence"]) }}
+
+                            {% else %}
+
+                                N/A
+
+                            {% endif %}
+
+                        </td>
+
+
+                        <td>
+
+                            {% if event["description"] %}
+
+                                {{ event["description"] }}
+
+                            {% else %}
+
+                                No description
+
+                            {% endif %}
+
+                        </td>
+
+
+                        <!-- Evidence reference -->
+                        <td>
+
+                            {% if event["evidence_uri"] %}
+
+                                {{ event["evidence_uri"] }}
+
+                            {% else %}
+
+                                No evidence
+
+                            {% endif %}
+
+                        </td>
+
+
+                        <td>
+                            {{ event["timestamp"] }}
+                        </td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+
+        {% else %}
+
+        <div class="empty-state">
+
+            <p>
+                No incidents have been generated yet.
+            </p>
+
+            <p>
+                Use one of the simulation buttons above
+                to generate an analytics event.
+            </p>
+
+        </div>
+
+        {% endif %}
+
+    </section>
+
+</div>
+
+
+<!-- =========================
+     EVENT SIMULATION SCRIPT
+========================== -->
+
+<script>
+
+async function simulateEvent(analyticsType) {
+
+    const statusElement =
+        document.getElementById("simulation-status");
+
+    statusElement.textContent =
+        "Generating event...";
+
+
+    try {
+
+        const response = await fetch(
+            `/api/v1/simulate/${analyticsType}`,
+            {
+                method: "POST"
+            }
+        );
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            response.ok &&
+            data.status === "accepted"
+        ) {
+
+            statusElement.textContent =
+                `${data.analytics_type} event generated successfully`;
+
+
+            setTimeout(
+                function () {
+                    location.reload();
+                },
+                400
+            );
+
+        }
+
+        else {
+
+            statusElement.textContent =
+                data.message ||
+                "Unable to generate event";
+
+        }
+
+    }
+
+    catch (error) {
+
+        console.error(error);
+
+        statusElement.textContent =
+            "Error connecting to incident service";
+
+    }
+
+}
+
+</script>
+
+
+</body>
+
+</html>
