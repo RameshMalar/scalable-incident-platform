@@ -1,0 +1,10 @@
+services:
+
+  incident-ingestion:
+    image: ghcr.io/rameshmalar/incident-ingestion:v3
+    container_name: incident-ingestion
+
+    ports:
+      - "8000:8000"
+
+    restart: unless-stopped
