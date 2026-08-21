@@ -13,7 +13,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   test:
@@ -63,16 +62,57 @@ jobs:
           docker logs smoke >&2
           exit 1
 
+      # Code scanning upload needs GitHub Advanced Security, which this private
+      # repository does not have. The report is kept as a build artifact and the
+      # gate is enforced by failing the job instead.
       - name: Scan image for known vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: incident-ingestion:ci
-          format: sarif
-          output: trivy-results.sarif
+          format: table
           severity: HIGH,CRITICAL
+          # Only fail on findings we can actually act on. An unfixed CVE in the
+          # base image is not something this build can resolve.
+          ignore-unfixed: true
+          exit-code: '1'
 
-      - name: Publish scan results
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Record the full scan report
         if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          sarif_file: trivy-results.sarif
+          image-ref: incident-ingestion:ci
+          format: json
+          output: trivy-report.json
+          severity: HIGH,CRITICAL
+          skip-setup-trivy: true
+
+      - name: Upload scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-report.json
+
+  security:
+    name: Source and dependency scanning
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ingestion-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install scanners
+        run: pip install bandit==1.8.0 pip-audit==2.7.3
+
+      # Static analysis of our own source. Replaces CodeQL, which is not
+      # available on a private repository without Advanced Security.
+      - name: Scan source for insecure patterns
+        run: bandit -r app -ll
+
+      - name: Scan dependencies for known vulnerabilities
+        run: pip-audit -r requirements.txt

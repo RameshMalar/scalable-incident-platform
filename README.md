@@ -115,10 +115,24 @@ The resource group's own location is metadata only and does not constrain this.
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Every push and pull request | Runs unit tests, builds the image, smoke tests the running container, scans it for HIGH/CRITICAL vulnerabilities |
-| `codeql.yml` | Pushes, pull requests, weekly | Static analysis of the application source |
+| `ci.yml` | Every push and pull request | Runs unit tests; builds the image and smoke tests the running container; scans the image (Trivy), the source (Bandit) and the dependencies (pip-audit) |
 | `cd.yml` | Push to `main` | Deploys infrastructure, builds and pushes a SHA-tagged image, rolls out the revision, verifies `/health` |
+
+Dependabot raises weekly pull requests for Python, Docker and Actions
+dependencies.
 
 The smoke test exists because unit tests cannot catch a broken Dockerfile or a
 missing runtime dependency. The health verification exists so a deployment
 cannot report success while being unreachable.
+
+### A note on code scanning
+
+GitHub's own code scanning — CodeQL and SARIF upload — needs GitHub Advanced
+Security, which is a paid add-on on private repositories. Bandit, pip-audit and
+Trivy give equivalent coverage at no cost and are enforced by failing the build
+rather than by uploading to the Security tab. Trivy ignores unfixed
+vulnerabilities: a CVE with no available patch in the base image is not
+something a build can act on.
+
+Dependabot alerts and version updates are free on private repositories and are
+enabled separately.
