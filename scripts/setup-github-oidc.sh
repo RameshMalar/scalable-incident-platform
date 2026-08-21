@@ -11,8 +11,8 @@
 # Run once, from a shell logged in with `az login`.
 set -euo pipefail
 
-RESOURCE_GROUP="${RESOURCE_GROUP:-ScalableIncidentPlatformUSEast}"
-LOCATION="${LOCATION:-southeastasia}"
+RESOURCE_GROUP="${RESOURCE_GROUP:-rg-incident-platform}"
+LOCATION="${LOCATION:-malaysiawest}"
 IDENTITY_NAME="${IDENTITY_NAME:-incident-github-deploy}"
 GITHUB_REPO="${GITHUB_REPO:-RameshMalar/scalable-incident-platform}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"

@@ -12,7 +12,7 @@ Sprint 1 delivers the Common Event Model and the Incident Ingestion Service.
 | Path | Contents |
 | --- | --- |
 | `ingestion-service/` | Incident Ingestion Service (FastAPI) and its tests |
-| `infra/` | Azure infrastructure as Bicep |
+| `infra/` | Azure infrastructure as Bicep: `core.bicep` (shared) and `ingestion.bicep` (per service) |
 | `scripts/` | One-off setup scripts |
 | `.github/workflows/` | CI, CD and static analysis pipelines |
 
@@ -79,7 +79,7 @@ token for an Azure token. It prints four values to add under
 
 `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
 `AZURE_RESOURCE_GROUP`. Optionally set `AZURE_LOCATION` to override the default
-of `southeastasia`.
+of `malaysiawest`.
 
 These are identifiers rather than credentials, which is why they are variables
 and not secrets.
@@ -102,14 +102,23 @@ zero to ten replicas on HTTP concurrency.
 On the very first deployment the app starts on a placeholder image; the CD
 pipeline replaces it with the real one.
 
-### Keeping resources in one region
+### Region
+
+Deployed to `malaysiawest`, the closest allowed region to Singapore.
+
+Azure for Students subscriptions carry an `Allowed resource deployment
+regions` policy. Only `malaysiawest`, `indonesiacentral`, `eastasia`,
+`japaneast` and `koreacentral` are permitted -- `southeastasia` is rejected
+with `RequestDisallowedByAzure`, which reads like a quota problem but is not.
 
 Every resource, including the load simulator used for scalability testing,
 must live in the same region. A simulator in one region driving a platform in
 another adds inter-region latency to every measurement and makes the
-throughput and latency results meaningless.
+throughput and latency results meaningless. The resource group's own location
+is metadata only and does not constrain this.
 
-The resource group's own location is metadata only and does not constrain this.
+One known gap: ACR Tasks (`az acr build`) is unavailable in `malaysiawest`, so
+images are built on the runner and pushed, rather than built by the registry.
 
 ## Pipelines
 

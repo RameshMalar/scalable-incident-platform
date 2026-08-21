@@ -21,6 +21,9 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+env:
+  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+
 jobs:
   deploy:
     name: Provision and deploy
@@ -36,47 +39,65 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      # Infrastructure first: the template is idempotent, so this both creates
-      # the environment on day one and reconciles drift on every later run.
-      - name: Deploy infrastructure
-        id: infra
-        uses: azure/arm-deploy@v2
-        with:
-          scope: resourcegroup
-          resourceGroupName: ${{ vars.AZURE_RESOURCE_GROUP }}
-          template: infra/main.bicep
-          parameters: >-
-            location=${{ vars.AZURE_LOCATION || 'southeastasia' }}
-          failOnStdErr: false
+      # Shared platform resources first: registry, logging, the Container Apps
+      # environment and the pull identity. Idempotent, so this both creates the
+      # environment on day one and reconciles drift on every later run.
+      - name: Deploy core infrastructure
+        id: core
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/core.bicep \
+            --name "core-${GITHUB_SHA::7}" \
+            --query properties.outputs -o json)
+          for key in registryName registryLoginServer environmentId ingestionIdentityId; do
+            value=$(echo "$outputs" | jq -r ".${key}.value")
+            echo "${key}=${value}" >> "$GITHUB_OUTPUT"
+          done
 
-      # Built by the registry itself, which keeps the runner out of the
-      # credential path entirely.
+      # Container Apps only runs linux/amd64, so the platform is pinned rather
+      # than inherited from the runner.
       - name: Build and push image
+        id: image
         run: |
-          az acr build \
-            --registry '${{ steps.infra.outputs.registryName }}' \
-            --image "incident-ingestion:${GITHUB_SHA}" \
-            --image "incident-ingestion:latest" \
+          registry='${{ steps.core.outputs.registryLoginServer }}'
+          image="${registry}/incident-ingestion:${GITHUB_SHA}"
+          az acr login --name '${{ steps.core.outputs.registryName }}'
+          docker buildx build \
+            --platform linux/amd64 \
+            --tag "$image" \
+            --tag "${registry}/incident-ingestion:latest" \
+            --push \
             ./ingestion-service
+          echo "reference=${image}" >> "$GITHUB_OUTPUT"
 
-      - name: Roll out the new revision
+      # The service is created directly on the image built above. There is no
+      # placeholder revision to fail its health probes first.
+      - name: Deploy the ingestion service
+        id: app
         run: |
-          az containerapp update \
-            --name '${{ steps.infra.outputs.ingestionAppName }}' \
-            --resource-group '${{ vars.AZURE_RESOURCE_GROUP }}' \
-            --image '${{ steps.infra.outputs.registryLoginServer }}/incident-ingestion:${{ github.sha }}'
+          url=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/ingestion.bicep \
+            --name "ingestion-${GITHUB_SHA::7}" \
+            --parameters \
+              environmentId='${{ steps.core.outputs.environmentId }}' \
+              identityId='${{ steps.core.outputs.ingestionIdentityId }}' \
+              image='${{ steps.image.outputs.reference }}' \
+            --query properties.outputs.url.value -o tsv)
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
 
       # A deployment that reports success without being reachable is worse
       # than a failed one.
       - name: Verify the deployment
         run: |
-          url='${{ steps.infra.outputs.ingestionUrl }}'
+          url='${{ steps.app.outputs.url }}'
           for attempt in $(seq 1 20); do
-            if curl -fsS "${url}/health" | tee /dev/stderr | grep -q '"status":"healthy"'; then
+            if curl -fsS --max-time 20 "${url}/health" | grep -q '"status":"healthy"'; then
               echo "::notice::Deployed and healthy at ${url}"
               exit 0
             fi
-            sleep 5
+            sleep 6
           done
           echo "::error::${url}/health did not report healthy" >&2
           exit 1
