@@ -74,7 +74,17 @@ GITHUB_REPO=<owner>/<repo> \
 
 The script creates the deploy identity, grants it the two roles it needs, and
 registers the federated credentials that let GitHub Actions exchange a workflow
-token for an Azure token. It prints four values to add under
+token for an Azure token. It needs the GitHub CLI on PATH: GitHub signs its
+tokens with immutable subject claims, so the credentials must carry the
+repository's numeric ids rather than its name. A credential written with plain
+names simply never matches, and the failure appears as `AADSTS700213` at
+sign-in.
+
+One credential is registered per trusted context -- the deploy branch, pull
+requests, and the `production` environment. The deploy job names an
+environment, which gives it an environment-scoped subject rather than a
+branch-scoped one; without that third credential the deployment fails to
+authenticate even though the branch credential looks correct. It prints four values to add under
 **Settings → Secrets and variables → Actions → Variables**:
 
 `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
