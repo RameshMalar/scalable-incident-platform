@@ -1,0 +1,82 @@
+name: CD
+
+# Deploys main to Azure. Authentication is OpenID Connect against a
+# user-assigned managed identity, so no Azure credential is stored in GitHub.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ingestion-service/**'
+      - 'infra/**'
+      - '.github/workflows/cd.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  # A queued deployment replaces an older one instead of racing it.
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Provision and deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Infrastructure first: the template is idempotent, so this both creates
+      # the environment on day one and reconciles drift on every later run.
+      - name: Deploy infrastructure
+        id: infra
+        uses: azure/arm-deploy@v2
+        with:
+          scope: resourcegroup
+          resourceGroupName: ${{ vars.AZURE_RESOURCE_GROUP }}
+          template: infra/main.bicep
+          parameters: >-
+            location=${{ vars.AZURE_LOCATION || 'southeastasia' }}
+          failOnStdErr: false
+
+      # Built by the registry itself, which keeps the runner out of the
+      # credential path entirely.
+      - name: Build and push image
+        run: |
+          az acr build \
+            --registry '${{ steps.infra.outputs.registryName }}' \
+            --image "incident-ingestion:${GITHUB_SHA}" \
+            --image "incident-ingestion:latest" \
+            ./ingestion-service
+
+      - name: Roll out the new revision
+        run: |
+          az containerapp update \
+            --name '${{ steps.infra.outputs.ingestionAppName }}' \
+            --resource-group '${{ vars.AZURE_RESOURCE_GROUP }}' \
+            --image '${{ steps.infra.outputs.registryLoginServer }}/incident-ingestion:${{ github.sha }}'
+
+      # A deployment that reports success without being reachable is worse
+      # than a failed one.
+      - name: Verify the deployment
+        run: |
+          url='${{ steps.infra.outputs.ingestionUrl }}'
+          for attempt in $(seq 1 20); do
+            if curl -fsS "${url}/health" | tee /dev/stderr | grep -q '"status":"healthy"'; then
+              echo "::notice::Deployed and healthy at ${url}"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::${url}/health did not report healthy" >&2
+          exit 1
