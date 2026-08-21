@@ -120,6 +120,20 @@ is metadata only and does not constrain this.
 One known gap: ACR Tasks (`az acr build`) is unavailable in `malaysiawest`, so
 images are built on the runner and pushed, rather than built by the registry.
 
+### Tearing down and rebuilding
+
+An idle deployment costs about five dollars a month, all of it the container
+registry -- the service scales to zero and Log Analytics bills by ingestion.
+To stop that entirely between milestones:
+
+```bash
+./scripts/teardown.sh
+```
+
+Rebuilding is one pipeline run (`gh workflow run cd.yml`). That the whole
+environment can be destroyed and reproduced from source is the point of
+keeping it in Bicep, and is worth demonstrating rather than just claiming.
+
 ## Pipelines
 
 | Workflow | Trigger | What it does |
