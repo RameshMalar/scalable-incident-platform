@@ -57,19 +57,36 @@ jobs:
 
       # Container Apps only runs linux/amd64, so the platform is pinned rather
       # than inherited from the runner.
+      #
+      # Retried because this step depends on two registries we do not control:
+      # Docker Hub for the base image and ACR for the push. A 502 from either
+      # has already failed a deployment whose code was perfectly fine.
       - name: Build and push image
         id: image
         run: |
           registry='${{ steps.core.outputs.registryLoginServer }}'
           image="${registry}/incident-ingestion:${GITHUB_SHA}"
-          az acr login --name '${{ steps.core.outputs.registryName }}'
-          docker buildx build \
-            --platform linux/amd64 \
-            --tag "$image" \
-            --tag "${registry}/incident-ingestion:latest" \
-            --push \
-            ./ingestion-service
-          echo "reference=${image}" >> "$GITHUB_OUTPUT"
+
+          for attempt in 1 2 3; do
+            if az acr login --name '${{ steps.core.outputs.registryName }}' \
+              && docker buildx build \
+                --platform linux/amd64 \
+                --tag "$image" \
+                --tag "${registry}/incident-ingestion:latest" \
+                --push \
+                ./ingestion-service; then
+              echo "reference=${image}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((attempt * 20))
+              echo "::warning::Build attempt ${attempt} failed, retrying in ${delay}s"
+              sleep "$delay"
+            fi
+          done
+
+          echo "::error::Build failed after 3 attempts" >&2
+          exit 1
 
       # The service is created directly on the image built above. There is no
       # placeholder revision to fail its health probes first.

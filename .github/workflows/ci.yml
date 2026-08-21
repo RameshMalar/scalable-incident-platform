@@ -43,8 +43,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Same upstream exposure as the deploy pipeline: pulling the base image
+      # from Docker Hub fails often enough that a single attempt turns an
+      # unrelated outage into a red pull request.
       - name: Build image
-        run: docker build -t incident-ingestion:ci ./ingestion-service
+        run: |
+          for attempt in 1 2 3; do
+            if docker build -t incident-ingestion:ci ./ingestion-service; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((attempt * 20))
+              echo "::warning::Build attempt ${attempt} failed, retrying in ${delay}s"
+              sleep "$delay"
+            fi
+          done
+          echo "::error::Build failed after 3 attempts" >&2
+          exit 1
 
       # Catches the failures unit tests cannot see: a broken Dockerfile, a
       # missing runtime dependency, an app that starts but never serves.
