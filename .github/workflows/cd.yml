@@ -1,0 +1,103 @@
+name: CD
+
+# Deploys main to Azure. Authentication is OpenID Connect against a
+# user-assigned managed identity, so no Azure credential is stored in GitHub.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ingestion-service/**'
+      - 'infra/**'
+      - '.github/workflows/cd.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  # A queued deployment replaces an older one instead of racing it.
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+
+jobs:
+  deploy:
+    name: Provision and deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Shared platform resources first: registry, logging, the Container Apps
+      # environment and the pull identity. Idempotent, so this both creates the
+      # environment on day one and reconciles drift on every later run.
+      - name: Deploy core infrastructure
+        id: core
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/core.bicep \
+            --name "core-${GITHUB_SHA::7}" \
+            --query properties.outputs -o json)
+          for key in registryName registryLoginServer environmentId ingestionIdentityId; do
+            value=$(echo "$outputs" | jq -r ".${key}.value")
+            echo "${key}=${value}" >> "$GITHUB_OUTPUT"
+          done
+
+      # Container Apps only runs linux/amd64, so the platform is pinned rather
+      # than inherited from the runner.
+      - name: Build and push image
+        id: image
+        run: |
+          registry='${{ steps.core.outputs.registryLoginServer }}'
+          image="${registry}/incident-ingestion:${GITHUB_SHA}"
+          az acr login --name '${{ steps.core.outputs.registryName }}'
+          docker buildx build \
+            --platform linux/amd64 \
+            --tag "$image" \
+            --tag "${registry}/incident-ingestion:latest" \
+            --push \
+            ./ingestion-service
+          echo "reference=${image}" >> "$GITHUB_OUTPUT"
+
+      # The service is created directly on the image built above. There is no
+      # placeholder revision to fail its health probes first.
+      - name: Deploy the ingestion service
+        id: app
+        run: |
+          url=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/ingestion.bicep \
+            --name "ingestion-${GITHUB_SHA::7}" \
+            --parameters \
+              environmentId='${{ steps.core.outputs.environmentId }}' \
+              identityId='${{ steps.core.outputs.ingestionIdentityId }}' \
+              image='${{ steps.image.outputs.reference }}' \
+            --query properties.outputs.url.value -o tsv)
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+
+      # A deployment that reports success without being reachable is worse
+      # than a failed one.
+      - name: Verify the deployment
+        run: |
+          url='${{ steps.app.outputs.url }}'
+          for attempt in $(seq 1 20); do
+            if curl -fsS --max-time 20 "${url}/health" | grep -q '"status":"healthy"'; then
+              echo "::notice::Deployed and healthy at ${url}"
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::${url}/health did not report healthy" >&2
+          exit 1

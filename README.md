@@ -1,154 +1,161 @@
 # Scalable Incident Platform
 
-## Deploy on Azure VM
+A reusable, cloud-native platform that receives standardized incident events
+from AI video analytics producers, processes them, and delivers them to
+downstream consumers. Intrusion Detection is the seed producer used to validate
+the architecture.
 
-Follow these steps after the Azure VM and Docker environment have been set up.
+Sprint 1 delivers the Common Event Model and the Incident Ingestion Service.
 
-### 1. Clone the Private Repository
+## Repository layout
 
-Clone the project repository:
+| Path | Contents |
+| --- | --- |
+| `ingestion-service/` | Incident Ingestion Service (FastAPI) and its tests |
+| `infra/` | Azure infrastructure as Bicep: `core.bicep` (shared) and `ingestion.bicep` (per service) |
+| `scripts/` | One-off setup scripts |
+| `.github/workflows/` | CI, CD and static analysis pipelines |
 
-```bash
-git clone git@github.com:RameshMalar/scalable-incident-platform.git
-```
+## Local development
 
-Enter the project directory:
+Docker Compose is for local development only. The cloud runtime is Azure
+Container Apps — see [Deploying to Azure](#deploying-to-azure).
 
-```bash
-cd scalable-incident-platform
-```
-
----
-
-### 2. Login to GitHub Container Registry
-
-The application Docker image is stored in the private GitHub Container Registry (GHCR).
-
-Set your own GitHub username:
+Run the service directly:
 
 ```bash
-export GITHUB_USER=<YOUR_GITHUB_USERNAME>
+cd ingestion-service
+pip install -r requirements-dev.txt
+uvicorn app.main:app --reload
 ```
 
-Set your GitHub Personal Access Token:
+Or through Compose:
 
 ```bash
-export CR_PAT=<YOUR_GITHUB_PERSONAL_ACCESS_TOKEN>
+docker compose up --build
 ```
 
-Login to GitHub Container Registry:
+Either way the service is at http://localhost:8000 — dashboard at `/`, Swagger
+at `/docs`, health at `/health`.
+
+Run the tests:
 
 ```bash
-echo $CR_PAT | docker login ghcr.io -u $GITHUB_USER --password-stdin
+cd ingestion-service
+python -m pytest tests -v
 ```
 
-Expected result:
-
-```text
-Login Succeeded
-```
-
-> Use your own GitHub credentials.  
-> Do not store or commit Personal Access Tokens in this repository.
-
----
-
-### 3. Start the Application
-
-Run:
+Generate a sample incident without a real camera:
 
 ```bash
-docker compose up -d
+curl -X POST http://localhost:8000/api/v1/simulate/intrusion
 ```
 
-Docker Compose will automatically:
+## Deploying to Azure
 
-- Pull the required Docker image from GHCR
-- Create the container
-- Configure the required port
-- Start the application
+Deployment is automatic: **every push to `main` builds, deploys and verifies
+itself.** There is nothing to run by hand and no server to log into.
 
----
+The pipeline authenticates with OpenID Connect against a user-assigned managed
+identity, so the repository holds no Azure credentials. Images are tagged with
+the commit SHA, which keeps every running revision traceable to a commit.
 
-### 4. Verify the Application
+### One-time setup
 
-Check the running container:
+Needed once per Azure subscription, by someone with Owner on the resource
+group.
 
 ```bash
-docker ps
+az login
+RESOURCE_GROUP=<your-resource-group> \
+GITHUB_REPO=<owner>/<repo> \
+  ./scripts/setup-github-oidc.sh
 ```
 
-Test the health endpoint:
+The script creates the deploy identity, grants it the two roles it needs, and
+registers the federated credentials that let GitHub Actions exchange a workflow
+token for an Azure token. It prints four values to add under
+**Settings → Secrets and variables → Actions → Variables**:
+
+`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
+`AZURE_RESOURCE_GROUP`. Optionally set `AZURE_LOCATION` to override the default
+of `malaysiawest`.
+
+These are identifiers rather than credentials, which is why they are variables
+and not secrets.
+
+### Deploying by hand
+
+Only needed when working on the infrastructure itself:
 
 ```bash
-curl http://localhost:8000/health
+az deployment group create \
+  --resource-group <your-resource-group> \
+  --template-file infra/main.bicep
 ```
 
-Expected response:
+The template is idempotent — re-running it reconciles drift rather than
+creating duplicates. It provisions a container registry, a Log Analytics
+workspace, a Container Apps environment, and the ingestion service scaled from
+zero to ten replicas on HTTP concurrency.
 
-```json
-{
-  "status": "healthy",
-  "service": "incident-ingestion-service"
-}
-```
+On the very first deployment the app starts on a placeholder image; the CD
+pipeline replaces it with the real one.
 
----
+### Region
 
-### 5. Access the Application
+Deployed to `malaysiawest`, the closest allowed region to Singapore.
 
-Dashboard:
+Azure for Students subscriptions carry an `Allowed resource deployment
+regions` policy. Only `malaysiawest`, `indonesiacentral`, `eastasia`,
+`japaneast` and `koreacentral` are permitted -- `southeastasia` is rejected
+with `RequestDisallowedByAzure`, which reads like a quota problem but is not.
 
-```text
-http://<VM-PUBLIC-IP>:8000/
-```
+Every resource, including the load simulator used for scalability testing,
+must live in the same region. A simulator in one region driving a platform in
+another adds inter-region latency to every measurement and makes the
+throughput and latency results meaningless. The resource group's own location
+is metadata only and does not constrain this.
 
-Swagger API:
+One known gap: ACR Tasks (`az acr build`) is unavailable in `malaysiawest`, so
+images are built on the runner and pushed, rather than built by the registry.
 
-```text
-http://<VM-PUBLIC-IP>:8000/docs
-```
+### Tearing down and rebuilding
 
----
-
-### 6. Stop the Application
-
-To stop and remove the running containers:
+An idle deployment costs about five dollars a month, all of it the container
+registry -- the service scales to zero and Log Analytics bills by ingestion.
+To stop that entirely between milestones:
 
 ```bash
-docker compose down
+./scripts/teardown.sh
 ```
 
----
+Rebuilding is one pipeline run (`gh workflow run cd.yml`). That the whole
+environment can be destroyed and reproduced from source is the point of
+keeping it in Bicep, and is worth demonstrating rather than just claiming.
 
-### 7. Pull Future Updates
+## Pipelines
 
-Pull the latest repository changes:
+| Workflow | Trigger | What it does |
+| --- | --- | --- |
+| `ci.yml` | Every push and pull request | Runs unit tests; builds the image and smoke tests the running container; scans the image (Trivy), the source (Bandit) and the dependencies (pip-audit) |
+| `cd.yml` | Push to `main` | Deploys infrastructure, builds and pushes a SHA-tagged image, rolls out the revision, verifies `/health` |
 
-```bash
-git pull origin main
-```
+Dependabot raises weekly pull requests for Python, Docker and Actions
+dependencies.
 
-Pull the Docker image configured in Docker Compose:
+The smoke test exists because unit tests cannot catch a broken Dockerfile or a
+missing runtime dependency. The health verification exists so a deployment
+cannot report success while being unreachable.
 
-```bash
-docker compose pull
-```
+### A note on code scanning
 
-Start or update the application:
+GitHub's own code scanning — CodeQL and SARIF upload — needs GitHub Advanced
+Security, which is a paid add-on on private repositories. Bandit, pip-audit and
+Trivy give equivalent coverage at no cost and are enforced by failing the build
+rather than by uploading to the Security tab. Trivy ignores unfixed
+vulnerabilities: a CVE with no available patch in the base image is not
+something a build can act on.
 
-```bash
-docker compose up -d
-```
-
----
-
-## Quick Deployment
-
-After the initial GitHub/GHCR authentication is configured, deployment is:
-
-```bash
-git pull origin main
-docker compose pull
-docker compose up -d
-```
+Dependabot alerts and version updates are free on private repositories and are
+enabled separately.

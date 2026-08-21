@@ -1,10 +1,16 @@
+# Local development only. The cloud runtime is Azure Container Apps -- see the
+# README. Builds from source rather than pulling a published image so local
+# changes are picked up without a registry round trip.
 services:
 
   incident-ingestion:
-    image: ghcr.io/rameshmalar/incident-ingestion:v3
+    build: ./ingestion-service
     container_name: incident-ingestion
 
     ports:
       - "8000:8000"
+
+    volumes:
+      - ./ingestion-service/app:/app/app:ro
 
     restart: unless-stopped
