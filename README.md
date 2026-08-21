@@ -158,6 +158,12 @@ The smoke test exists because unit tests cannot catch a broken Dockerfile or a
 missing runtime dependency. The health verification exists so a deployment
 cannot report success while being unreachable.
 
+Image builds are retried three times with increasing backoff. Both pipelines
+pull the base image from Docker Hub and push to a registry, neither of which
+we control; a 502 from either has already failed a deployment whose code was
+correct. A retry distinguishes an outage from a defect instead of reporting
+both as the same red check.
+
 ### A note on code scanning
 
 GitHub's own code scanning — CodeQL and SARIF upload — needs GitHub Advanced
