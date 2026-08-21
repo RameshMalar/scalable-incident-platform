@@ -16,6 +16,8 @@ LOCATION="${LOCATION:-malaysiawest}"
 IDENTITY_NAME="${IDENTITY_NAME:-incident-github-deploy}"
 GITHUB_REPO="${GITHUB_REPO:-RameshMalar/scalable-incident-platform}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
+# Must match the `environment:` named by the deploy job in cd.yml.
+DEPLOY_ENVIRONMENT="${DEPLOY_ENVIRONMENT:-production}"
 
 # Contributor deploys the template; RBAC Administrator is needed because the
 # template itself creates a role assignment (the ingestion app's AcrPull).
@@ -47,11 +49,26 @@ for role in "${CONTRIBUTOR}" "${RBAC_ADMIN}"; do
     --output none
 done
 
+# GitHub signs its tokens with immutable subject claims: the subject carries
+# the numeric owner and repository ids, not just their names. A credential
+# written with the plain names is never matched, and the failure surfaces as
+# AADSTS700213 at sign-in rather than as anything about naming.
+if ! command -v gh >/dev/null 2>&1; then
+  echo "This script needs the GitHub CLI to read the repository's numeric ids." >&2
+  exit 1
+fi
+
+owner="${GITHUB_REPO%%/*}"
+repo="${GITHUB_REPO##*/}"
+owner_id="$(gh api "users/${owner}" --jq .id)"
+repo_id="$(gh api "repos/${GITHUB_REPO}" --jq .id)"
+qualified="repo:${owner}@${owner_id}/${repo}@${repo_id}"
+
 # One credential per trusted GitHub context. A workflow triggered from any
 # other branch or fork gets no token at all.
 add_federated_credential() {
   local name="$1" subject="$2"
-  echo "==> Federated credential: ${name} (${subject})"
+  echo "==> Federated credential: ${name}"
   az identity federated-credential create \
     --name "${name}" \
     --identity-name "${IDENTITY_NAME}" \
@@ -62,8 +79,11 @@ add_federated_credential() {
     --output none
 }
 
-add_federated_credential "github-branch-${DEPLOY_BRANCH}" "repo:${GITHUB_REPO}:ref:refs/heads/${DEPLOY_BRANCH}"
-add_federated_credential "github-pull-request" "repo:${GITHUB_REPO}:pull_request"
+# A job that names a GitHub environment gets an environment-scoped subject
+# instead of a branch-scoped one, so the deploy job needs its own credential.
+add_federated_credential "branch-${DEPLOY_BRANCH}" "${qualified}:ref:refs/heads/${DEPLOY_BRANCH}"
+add_federated_credential "pull-request" "${qualified}:pull_request"
+add_federated_credential "environment-${DEPLOY_ENVIRONMENT}" "${qualified}:environment:${DEPLOY_ENVIRONMENT}"
 
 cat <<MSG
 
