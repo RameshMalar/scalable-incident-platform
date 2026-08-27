@@ -50,7 +50,10 @@ jobs:
             --template-file infra/core.bicep \
             --name "core-${GITHUB_SHA::7}" \
             --query properties.outputs -o json)
-          for key in registryName registryLoginServer environmentId ingestionIdentityId; do
+          for key in registryName registryLoginServer environmentId \
+            ingestionIdentityId ingestionIdentityClientId \
+            workerIdentityId workerIdentityClientId \
+            serviceBusFqdn incidentQueueName; do
             value=$(echo "$outputs" | jq -r ".${key}.value")
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
           done
@@ -100,9 +103,30 @@ jobs:
             --parameters \
               environmentId='${{ steps.core.outputs.environmentId }}' \
               identityId='${{ steps.core.outputs.ingestionIdentityId }}' \
+              identityClientId='${{ steps.core.outputs.ingestionIdentityClientId }}' \
+              serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
+              serviceBusQueue='${{ steps.core.outputs.incidentQueueName }}' \
               image='${{ steps.image.outputs.reference }}' \
             --query properties.outputs.url.value -o tsv)
           echo "url=${url}" >> "$GITHUB_OUTPUT"
+
+      # Processing worker skeleton. It deploys on a public placeholder image and
+      # takes no ingress, so it proves the environment, identity and Service Bus
+      # receive wiring without waiting on the real consumer. When that image
+      # exists, pass registryServer and image here; nothing else changes.
+      - name: Deploy the processing worker (skeleton)
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/worker.bicep \
+            --name "worker-${GITHUB_SHA::7}" \
+            --parameters \
+              environmentId='${{ steps.core.outputs.environmentId }}' \
+              identityId='${{ steps.core.outputs.workerIdentityId }}' \
+              identityClientId='${{ steps.core.outputs.workerIdentityClientId }}' \
+              serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
+              serviceBusQueue='${{ steps.core.outputs.incidentQueueName }}' \
+            --query properties.outputs.appName.value -o tsv
 
       # A deployment that reports success without being reachable is worse
       # than a failed one.

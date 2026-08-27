@@ -12,6 +12,15 @@ param environmentId string
 @description('Resource id of the identity that pulls from the registry.')
 param identityId string
 
+@description('Client id of that identity. The SDK needs it to pick the right user-assigned identity when more than one is attached.')
+param identityClientId string
+
+@description('Fully qualified Service Bus host, e.g. incident-bus-xxx.servicebus.windows.net.')
+param serviceBusFqdn string
+
+@description('Queue the ingestion service publishes incidents to.')
+param serviceBusQueue string = 'incident-events'
+
 @description('Fully qualified image reference, tagged with the commit it was built from.')
 param image string
 
@@ -57,6 +66,21 @@ resource ingestion 'Microsoft.App/containerApps@2024-03-01' = {
             cpu: json('0.5')
             memory: '1Gi'
           }
+          env: [
+            {
+              name: 'SERVICE_BUS_FQDN'
+              value: serviceBusFqdn
+            }
+            {
+              name: 'SERVICE_BUS_QUEUE'
+              value: serviceBusQueue
+            }
+            // Selects the user-assigned identity above for DefaultAzureCredential.
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: identityClientId
+            }
+          ]
           probes: [
             {
               type: 'Liveness'

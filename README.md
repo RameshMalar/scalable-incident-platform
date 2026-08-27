@@ -144,12 +144,51 @@ Rebuilding is one pipeline run (`gh workflow run cd.yml`). That the whole
 environment can be destroyed and reproduced from source is the point of
 keeping it in Bicep, and is worth demonstrating rather than just claiming.
 
+## Messaging
+
+Incidents move between services over an Azure Service Bus queue,
+`incident-events`, on a Standard namespace. The ingestion service publishes to
+it; the processing worker consumes from it. Neither holds a connection string:
+`core.bicep` grants the ingestion identity **Service Bus Data Sender** and the
+worker identity **Service Bus Data Receiver**, and local auth on the namespace
+is switched off, so the only way in is a managed identity with an explicit role.
+
+A message the worker abandons five times, or one that outlives its time-to-live,
+moves to the queue's built-in **dead-letter subqueue** rather than blocking the
+queue or vanishing. The dead-letter path is not a separate resource — it is
+`incident-events/$deadletterqueue`, read by opening a receiver on that subqueue.
+
+The processing worker itself deploys today as a skeleton on a public placeholder
+image (`infra/worker.bicep`): it takes no ingress and does not yet consume, but
+its environment, identity and receive rights are provisioned and wired. Replacing
+the placeholder with the real image is a one-parameter change once that code
+lands.
+
+### Verifying the queue without the producer or worker
+
+`scripts/verify-servicebus.py` exercises both paths this milestone owns —
+*reaches the queue* and *reaches the dead-letter subqueue* — without either
+service. It publishes a message, receives it back, deliberately dead-letters it,
+and confirms it in the DLQ.
+
+```bash
+az login
+pip install -r scripts/requirements.txt
+export SERVICE_BUS_FQDN=$(az deployment group show \
+  -g "$RESOURCE_GROUP" -n core-<sha> \
+  --query properties.outputs.serviceBusFqdn.value -o tsv)
+python scripts/verify-servicebus.py
+```
+
+It runs as your `az login` user, so that account also needs the Data Sender and
+Data Receiver roles on the namespace (or Owner on the resource group).
+
 ## Pipelines
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
 | `ci.yml` | Every push and pull request | Runs unit tests; builds the image and smoke tests the running container; scans the image (Trivy), the source (Bandit) and the dependencies (pip-audit) |
-| `cd.yml` | Push to `main` | Deploys infrastructure, builds and pushes a SHA-tagged image, rolls out the revision, verifies `/health` |
+| `cd.yml` | Push to `main` | Deploys infrastructure (registry, logging, Container Apps environment, Service Bus namespace and queue, identities), builds and pushes a SHA-tagged image, rolls out the ingestion revision, deploys the processing-worker skeleton, verifies `/health` |
 
 Dependabot raises weekly pull requests for Python, Docker and Actions
 dependencies.
