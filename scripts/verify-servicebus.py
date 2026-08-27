@@ -28,10 +28,26 @@ import sys
 import uuid
 
 from azure.identity import DefaultAzureCredential
-from azure.servicebus import ServiceBusClient, ServiceBusMessage, ServiceBusSubQueue
+from azure.servicebus import (
+    ServiceBusClient,
+    ServiceBusMessage,
+    ServiceBusSubQueue,
+    TransportType,
+)
 
 
 QUEUE = os.environ.get("SERVICE_BUS_QUEUE", "incident-events")
+
+# Plain AMQP needs port 5671, which campus and corporate firewalls routinely
+# block -- the symptom is a connection timeout with amqp:socket-error. AMQP over
+# WebSocket tunnels through 443 instead, so it is the safe default for a script
+# meant to run from anyone's laptop. Set SERVICE_BUS_TRANSPORT=amqp to force the
+# native port where the network allows it.
+TRANSPORT = (
+    TransportType.Amqp
+    if os.environ.get("SERVICE_BUS_TRANSPORT", "").lower() == "amqp"
+    else TransportType.AmqpOverWebsocket
+)
 
 
 def main() -> int:
@@ -47,7 +63,7 @@ def main() -> int:
     marker = uuid.uuid4().hex
     credential = DefaultAzureCredential()
 
-    with ServiceBusClient(fqdn, credential) as client:
+    with ServiceBusClient(fqdn, credential, transport_type=TRANSPORT) as client:
         # 1. Publish a uniquely tagged test message.
         with client.get_queue_sender(QUEUE) as sender:
             sender.send_messages(

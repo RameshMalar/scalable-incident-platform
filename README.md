@@ -174,14 +174,38 @@ and confirms it in the DLQ.
 ```bash
 az login
 pip install -r scripts/requirements.txt
-export SERVICE_BUS_FQDN=$(az deployment group show \
-  -g "$RESOURCE_GROUP" -n core-<sha> \
-  --query properties.outputs.serviceBusFqdn.value -o tsv)
+
+# The resource group the platform is deployed in.
+export RESOURCE_GROUP=rg-incident-platform
+
+# The namespace host, read straight from whatever is deployed -- no deployment
+# name to look up.
+export SERVICE_BUS_FQDN="$(az servicebus namespace list -g "$RESOURCE_GROUP" \
+  --query "[?starts_with(name, 'incident-bus')].serviceBusEndpoint | [0]" -o tsv \
+  | sed -E 's~https://~~; s~:443/?$~~')"
+
 python scripts/verify-servicebus.py
 ```
 
-It runs as your `az login` user, so that account also needs the Data Sender and
-Data Receiver roles on the namespace (or Owner on the resource group).
+If `SERVICE_BUS_FQDN` comes back empty the namespace is not deployed yet. This
+branch deploys it via CD once merged to `main`; to try it before then, deploy
+core by hand:
+
+```bash
+az deployment group create -g "$RESOURCE_GROUP" --template-file infra/core.bicep
+```
+
+The script authenticates as your `az login` user. Local auth is switched off on
+the namespace, so that user needs the **data-plane** roles explicitly —
+management roles such as Owner do not grant message send or receive:
+
+```bash
+NS="$(az servicebus namespace list -g "$RESOURCE_GROUP" \
+  --query "[?starts_with(name, 'incident-bus')].id | [0]" -o tsv)"
+ME="$(az ad signed-in-user show --query id -o tsv)"
+az role assignment create --assignee "$ME" --scope "$NS" --role "Azure Service Bus Data Sender"
+az role assignment create --assignee "$ME" --scope "$NS" --role "Azure Service Bus Data Receiver"
+```
 
 ## Pipelines
 

@@ -2,3 +2,6 @@
 # own runtime deps under ingestion-service/.
 azure-servicebus==7.12.3
 azure-identity==1.19.0
+# AMQP-over-WebSocket transport (port 443) so the script works on networks that
+# block the native AMQP port 5671.
+websocket-client==1.8.0
