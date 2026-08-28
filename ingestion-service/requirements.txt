@@ -1,3 +1,4 @@
 fastapi==0.141.1
 uvicorn[standard]
 jinja2
+azure-servicebus==7.14.2
