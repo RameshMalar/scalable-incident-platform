@@ -1,9 +1,20 @@
+import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, get_publisher
+from app.models import IncidentEvent
+from app.publisher import MockEventPublisher
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def mock_publisher():
+    publisher = MockEventPublisher()
+    app.dependency_overrides[get_publisher] = lambda: publisher
+    yield publisher
+    app.dependency_overrides.pop(get_publisher, None)
 
 
 def sample_event(**overrides):
@@ -39,11 +50,36 @@ def test_health_reports_service_identity():
 def test_incident_is_accepted_and_echoed_back():
     response = client.post("/api/v1/incidents", json=sample_event())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     body = response.json()
     assert body["status"] == "accepted"
     assert body["event_id"] == "EVT-TEST0001"
     assert body["analytics_type"] == "intrusion_detection"
+
+
+def test_incident_is_published_as_a_valid_common_event_model_message(mock_publisher):
+    response = client.post("/api/v1/incidents", json=sample_event())
+
+    assert response.status_code == 202
+    assert len(mock_publisher.published_events) == 1
+
+    published = mock_publisher.published_events[0]
+    assert isinstance(published, IncidentEvent)
+    assert published.event_id == "EVT-TEST0001"
+    assert published.tenant_id == "TENANT-01"
+    assert published.analytics_type == "intrusion_detection"
+
+
+def test_incident_publish_failure_returns_an_explicit_error():
+    app.dependency_overrides[get_publisher] = lambda: MockEventPublisher(fail=True)
+
+    response = client.post("/api/v1/incidents", json=sample_event())
+
+    assert response.status_code == 502
+    body = response.json()
+    assert body["status"] == "error"
+    assert body["event_id"] == "EVT-TEST0001"
+    assert "message" in body
 
 
 def test_common_event_model_rejects_confidence_above_one():
@@ -76,3 +112,9 @@ def test_unsupported_analytics_type_is_reported():
     response = client.post("/api/v1/simulate/not-a-real-analytics")
 
     assert response.json()["status"] == "error"
+
+
+def test_debug_events_endpoint_is_removed():
+    response = client.get("/api/v1/debug/events")
+
+    assert response.status_code == 404

@@ -1,12 +1,19 @@
 from datetime import datetime
+import os
 import random
 import uuid
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 
 from app.models import IncidentEvent
+from app.publisher import (
+    EventPublisher,
+    MockEventPublisher,
+    PublishError,
+    ServiceBusEventPublisher,
+)
 
 
 app = FastAPI(
@@ -24,8 +31,22 @@ app.mount(
 )
 
 
-# Temporary in-memory storage for Sprint 1 demo
+# Demo-only storage backing the dashboard below. Not part of the real
+# ingestion path -- incidents are published, not stored, by create_incident.
 events = []
+
+
+def _build_default_publisher() -> EventPublisher:
+    if os.environ.get("EVENT_PUBLISHER") == "servicebus":
+        return ServiceBusEventPublisher()
+    return MockEventPublisher()
+
+
+_default_publisher = _build_default_publisher()
+
+
+def get_publisher() -> EventPublisher:
+    return _default_publisher
 
 
 @app.get("/")
@@ -46,24 +67,33 @@ def health_check():
         "service": "incident-ingestion-service"
     }
 
-# Temporary debug endpoint - remove after testing
-@app.get("/api/v1/debug/events")
-def debug_events():
-    return {
-        "count": len(events),
-        "events": events
-    }
-
-
-@app.post("/api/v1/incidents")
-def create_incident(event: IncidentEvent):
-
-    event_data = event.model_dump()
-
-    # Convert datetime to string for display
-    event_data["timestamp"] = event.timestamp.isoformat()
-
-    events.insert(0, event_data)
+@app.post(
+    "/api/v1/incidents",
+    status_code=202,
+    summary="Submit an incident",
+    description=(
+        "Validates an IncidentEvent against the Common Event Model and "
+        "publishes it for downstream processing. A 202 response means the "
+        "event was handed off successfully -- it does not mean it has been "
+        "stored or acted on. Ingestion does not persist incidents; that is "
+        "the responsibility of downstream consumers reading from the "
+        "publish target (Azure Service Bus in production)."
+    ),
+)
+async def create_incident(
+    event: IncidentEvent,
+    response: Response,
+    publisher: EventPublisher = Depends(get_publisher),
+):
+    try:
+        await publisher.publish(event)
+    except PublishError as exc:
+        response.status_code = 502
+        return {
+            "status": "error",
+            "event_id": event.event_id,
+            "message": f"Failed to publish incident: {exc}",
+        }
 
     return {
         "status": "accepted",
@@ -76,8 +106,24 @@ def create_incident(event: IncidentEvent):
     }
 
 
-@app.post("/api/v1/simulate/{analytics_type}")
-def simulate_event(analytics_type: str):
+def _record_demo_event(event: IncidentEvent) -> None:
+    event_data = event.model_dump()
+    event_data["timestamp"] = event.timestamp.isoformat()
+    events.insert(0, event_data)
+
+
+@app.post(
+    "/api/v1/simulate/{analytics_type}",
+    summary="Generate a sample incident (demo/dev only)",
+    description=(
+        "Generates and publishes a realistic sample incident for "
+        "'intrusion', 'ppe', or 'crowd' without needing a real analytics "
+        "producer. Not part of the real ingestion contract -- intended for "
+        "local development and demos, and its output also populates the "
+        "in-memory dashboard at '/'."
+    ),
+)
+async def simulate_event(analytics_type: str):
     analytics_samples = {
     "intrusion": {
         "analytics_type": "intrusion_detection",
@@ -125,7 +171,27 @@ def simulate_event(analytics_type: str):
         description=sample["description"],
         #image_path=sample["image_path"]
         evidence_uri=sample["evidence_uri"]
-        
+
     )
 
-    return create_incident(event)
+    publisher = get_publisher()
+    try:
+        await publisher.publish(event)
+    except PublishError as exc:
+        return {
+            "status": "error",
+            "event_id": event.event_id,
+            "message": f"Failed to publish incident: {exc}",
+        }
+
+    _record_demo_event(event)
+
+    return {
+        "status": "accepted",
+        "event_id": event.event_id,
+        "tenant_id": event.tenant_id,
+        "site_id": event.site_id,
+        "analytics_type": event.analytics_type,
+        "event_type": event.event_type,
+        "message": "Incident received successfully"
+    }
