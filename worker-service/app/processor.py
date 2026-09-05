@@ -61,11 +61,10 @@ class InMemoryDeduplicator(Deduplicator):
     the common case -- the same replica seeing the same message again after a
     lock expiry or a crash-free retry -- and nothing more.
 
-    The real answer is a shared store keyed on `event_id`, which arrives with
-    the Cosmos DB incident store: an idempotent upsert makes the dedupe check
-    and the write the same operation. This class exists so the worker is
-    correct about *why* it is only best-effort today rather than silently
-    reprocessing everything.
+    This is now the local-development path only. The deployed worker writes to
+    Cosmos DB, where the document id is the event id, so the write itself is the
+    deduplication check and it is shared across every replica -- see
+    `store.CosmosIncidentStore`.
     """
 
     def __init__(self, capacity: int = 10_000):
@@ -83,22 +82,43 @@ class InMemoryDeduplicator(Deduplicator):
 
 
 class IncidentHandler(ABC):
-    """What actually happens to a valid, first-seen incident."""
+    """What actually happens to a valid incident.
+
+    The handler reports the outcome rather than the processor deciding it,
+    because a store that deduplicates atomically -- writing the incident and
+    rejecting a repeat are one operation -- is the only thing that knows
+    whether this delivery was the first.
+    """
 
     @abstractmethod
-    async def handle(self, event: IncidentEvent) -> None:
-        """Raise to signal a transient failure worth a redelivery."""
+    async def handle(self, event: IncidentEvent) -> "Outcome":
+        """Return PROCESSED or DUPLICATE.
+
+        Raise to signal a transient failure worth a redelivery.
+        """
 
 
 class LoggingIncidentHandler(IncidentHandler):
-    """Writes one structured line per incident to stdout.
+    """Writes one structured line per incident to stdout. Local development.
 
-    Container Apps streams stdout to the Log Analytics workspace provisioned in
-    `core.bicep`, so this is queryable today and is the seam the Cosmos DB
-    writer replaces when the state layer lands.
+    Deduplication here is a separate step from the write, so the ordering has
+    to be got right by hand: the event id is remembered only after the line has
+    been emitted. Claiming it first would turn a crash midway into a silently
+    dropped incident, because the redelivery would be read as a duplicate. This
+    way a crash costs a reprocess, which is the cheaper mistake.
+
+    `CosmosIncidentStore` does not need any of this reasoning, because there the
+    check and the write are the same operation.
     """
 
-    async def handle(self, event: IncidentEvent) -> None:
+    def __init__(self, deduplicator: Deduplicator | None = None):
+        self.deduplicator = deduplicator or InMemoryDeduplicator()
+
+    async def handle(self, event: IncidentEvent) -> "Outcome":
+        if await self.deduplicator.seen(event.event_id):
+            logger.info("skipping duplicate event_id=%s", event.event_id)
+            return Outcome.DUPLICATE
+
         logger.info(
             "processed incident event_id=%s tenant_id=%s site_id=%s "
             "analytics_type=%s event_type=%s severity=%s confidence=%s "
@@ -114,15 +134,13 @@ class LoggingIncidentHandler(IncidentHandler):
             event.timestamp.isoformat(),
         )
 
+        await self.deduplicator.remember(event.event_id)
+        return Outcome.PROCESSED
+
 
 class IncidentProcessor:
-    def __init__(
-        self,
-        handler: IncidentHandler | None = None,
-        deduplicator: Deduplicator | None = None,
-    ):
+    def __init__(self, handler: IncidentHandler | None = None):
         self.handler = handler or LoggingIncidentHandler()
-        self.deduplicator = deduplicator or InMemoryDeduplicator()
 
     async def process(self, body: bytes | str, message_id: str | None = None) -> Outcome:
         """Process one message body.
@@ -133,24 +151,7 @@ class IncidentProcessor:
         redelivery.
         """
         event = self._parse(body, message_id)
-
-        if await self.deduplicator.seen(event.event_id):
-            logger.info(
-                "skipping duplicate event_id=%s message_id=%s",
-                event.event_id,
-                message_id,
-            )
-            return Outcome.DUPLICATE
-
-        await self.handler.handle(event)
-
-        # Remembered only after the handler succeeded. The other order -- claim
-        # first, then handle -- turns a crash midway through the handler into a
-        # silently dropped incident, because the redelivery would be mistaken
-        # for a duplicate. This way a crash costs a reprocess, which is the
-        # cheaper of the two mistakes.
-        await self.deduplicator.remember(event.event_id)
-        return Outcome.PROCESSED
+        return await self.handler.handle(event)
 
     def _parse(self, body: bytes | str, message_id: str | None) -> IncidentEvent:
         if isinstance(body, bytes):

@@ -36,6 +36,15 @@ param serviceBusNamespace string
 @description('Queue the worker consumes incidents from.')
 param serviceBusQueue string = 'incident-events'
 
+@description('Cosmos DB account endpoint the worker writes incidents to.')
+param cosmosEndpoint string
+
+@description('Cosmos database holding the incident container.')
+param cosmosDatabase string = 'incidents'
+
+@description('Cosmos container incidents are written to, partitioned on /tenant_id.')
+param cosmosContainer string = 'incidents'
+
 @description('Registry login server, e.g. incidentacrxxx.azurecr.io.')
 param registryServer string
 
@@ -109,6 +118,25 @@ resource worker 'Microsoft.App/containerApps@2025-01-01' = {
             {
               name: 'SERVICE_BUS_TRANSPORT'
               value: 'amqp'
+            }
+            // Without this the worker logs incidents and stores none of them.
+            // Same shape as EVENT_PUBLISHER on the ingestion side, and asserted
+            // by CD for the same reason.
+            {
+              name: 'INCIDENT_STORE'
+              value: 'cosmos'
+            }
+            {
+              name: 'COSMOS_ENDPOINT'
+              value: cosmosEndpoint
+            }
+            {
+              name: 'COSMOS_DATABASE'
+              value: cosmosDatabase
+            }
+            {
+              name: 'COSMOS_CONTAINER'
+              value: cosmosContainer
             }
           ]
         }

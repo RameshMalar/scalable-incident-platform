@@ -6,6 +6,7 @@ import pytest
 from app.models import IncidentEvent
 from app.processor import (
     InMemoryDeduplicator,
+    LoggingIncidentHandler,
     IncidentHandler,
     IncidentProcessor,
     InvalidIncident,
@@ -41,14 +42,25 @@ def sample_body(**overrides) -> bytes:
 
 
 class RecordingHandler(IncidentHandler):
+    """Stands in for a store: records what it kept, and rejects a repeat.
+
+    Deduplication belongs to the handler now, because the real store does the
+    check and the write in one operation.
+    """
+
     def __init__(self, fail: bool = False):
         self.fail = fail
         self.handled: list[IncidentEvent] = []
+        self._stored: set[str] = set()
 
-    async def handle(self, event: IncidentEvent) -> None:
+    async def handle(self, event: IncidentEvent) -> Outcome:
         if self.fail:
             raise RuntimeError("downstream is unavailable")
+        if event.event_id in self._stored:
+            return Outcome.DUPLICATE
         self.handled.append(event)
+        self._stored.add(event.event_id)
+        return Outcome.PROCESSED
 
 
 async def test_a_valid_incident_is_handled_once():
@@ -98,9 +110,8 @@ async def test_distinct_incidents_are_all_handled():
 
 
 async def test_a_failed_handler_leaves_the_incident_unprocessed():
-    # The dedupe entry is written only after the handler succeeds. If it were
-    # written first, a crash midway through the handler would make the
-    # redelivery look like a duplicate and the incident would vanish.
+    # A handler that fails must leave no trace, or the redelivery would be read
+    # as a duplicate and the incident would vanish.
     handler = RecordingHandler(fail=True)
     processor = IncidentProcessor(handler=handler)
 
@@ -189,3 +200,29 @@ async def test_the_deduplicator_forgets_the_oldest_entries_first():
     assert not await dedupe.seen("EVT-1")
     assert await dedupe.seen("EVT-2")
     assert await dedupe.seen("EVT-3")
+
+
+async def test_the_logging_handler_deduplicates_and_reports_it():
+    handler = LoggingIncidentHandler(deduplicator=InMemoryDeduplicator())
+    event = sample_event()
+
+    assert await handler.handle(event) is Outcome.PROCESSED
+    assert await handler.handle(event) is Outcome.DUPLICATE
+
+
+async def test_the_logging_handler_remembers_only_after_it_has_emitted():
+    # Claiming the id first would turn a crash midway into a silently dropped
+    # incident: the redelivery would be read as a duplicate. This ordering costs
+    # a reprocess instead, which is the cheaper mistake.
+    class ExplodingDeduplicator(InMemoryDeduplicator):
+        async def remember(self, event_id):
+            raise RuntimeError("crashed after emitting")
+
+    handler = LoggingIncidentHandler(deduplicator=ExplodingDeduplicator())
+    event = sample_event()
+
+    with pytest.raises(RuntimeError):
+        await handler.handle(event)
+
+    # Nothing was remembered, so a redelivery is processed rather than dropped.
+    assert await handler.deduplicator.seen(event.event_id) is False

@@ -10,3 +10,6 @@ azure-core[aio]==1.41.0
 # no web framework, so it depends on the Common Event Model's validator
 # directly.
 pydantic==2.13.5
+# The incident store (AD-07). The async client needs azure-core's aio extra,
+# which azure-identity above already pulls in.
+azure-cosmos==4.16.4

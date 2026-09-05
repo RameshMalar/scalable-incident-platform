@@ -30,7 +30,7 @@ read -r -p $'\nType the resource group name to confirm: ' confirm
 
 # Deleted in dependency order rather than by dropping the resource group, which
 # would take the deploy identity and its role assignments with it.
-for name in incident-ingestion incident-worker incident-bus incident-env incidentacr incident-logs incident-ingestion-id incident-worker-id incident-scaler-id; do
+for name in incident-ingestion incident-worker incident-bus incident-cosmos incident-env incidentacr incident-logs incident-ingestion-id incident-worker-id incident-scaler-id; do
   az resource list -g "${RESOURCE_GROUP}" --query "[?starts_with(name, '${name}')].id" -o tsv \
     | while read -r id; do
         [[ -n "${id}" ]] || continue

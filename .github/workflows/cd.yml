@@ -54,7 +54,8 @@ jobs:
           for key in registryName registryLoginServer environmentId \
             ingestionIdentityId ingestionIdentityClientId \
             workerIdentityId workerIdentityClientId scalerIdentityId \
-            serviceBusName serviceBusFqdn incidentQueueName; do
+            serviceBusName serviceBusFqdn incidentQueueName \
+            cosmosEndpoint cosmosDatabaseName cosmosContainerName; do
             value=$(echo "$outputs" | jq -r ".${key}.value")
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
           done
@@ -133,6 +134,9 @@ jobs:
               serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
               serviceBusNamespace='${{ steps.core.outputs.serviceBusName }}' \
               serviceBusQueue='${{ steps.core.outputs.incidentQueueName }}' \
+              cosmosEndpoint='${{ steps.core.outputs.cosmosEndpoint }}' \
+              cosmosDatabase='${{ steps.core.outputs.cosmosDatabaseName }}' \
+              cosmosContainer='${{ steps.core.outputs.cosmosContainerName }}' \
               registryServer='${{ steps.core.outputs.registryLoginServer }}' \
               image='${{ steps.image.outputs.worker }}' \
             --query properties.outputs.appName.value -o tsv
@@ -261,11 +265,40 @@ jobs:
 
             if [ "$active" -eq 0 ]; then
               echo "::notice::Worker drained ${queue} after $((attempt * 10))s"
-              exit 0
+              drained=yes
+              break
             fi
 
             echo "waiting: ${active} message(s) still on ${queue}"
           done
 
-          echo "::error::${queue} still holds ${active} message(s) after 5 minutes; the worker is not consuming" >&2
-          exit 1
+          if [ "${drained:-no}" != "yes" ]; then
+            echo "::error::${queue} still holds ${active} message(s) after 5 minutes; the worker is not consuming" >&2
+            exit 1
+          fi
+
+          # Draining proves the queue emptied, not that the incident was kept.
+          # Two different failures hide in there, and only one of them is
+          # already covered.
+          #
+          # A worker that CANNOT store -- no Cosmos role, wrong endpoint -- has
+          # create_item raise, abandons the message, and after five deliveries
+          # dead-letters it. The guard above catches that.
+          #
+          # A worker that simply DOES NOT store -- INCIDENT_STORE unset, so it
+          # logs each incident and completes it -- drains perfectly cleanly and
+          # looks identical to success. That is the failure the ingestion
+          # service shipped with once already, so assert the deployed revision
+          # is actually configured to persist.
+          store=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name incident-worker \
+            --query "properties.template.containers[0].env[?name=='INCIDENT_STORE'].value | [0]" \
+            -o tsv)
+
+          if [ "$store" != "cosmos" ]; then
+            echo "::error::The worker drained ${queue} but is not configured to persist (INCIDENT_STORE='${store}'). It is consuming incidents and discarding them." >&2
+            exit 1
+          fi
+
+          echo "::notice::Worker is consuming and persisting to Cosmos"

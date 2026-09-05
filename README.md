@@ -306,6 +306,48 @@ az role assignment create --assignee "$ME" --scope "$NS" --role "Azure Service B
 az role assignment create --assignee "$ME" --scope "$NS" --role "Azure Service Bus Data Receiver"
 ```
 
+## The incident store
+
+Incidents are persisted in Cosmos DB, NoSQL API, partitioned on `tenant_id` --
+which is how they are read back, since a customer looks at their own sites. The
+choice is recorded in AD-07: the free tier carries 1,000 RU/s and 25 GB at no
+charge and does not expire, where the alternative, a PostgreSQL Flexible Server
+B1ms, costs about $21 a month and, being always on, would be the only component
+here that cannot scale to zero.
+
+The account is provisioned with `enableFreeTier: true` and a
+`totalThroughputLimit` of 1,000 RU/s, so provisioned throughput cannot be raised
+past the free grant by accident. An overrun throttles rather than bills, which
+matters on a subscription whose spending limit disables everything once the
+credit is gone. `disableLocalAuth: true` matches the Service Bus posture: no
+keys, so the only way in is a managed identity holding a data-plane role. Only
+the worker has one -- ingestion publishes to the queue and never touches the
+store.
+
+**A measured number for planning the scalability run:** one incident write costs
+**9.9 RU**, so the free grant sustains roughly **101 writes per second**. A
+rejected duplicate costs 2.48 RU. Ten worker replicas can exceed 101 writes per
+second, so the load profile has to be planned against that ceiling rather than
+discovered at it.
+
+### Deduplication is the write
+
+The document id is the producer's `event_id`, so uniqueness is the store's own
+constraint and the worker does not have to remember anything. A redelivery --
+after a lock expiry, a crash, or a scale-in -- collides no matter which replica
+handles it. The in-memory deduplicator it replaces only ever caught redeliveries
+that came back to the same replica, and said so.
+
+It creates rather than upserts, deliberately. An upsert would succeed on a
+repeat and overwrite the stored incident, so duplicates would be invisible and
+could never be reported. Creating and catching the conflict makes the duplicate
+an observable fact. Incidents are immutable events, so there is nothing an
+update would legitimately change.
+
+The logging handler, which keeps the in-memory deduplicator, remains the local
+development path: the worker runs with no Azure account and no credentials, and
+stores nothing.
+
 ## Pipelines
 
 | Workflow | Trigger | What it does |
