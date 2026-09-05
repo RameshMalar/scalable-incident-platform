@@ -13,7 +13,8 @@ import signal
 import sys
 
 from app.consumer import IncidentConsumer
-from app.processor import IncidentProcessor
+from app.processor import IncidentHandler, IncidentProcessor, LoggingIncidentHandler
+from app.store import CosmosIncidentStore
 
 logger = logging.getLogger("app.main")
 
@@ -28,6 +29,23 @@ def configure_logging() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
         stream=sys.stdout,
     )
+
+
+def build_handler() -> IncidentHandler:
+    """Pick where incidents go.
+
+    Defaults to the logging handler so the worker runs locally with no Azure
+    account and no credentials. The deployed worker sets INCIDENT_STORE=cosmos;
+    without it the worker would consume the queue, log each incident and store
+    none of them -- which is why CD asserts on the store, not just on the drain.
+    """
+    if os.environ.get("INCIDENT_STORE") == "cosmos":
+        return CosmosIncidentStore()
+    return LoggingIncidentHandler()
+
+
+def handler_name(handler: IncidentHandler) -> str:
+    return "cosmos" if isinstance(handler, CosmosIncidentStore) else "logging"
 
 
 def install_shutdown_handler(stop: asyncio.Event) -> None:
@@ -53,7 +71,8 @@ async def run() -> int:
     configure_logging()
 
     try:
-        consumer = IncidentConsumer(processor=IncidentProcessor())
+        handler = build_handler()
+        consumer = IncidentConsumer(processor=IncidentProcessor(handler))
     except ValueError as exc:
         logger.error("worker cannot start: %s", exc)
         return 2
@@ -61,14 +80,23 @@ async def run() -> int:
     stop = asyncio.Event()
     install_shutdown_handler(stop)
 
+    start = getattr(handler, "start", None)
+    if start is not None:
+        await start()
+
     await consumer.start()
-    logger.info("worker ready queue=%s", consumer.queue_name)
+    logger.info(
+        "worker ready queue=%s store=%s", consumer.queue_name, handler_name(handler)
+    )
 
     try:
         await consumer.run(stop)
     finally:
         logger.info("worker draining and shutting down")
         await consumer.close()
+        close = getattr(handler, "close", None)
+        if close is not None:
+            await close()
 
     return 0
 
