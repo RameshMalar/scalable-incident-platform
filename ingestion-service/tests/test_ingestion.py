@@ -1,12 +1,17 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app, get_publisher
+from app.main import _build_default_publisher, app, get_publisher
 from app.models import IncidentEvent
-from app.publisher import MockEventPublisher
+from app.publisher import MockEventPublisher, ServiceBusEventPublisher
 
 
-client = TestClient(app)
+@pytest.fixture
+def client():
+    # As a context manager so the lifespan runs: that is what builds the
+    # publisher and puts it on app.state, exactly as it does in the container.
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 @pytest.fixture(autouse=True)
@@ -37,17 +42,32 @@ def sample_event(**overrides):
     return event
 
 
-def test_health_reports_service_identity():
+def test_health_reports_service_identity_and_active_publisher(client):
     response = client.get("/health")
 
     assert response.status_code == 200
     assert response.json() == {
         "status": "healthy",
         "service": "incident-ingestion-service",
+        # No EVENT_PUBLISHER in the test environment, so the process falls back
+        # to the mock and says so. The deployment pipeline asserts the opposite.
+        "publisher": "mock",
     }
 
 
-def test_incident_is_accepted_and_echoed_back():
+def test_servicebus_configuration_selects_the_real_publisher(monkeypatch):
+    # The regression this guards: the deployed service ran without
+    # EVENT_PUBLISHER set, quietly answered 202 to every incident and published
+    # none of them.
+    monkeypatch.setenv("EVENT_PUBLISHER", "servicebus")
+    monkeypatch.setenv(
+        "SERVICE_BUS_FQDN", "incident-bus-test.servicebus.windows.net"
+    )
+
+    assert isinstance(_build_default_publisher(), ServiceBusEventPublisher)
+
+
+def test_incident_is_accepted_and_echoed_back(client):
     response = client.post("/api/v1/incidents", json=sample_event())
 
     assert response.status_code == 202
@@ -57,7 +77,9 @@ def test_incident_is_accepted_and_echoed_back():
     assert body["analytics_type"] == "intrusion_detection"
 
 
-def test_incident_is_published_as_a_valid_common_event_model_message(mock_publisher):
+def test_incident_is_published_as_a_valid_common_event_model_message(
+    client, mock_publisher
+):
     response = client.post("/api/v1/incidents", json=sample_event())
 
     assert response.status_code == 202
@@ -70,7 +92,7 @@ def test_incident_is_published_as_a_valid_common_event_model_message(mock_publis
     assert published.analytics_type == "intrusion_detection"
 
 
-def test_incident_publish_failure_returns_an_explicit_error():
+def test_incident_publish_failure_returns_an_explicit_error(client):
     app.dependency_overrides[get_publisher] = lambda: MockEventPublisher(fail=True)
 
     response = client.post("/api/v1/incidents", json=sample_event())
@@ -82,7 +104,7 @@ def test_incident_publish_failure_returns_an_explicit_error():
     assert "message" in body
 
 
-def test_common_event_model_rejects_confidence_above_one():
+def test_common_event_model_rejects_confidence_above_one(client):
     response = client.post(
         "/api/v1/incidents",
         json=sample_event(confidence=1.5),
@@ -91,7 +113,7 @@ def test_common_event_model_rejects_confidence_above_one():
     assert response.status_code == 422
 
 
-def test_common_event_model_requires_tenant_id():
+def test_common_event_model_requires_tenant_id(client):
     payload = sample_event()
     del payload["tenant_id"]
 
@@ -100,21 +122,24 @@ def test_common_event_model_requires_tenant_id():
     assert response.status_code == 422
 
 
-def test_the_same_model_carries_every_analytics_type():
+def test_the_same_model_carries_every_analytics_type(client, mock_publisher):
     for analytics_type in ("intrusion", "ppe", "crowd"):
         response = client.post(f"/api/v1/simulate/{analytics_type}")
 
         assert response.status_code == 200
         assert response.json()["status"] == "accepted"
 
+    published = [e.analytics_type for e in mock_publisher.published_events]
+    assert published == ["intrusion_detection", "PPE_detection", "crowd_detection"]
 
-def test_unsupported_analytics_type_is_reported():
+
+def test_unsupported_analytics_type_is_reported(client):
     response = client.post("/api/v1/simulate/not-a-real-analytics")
 
     assert response.json()["status"] == "error"
 
 
-def test_debug_events_endpoint_is_removed():
+def test_debug_events_endpoint_is_removed(client):
     response = client.get("/api/v1/debug/events")
 
     assert response.status_code == 404

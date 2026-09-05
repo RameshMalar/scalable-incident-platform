@@ -1,4 +1,6 @@
+from contextlib import asynccontextmanager
 from datetime import datetime
+import logging
 import os
 import random
 import uuid
@@ -16,10 +18,47 @@ from app.publisher import (
 )
 
 
+# Uvicorn configures its own loggers but leaves the root logger at WARNING, so
+# without this the publish trail -- "publishing event_id=...", "published
+# event_id=..." -- is dropped before it ever reaches stdout, and with it the
+# Log Analytics workspace the container streams to.
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+
+logger = logging.getLogger("app.main")
+
+
+def _build_default_publisher() -> EventPublisher:
+    if os.environ.get("EVENT_PUBLISHER") == "servicebus":
+        return ServiceBusEventPublisher()
+    return MockEventPublisher()
+
+
+def _publisher_name(publisher: EventPublisher) -> str:
+    return "servicebus" if isinstance(publisher, ServiceBusEventPublisher) else "mock"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # One publisher for the life of the process, so the Service Bus connection
+    # and sender are established once rather than per request.
+    publisher = _build_default_publisher()
+    await publisher.start()
+    app.state.publisher = publisher
+    logger.info("ingestion ready publisher=%s", _publisher_name(publisher))
+    try:
+        yield
+    finally:
+        await publisher.close()
+
+
 app = FastAPI(
     title="Scalable Incident Platform - Ingestion Service",
     description="Common ingestion API for multiple analytics event types",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 templates = Jinja2Templates(directory="app/templates")
@@ -36,17 +75,8 @@ app.mount(
 events = []
 
 
-def _build_default_publisher() -> EventPublisher:
-    if os.environ.get("EVENT_PUBLISHER") == "servicebus":
-        return ServiceBusEventPublisher()
-    return MockEventPublisher()
-
-
-_default_publisher = _build_default_publisher()
-
-
-def get_publisher() -> EventPublisher:
-    return _default_publisher
+def get_publisher(request: Request) -> EventPublisher:
+    return request.app.state.publisher
 
 
 @app.get("/")
@@ -60,11 +90,21 @@ def dashboard(request: Request):
     )
 
 
-@app.get("/health")
-def health_check():
+@app.get(
+    "/health",
+    summary="Liveness and readiness probe",
+    description=(
+        "Reports which publisher the process actually started with. A service "
+        "that answers 'mock' in a deployed environment is accepting incidents "
+        "and dropping them, which is why the deployment pipeline asserts on "
+        "this field rather than on 'healthy' alone."
+    ),
+)
+def health_check(request: Request):
     return {
         "status": "healthy",
-        "service": "incident-ingestion-service"
+        "service": "incident-ingestion-service",
+        "publisher": _publisher_name(request.app.state.publisher),
     }
 
 @app.post(
@@ -123,7 +163,10 @@ def _record_demo_event(event: IncidentEvent) -> None:
         "in-memory dashboard at '/'."
     ),
 )
-async def simulate_event(analytics_type: str):
+async def simulate_event(
+    analytics_type: str,
+    publisher: EventPublisher = Depends(get_publisher),
+):
     analytics_samples = {
     "intrusion": {
         "analytics_type": "intrusion_detection",
@@ -169,12 +212,9 @@ async def simulate_event(analytics_type: str):
         timestamp=datetime.now(),
         confidence=round(random.uniform(0.80, 0.99), 2),
         description=sample["description"],
-        #image_path=sample["image_path"]
         evidence_uri=sample["evidence_uri"]
-
     )
 
-    publisher = get_publisher()
     try:
         await publisher.publish(event)
     except PublishError as exc:

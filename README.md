@@ -38,6 +38,24 @@ docker compose up --build
 Either way the service is at http://localhost:8000 — dashboard at `/`, Swagger
 at `/docs`, health at `/health`.
 
+By default the service publishes to an in-memory mock rather than to Azure, so
+it runs with no cloud account and no credentials. `/health` reports which one is
+active: `"publisher": "mock"` locally, `"publisher": "servicebus"` when it is
+really publishing. Point it at the real namespace with:
+
+```bash
+az login
+export EVENT_PUBLISHER=servicebus
+export SERVICE_BUS_FQDN="$(az servicebus namespace list -g rg-incident-platform \
+  --query "[?starts_with(name, 'incident-bus')].serviceBusEndpoint | [0]" -o tsv \
+  | sed -E 's~https://~~; s~:443/?$~~')"
+uvicorn app.main:app --reload
+```
+
+Your `az login` user needs **Azure Service Bus Data Sender** on the namespace —
+see [Verifying the queue](#verifying-the-queue-without-the-producer-or-worker)
+for why a management role is not enough.
+
 Run the tests:
 
 ```bash
@@ -153,6 +171,17 @@ it; the processing worker consumes from it. Neither holds a connection string:
 worker identity **Service Bus Data Receiver**, and local auth on the namespace
 is switched off, so the only way in is a managed identity with an explicit role.
 
+The ingestion service opens its queue sender once, at startup, and reuses it for
+the life of the process. Opening a client per message costs a TLS and AMQP
+handshake on every request: harmless in a demo, and enough to dominate the
+throughput and latency figures the platform is assessed on.
+
+Transport is a switch rather than a constant. Native AMQP needs port 5671, which
+campus and corporate firewalls routinely block, so the default everywhere is
+AMQP over WebSocket on 443 and local development just works. The deployed
+service sets `SERVICE_BUS_TRANSPORT=amqp` to take the faster native port, where
+the egress is ours to control.
+
 A message the worker abandons five times, or one that outlives its time-to-live,
 moves to the queue's built-in **dead-letter subqueue** rather than blocking the
 queue or vanishing. The dead-letter path is not a separate resource — it is
@@ -212,14 +241,16 @@ az role assignment create --assignee "$ME" --scope "$NS" --role "Azure Service B
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
 | `ci.yml` | Every push and pull request | Runs unit tests; builds the image and smoke tests the running container; scans the image (Trivy), the source (Bandit) and the dependencies (pip-audit) |
-| `cd.yml` | Push to `main` | Deploys infrastructure (registry, logging, Container Apps environment, Service Bus namespace and queue, identities), builds and pushes a SHA-tagged image, rolls out the ingestion revision, deploys the processing-worker skeleton, verifies `/health` |
+| `cd.yml` | Push to `main` | Deploys infrastructure (registry, logging, Container Apps environment, Service Bus namespace and queue, identities), builds and pushes a SHA-tagged image, rolls out the ingestion revision, deploys the processing-worker skeleton, and verifies `/health` reports both healthy **and** publishing to Service Bus |
 
 Dependabot raises weekly pull requests for Python, Docker and Actions
 dependencies.
 
 The smoke test exists because unit tests cannot catch a broken Dockerfile or a
 missing runtime dependency. The health verification exists so a deployment
-cannot report success while being unreachable.
+cannot report success while being unreachable — and, because `/health` names the
+active publisher, so it cannot report success while quietly dropping every
+incident it accepts.
 
 Image builds are retried three times with increasing backoff. Both pipelines
 pull the base image from Docker Hub and push to a registry, neither of which

@@ -129,14 +129,22 @@ jobs:
             --query properties.outputs.appName.value -o tsv
 
       # A deployment that reports success without being reachable is worse
-      # than a failed one.
+      # than a failed one -- and one that is reachable while silently dropping
+      # every incident is worse still. /health names the publisher the process
+      # actually started with, so a revision that fell back to the in-memory
+      # mock fails the deployment here instead of passing as healthy.
       - name: Verify the deployment
         run: |
           url='${{ steps.app.outputs.url }}'
           for attempt in $(seq 1 20); do
-            if curl -fsS --max-time 20 "${url}/health" | grep -q '"status":"healthy"'; then
-              echo "::notice::Deployed and healthy at ${url}"
-              exit 0
+            body=$(curl -fsS --max-time 20 "${url}/health" || true)
+            if echo "$body" | grep -q '"status":"healthy"'; then
+              if echo "$body" | grep -q '"publisher":"servicebus"'; then
+                echo "::notice::Deployed and healthy at ${url}, publishing to Service Bus"
+                exit 0
+              fi
+              echo "::error::${url}/health is healthy but not publishing to Service Bus: ${body}" >&2
+              exit 1
             fi
             sleep 6
           done

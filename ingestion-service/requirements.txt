@@ -2,3 +2,9 @@ fastapi==0.141.1
 uvicorn[standard]
 jinja2
 azure-servicebus==7.14.3
+azure-identity==1.25.3
+# DefaultAzureCredential fetches tokens over HTTP, and the async transport that
+# does it lives behind this extra. Without it the service imports fine and then
+# dies at startup with "aiohttp package is not installed" -- azure-servicebus
+# alone does not pull it in, because AMQP does not go through the HTTP pipeline.
+azure-core[aio]==1.41.0
