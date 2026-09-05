@@ -95,6 +95,10 @@ resource ingestion 'Microsoft.App/containerApps@2024-03-01' = {
             }
           ]
           probes: [
+            // Liveness only asks whether the process is serving. It must not
+            // depend on Service Bus: failing it restarts the container, and
+            // restarting every replica during a broker blip turns a messaging
+            // outage into a second outage.
             {
               type: 'Liveness'
               httpGet: {
@@ -105,10 +109,15 @@ resource ingestion 'Microsoft.App/containerApps@2024-03-01' = {
               periodSeconds: 30
               failureThreshold: 3
             }
+            // Readiness asks the harder question -- can this replica reach
+            // Service Bus -- so a replica that cannot publish is taken out of
+            // rotation instead of accepting incidents and failing them. It is
+            // pointed at /ready rather than /health precisely so that a broker
+            // problem does not also trip liveness and restart the container.
             {
               type: 'Readiness'
               httpGet: {
-                path: '/health'
+                path: '/ready'
                 port: 8000
               }
               initialDelaySeconds: 5

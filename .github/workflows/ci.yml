@@ -96,6 +96,10 @@ jobs:
           for attempt in $(seq 1 15); do
             if curl -fsS http://localhost:8000/health; then
               echo "healthy after ${attempt} attempt(s)"
+              # The container runs the mock publisher here, with no Azure to
+              # reach, so /ready must answer 200. It exists to catch the
+              # opposite mistake -- a probe wired so that it can never fail.
+              curl -fsS http://localhost:8000/ready | grep -q '"status":"ready"'
               exit 0
             fi
             sleep 2

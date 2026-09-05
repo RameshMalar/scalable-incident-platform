@@ -38,7 +38,13 @@ docker compose up --build
 ```
 
 Either way the service is at http://localhost:8000 — dashboard at `/`, Swagger
-at `/docs`, health at `/health`.
+at `/docs`, liveness at `/health`, readiness at `/ready`.
+
+The two probes answer different questions on purpose. `/health` asks whether the
+process is serving and never touches Service Bus, because failing it restarts
+the container and a broker blip should not do that. `/ready` asks whether this
+replica can actually publish, by having the credential mint a Service Bus token,
+and answers 503 until it can.
 
 By default the service publishes to an in-memory mock rather than to Azure, so
 it runs with no cloud account and no credentials. `/health` reports which one is

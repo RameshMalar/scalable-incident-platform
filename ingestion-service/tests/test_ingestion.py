@@ -55,6 +55,47 @@ def test_health_reports_service_identity_and_active_publisher(client):
     }
 
 
+def test_ready_reports_ready_when_the_publisher_can_reach_its_target(client):
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["publisher"] == "mock"
+
+
+def test_ready_answers_503_when_the_publisher_cannot_publish(client):
+    class NotReadyPublisher(MockEventPublisher):
+        async def ready(self):
+            return False, "could not acquire a Service Bus token: no identity"
+
+    client.app.state.publisher = NotReadyPublisher()
+
+    response = client.get("/ready")
+
+    # 503 keeps the replica out of rotation. Accepting the incident and failing
+    # it with a 502 would be the worse answer.
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "not-ready"
+    assert "no identity" in body["detail"]
+
+
+def test_liveness_does_not_depend_on_the_publisher_being_reachable(client):
+    # Liveness failure restarts the container, so a broker outage must not trip
+    # it -- otherwise a messaging problem becomes a restart loop.
+    class NotReadyPublisher(MockEventPublisher):
+        async def ready(self):
+            return False, "broker unreachable"
+
+    client.app.state.publisher = NotReadyPublisher()
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
+
+
 def test_servicebus_configuration_selects_the_real_publisher(monkeypatch):
     # The regression this guards: the deployed service ran without
     # EVENT_PUBLISHER set, quietly answered 202 to every incident and published

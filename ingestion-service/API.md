@@ -120,3 +120,39 @@ Health check used by the deploy pipeline and Container Apps.
 when `EVENT_PUBLISHER=servicebus`, otherwise `mock`. A deployed service
 answering `mock` is accepting incidents and discarding them, so the CD pipeline
 fails the deployment on that value rather than on `status` alone.
+
+This is the **liveness** probe, and it deliberately does not touch Service Bus.
+Failing liveness restarts the container; restarting every replica because the
+broker is having a bad minute would turn a messaging outage into a second one.
+
+## `GET /ready`
+
+The **readiness** probe. Answers a different question: can this replica actually
+publish?
+
+```json
+{
+  "status": "ready",
+  "service": "incident-ingestion-service",
+  "publisher": "servicebus",
+  "detail": "ready"
+}
+```
+
+Returns **503** with `"status": "not-ready"` and a one-line `detail` when it
+cannot. Container Apps then keeps the replica out of rotation until it can do
+the job, which is a better answer than accepting an incident and failing it
+with a 502.
+
+The check asks the credential for a Service Bus token. Verifying that the sender
+object exists would prove nothing: constructing a client and a sender does no
+network I/O, so a process pointed at a namespace that does not exist starts
+cleanly and reports itself healthy. Asking for a token exercises what the object
+reference cannot -- that an identity is attached, that it resolves, and that the
+token endpoint is reachable.
+
+`azure-identity` caches the token, so a probe every ten seconds is a dictionary
+lookup rather than a round trip. Failures are logged once per state change
+rather than once per probe, and `detail` is capped at one line: a failed
+`DefaultAzureCredential` explains itself across every credential it tried, and
+Log Analytics bills by ingestion.
