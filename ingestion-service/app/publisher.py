@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 from abc import ABC, abstractmethod
 
 from azure.identity.aio import DefaultAzureCredential
@@ -11,6 +12,23 @@ from azure.servicebus.exceptions import ServiceBusError
 from app.models import IncidentEvent
 
 logger = logging.getLogger("app.publisher")
+
+# The audience a Service Bus data-plane token is minted for. Asking the
+# credential for one is the cheapest honest proof that this replica can reach
+# the namespace at all.
+SERVICE_BUS_SCOPE = "https://servicebus.azure.net/.default"
+
+# A failed DefaultAzureCredential explains itself across every credential it
+# tried -- around two kilobytes. The readiness probe runs every ten seconds, so
+# returning and logging that whole thing would bill Log Analytics by the
+# kilobyte for the same message forever. The first line names the failure; the
+# rest is in the SDK's own troubleshooting output.
+MAX_READINESS_DETAIL = 200
+
+
+def _summarise(exc: Exception) -> str:
+    first_line = str(exc).strip().splitlines()[0] if str(exc).strip() else repr(exc)
+    return first_line[:MAX_READINESS_DETAIL]
 
 
 def _transport_type() -> TransportType:
@@ -40,6 +58,14 @@ class EventPublisher(ABC):
     async def close(self) -> None:
         """Release it again. No-op unless overridden."""
 
+    async def ready(self) -> tuple[bool, str]:
+        """Whether this replica can actually publish right now.
+
+        Returns (ready, detail). A publisher with nothing to reach is always
+        ready, so this is only overridden where there is a real dependency.
+        """
+        return True, "ready"
+
 
 class ServiceBusEventPublisher(EventPublisher):
     """Publishes incidents to a Service Bus queue as a managed identity.
@@ -62,6 +88,7 @@ class ServiceBusEventPublisher(EventPublisher):
         queue_name: str | None = None,
         timeout_seconds: float | None = None,
         credential=None,
+        readiness_timeout_seconds: float | None = None,
     ):
         self.fully_qualified_namespace = (
             fully_qualified_namespace or os.environ.get("SERVICE_BUS_FQDN")
@@ -71,6 +98,11 @@ class ServiceBusEventPublisher(EventPublisher):
         )
         self.timeout_seconds = timeout_seconds or float(
             os.environ.get("PUBLISH_TIMEOUT_SECONDS", "5")
+        )
+        # Kept short: a readiness probe that hangs is a replica the platform
+        # cannot make a decision about.
+        self.readiness_timeout_seconds = readiness_timeout_seconds or float(
+            os.environ.get("READINESS_TIMEOUT_SECONDS", "3")
         )
 
         if not self.fully_qualified_namespace:
@@ -86,6 +118,10 @@ class ServiceBusEventPublisher(EventPublisher):
         self._client: ServiceBusClient | None = None
         self._sender = None
         self._lock = asyncio.Lock()
+        self._token_expires_at: float = 0.0
+        # Only state *changes* are logged, so a replica that stays unready does
+        # not write the same line every ten seconds for as long as it is down.
+        self._was_ready: bool | None = None
 
     async def start(self) -> None:
         async with self._lock:
@@ -165,6 +201,57 @@ class ServiceBusEventPublisher(EventPublisher):
 
         logger.info("published event_id=%s", event.event_id)
 
+    async def ready(self) -> tuple[bool, str]:
+        """Prove the credential can mint a Service Bus token.
+
+        This is the probe's whole point, and the reason it cannot simply check
+        that the sender object exists. Constructing the client and the sender
+        does no network I/O -- the AMQP link is not opened until the first send
+        -- so a process pointed at a namespace that does not exist starts
+        cleanly and reports itself healthy. That has been observed directly.
+
+        Asking for a token exercises what a bare object reference cannot: that
+        a managed identity is actually attached, that it resolves, and that the
+        token endpoint is reachable. `azure-identity` caches the token, so
+        calling this every ten seconds costs a dictionary lookup rather than a
+        round trip; the expiry is tracked here too so a cached token is not
+        re-requested until it is close to running out.
+        """
+        if time.time() < self._token_expires_at - 300:
+            return True, "ready"
+
+        if self._credential is None:
+            async with self._lock:
+                self._open()
+
+        try:
+            token = await asyncio.wait_for(
+                self._credential.get_token(SERVICE_BUS_SCOPE),
+                timeout=self.readiness_timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            return self._record(
+                False,
+                f"timed out acquiring a Service Bus token after "
+                f"{self.readiness_timeout_seconds}s",
+            )
+        except Exception as exc:
+            return self._record(
+                False, f"could not acquire a Service Bus token: {_summarise(exc)}"
+            )
+
+        self._token_expires_at = float(token.expires_on)
+        return self._record(True, "ready")
+
+    def _record(self, ready: bool, detail: str) -> tuple[bool, str]:
+        if ready != self._was_ready:
+            if ready:
+                logger.info("ready: can acquire a Service Bus token")
+            else:
+                logger.warning("not ready: %s", detail)
+            self._was_ready = ready
+        return ready, detail
+
     async def close(self) -> None:
         async with self._lock:
             if self._sender is not None:
@@ -176,6 +263,10 @@ class ServiceBusEventPublisher(EventPublisher):
             if self._credential is not None and self._owns_credential:
                 await self._credential.close()
                 self._credential = None
+            # Otherwise a reopened publisher would report ready on the strength
+            # of a token the credential behind it no longer holds.
+            self._token_expires_at = 0.0
+            self._was_ready = None
 
 
 class MockEventPublisher(EventPublisher):

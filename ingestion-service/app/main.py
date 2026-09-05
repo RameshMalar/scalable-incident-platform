@@ -92,12 +92,16 @@ def dashboard(request: Request):
 
 @app.get(
     "/health",
-    summary="Liveness and readiness probe",
+    summary="Liveness probe",
     description=(
-        "Reports which publisher the process actually started with. A service "
-        "that answers 'mock' in a deployed environment is accepting incidents "
-        "and dropping them, which is why the deployment pipeline asserts on "
-        "this field rather than on 'healthy' alone."
+        "Answers one question: is this process alive and serving? It "
+        "deliberately does not touch Service Bus. Liveness failure restarts "
+        "the container, and restarting a healthy replica because the broker is "
+        "having a bad minute turns a messaging outage into an outage of its "
+        "own. Reaching the queue is what /ready is for.\n\n"
+        "It does report which publisher the process started with, because a "
+        "deployed service answering 'mock' would accept incidents and drop "
+        "them; the deployment pipeline asserts on that field."
     ),
 )
 def health_check(request: Request):
@@ -105,6 +109,36 @@ def health_check(request: Request):
         "status": "healthy",
         "service": "incident-ingestion-service",
         "publisher": _publisher_name(request.app.state.publisher),
+    }
+
+
+@app.get(
+    "/ready",
+    summary="Readiness probe",
+    description=(
+        "Answers a different question: can this replica actually publish? It "
+        "asks the credential for a Service Bus token, which is the cheapest "
+        "proof that an identity is attached, resolves, and can reach the token "
+        "endpoint.\n\n"
+        "Checking that the sender object exists would prove nothing -- "
+        "constructing it does no network I/O, so a process pointed at a "
+        "namespace that does not exist starts cleanly and looks healthy. A "
+        "replica that answers 503 here is kept out of rotation until it can do "
+        "the job, rather than accepting incidents and failing them with a 502."
+    ),
+)
+async def readiness_check(request: Request, response: Response):
+    publisher = request.app.state.publisher
+    ready, detail = await publisher.ready()
+
+    if not ready:
+        response.status_code = 503
+
+    return {
+        "status": "ready" if ready else "not-ready",
+        "service": "incident-ingestion-service",
+        "publisher": _publisher_name(publisher),
+        "detail": detail,
     }
 
 @app.post(

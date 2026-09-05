@@ -149,7 +149,16 @@ jobs:
             body=$(curl -fsS --max-time 20 "${url}/health" || true)
             if echo "$body" | grep -q '"status":"healthy"'; then
               if echo "$body" | grep -q '"publisher":"servicebus"'; then
-                echo "::notice::Deployed and healthy at ${url}, publishing to Service Bus"
+                # Liveness only proves the process is serving. /ready proves the
+                # attached identity can mint a Service Bus token, so a missing
+                # or unresolvable managed identity fails here, naming itself,
+                # rather than surfacing later as an ambiguous drain timeout.
+                ready=$(curl -fsS --max-time 20 "${url}/ready" || true)
+                if ! echo "$ready" | grep -q '"status":"ready"'; then
+                  echo "::error::${url} is healthy but not ready to publish: ${ready}" >&2
+                  exit 1
+                fi
+                echo "::notice::Deployed, healthy and ready at ${url}"
                 exit 0
               fi
               echo "::error::${url}/health is healthy but not publishing to Service Bus: ${body}" >&2

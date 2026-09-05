@@ -1,4 +1,5 @@
 import asyncio
+import time
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -34,9 +35,12 @@ def sample_event(**overrides):
     return IncidentEvent(**fields)
 
 
-def fake_credential():
+def fake_credential(token_expires_in=3600, get_token=None):
     credential = MagicMock()
     credential.close = AsyncMock()
+    token = MagicMock()
+    token.expires_on = time.time() + token_expires_in
+    credential.get_token = get_token or AsyncMock(return_value=token)
     return credential
 
 
@@ -235,3 +239,140 @@ async def test_transport_defaults_to_websocket_and_is_switchable(
     wire_client(mock_client_cls, fake_sender())
     await build_publisher().start()
     assert mock_client_cls.call_args.kwargs["transport_type"] == TransportType.Amqp
+
+
+# --- readiness -------------------------------------------------------------
+#
+# The probe exists because "the sender object exists" proves nothing: building
+# a client and sender does no network I/O, so a process aimed at a namespace
+# that does not exist starts cleanly and reports itself healthy.
+
+
+async def test_mock_publisher_is_always_ready():
+    ready, detail = await MockEventPublisher().ready()
+
+    assert ready is True
+    assert detail == "ready"
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_ready_asks_the_credential_for_a_service_bus_token(mock_client_cls):
+    wire_client(mock_client_cls, fake_sender())
+    credential = fake_credential()
+
+    publisher = build_publisher(credential=credential)
+    ready, detail = await publisher.ready()
+
+    assert ready is True
+    assert detail == "ready"
+    credential.get_token.assert_awaited_once_with(
+        "https://servicebus.azure.net/.default"
+    )
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_ready_is_false_when_no_token_can_be_minted(mock_client_cls):
+    wire_client(mock_client_cls, fake_sender())
+    credential = fake_credential(
+        get_token=AsyncMock(side_effect=RuntimeError("no managed identity"))
+    )
+
+    ready, detail = await build_publisher(credential=credential).ready()
+
+    assert ready is False
+    assert "no managed identity" in detail
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_ready_is_false_rather_than_hanging_when_the_token_stalls(
+    mock_client_cls,
+):
+    async def never(*args, **kwargs):
+        await asyncio.sleep(10)
+
+    wire_client(mock_client_cls, fake_sender())
+    publisher = build_publisher(
+        credential=fake_credential(get_token=never), readiness_timeout_seconds=0.05
+    )
+
+    ready, detail = await publisher.ready()
+
+    assert ready is False
+    assert "timed out" in detail
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_ready_reuses_a_live_token_instead_of_asking_every_probe(
+    mock_client_cls,
+):
+    # The probe runs every ten seconds; it must not become a token request
+    # every ten seconds.
+    wire_client(mock_client_cls, fake_sender())
+    credential = fake_credential()
+    publisher = build_publisher(credential=credential)
+
+    for _ in range(5):
+        assert (await publisher.ready())[0] is True
+
+    assert credential.get_token.await_count == 1
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_a_token_near_expiry_is_refreshed(mock_client_cls):
+    wire_client(mock_client_cls, fake_sender())
+    # Inside the five-minute refresh margin, so the cache must not be trusted.
+    credential = fake_credential(token_expires_in=60)
+    publisher = build_publisher(credential=credential)
+
+    await publisher.ready()
+    await publisher.ready()
+
+    assert credential.get_token.await_count == 2
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_closing_forgets_the_cached_token(mock_client_cls):
+    wire_client(mock_client_cls, fake_sender())
+    publisher = build_publisher(credential=fake_credential())
+
+    await publisher.ready()
+    await publisher.close()
+
+    assert publisher._token_expires_at == 0.0
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_readiness_detail_stays_short_enough_to_log_every_ten_seconds(
+    mock_client_cls,
+):
+    # A failed DefaultAzureCredential explains itself across every credential it
+    # tried -- roughly two kilobytes. Returned and logged every ten seconds,
+    # that is a Log Analytics bill for one repeated message.
+    sprawling = "no managed identity\n" + "\n".join(
+        f"\tAttempted {name}Credential: unavailable for a long-winded reason"
+        for name in ("Environment", "WorkloadIdentity", "ManagedIdentity", "AzureCli")
+    )
+    wire_client(mock_client_cls, fake_sender())
+    credential = fake_credential(get_token=AsyncMock(side_effect=RuntimeError(sprawling)))
+
+    ready, detail = await build_publisher(credential=credential).ready()
+
+    assert ready is False
+    assert len(detail) < 260
+    assert "no managed identity" in detail
+    assert "Attempted" not in detail
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_a_replica_that_stays_unready_logs_once_not_every_probe(
+    mock_client_cls, caplog
+):
+    wire_client(mock_client_cls, fake_sender())
+    credential = fake_credential(get_token=AsyncMock(side_effect=RuntimeError("down")))
+    publisher = build_publisher(credential=credential)
+
+    with caplog.at_level("WARNING", logger="app.publisher"):
+        for _ in range(4):
+            await publisher.ready()
+
+    assert len([r for r in caplog.records if "not ready" in r.message]) == 1
