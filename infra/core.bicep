@@ -16,6 +16,15 @@ var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 // Receiver -- neither can manage the namespace, only push or pull messages.
 var serviceBusDataSenderRoleId = '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39'
 var serviceBusDataReceiverRoleId = '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0'
+// Owner is the only built-in role that lets KEDA read a queue's depth.
+// Receiver looks like it should be enough -- its management actions do include
+// `Microsoft.ServiceBus/*/queues/read` -- but the scaler does not go through
+// ARM. It asks the namespace itself for the queue's runtime properties, and
+// that is a data-plane operation, where Receiver grants only
+// `Microsoft.ServiceBus/*/receive/action`. Owner is the sole built-in role
+// whose data actions cover it, and it also grants send, which is why it goes
+// to a dedicated identity scoped to the one queue -- see `scalerIdentity`.
+var serviceBusDataOwnerRoleId = '090c5cfd-751d-490a-894a-3ce6f1109419'
 
 // Service Bus namespaces are globally addressed, so the name must be unique.
 var serviceBusName = '${namePrefix}-bus-${suffix}'
@@ -148,6 +157,30 @@ resource workerBusReceiver 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   }
 }
 
+// The autoscaler is a third party to the messaging: KEDA, running inside the
+// Container Apps platform, polls the queue's runtime properties every 30
+// seconds to decide how many worker replicas to run. That read is a data-plane
+// operation the worker's Receiver role deliberately does not cover.
+//
+// Giving that right to the worker identity would quietly hand the worker's own
+// code the ability to publish incidents, so it goes to an identity of its own,
+// scoped to `incident-events` rather than to the namespace: this principal can
+// manage exactly one queue and cannot see any topic or queue added later.
+resource scalerIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${namePrefix}-scaler-id'
+  location: location
+}
+
+resource scalerQueueOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(incidentQueue.id, scalerIdentity.id, serviceBusDataOwnerRoleId)
+  scope: incidentQueue
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', serviceBusDataOwnerRoleId)
+    principalId: scalerIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 output registryLoginServer string = registry.properties.loginServer
 output registryName string = registry.name
 output environmentId string = containerEnv.id
@@ -155,6 +188,7 @@ output ingestionIdentityId string = ingestionIdentity.id
 output ingestionIdentityClientId string = ingestionIdentity.properties.clientId
 output workerIdentityId string = workerIdentity.id
 output workerIdentityClientId string = workerIdentity.properties.clientId
+output scalerIdentityId string = scalerIdentity.id
 output serviceBusName string = serviceBus.name
 // Fully qualified host the SDK connects to, e.g. incident-bus-xxx.servicebus.windows.net
 output serviceBusFqdn string = replace(replace(serviceBus.properties.serviceBusEndpoint, 'https://', ''), ':443/', '')
