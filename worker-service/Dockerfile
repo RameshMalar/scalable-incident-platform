@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # The base image lags behind Debian's security updates, so pull the patched
 # OS packages at build time. Without this the image ships known-fixable CVEs
