@@ -2,11 +2,13 @@
 """Self-contained smoke test for the incident-events queue and its dead-letter
 subqueue.
 
-It does not need Yixin's producer or Malar's worker. It plays both sides itself:
-publish one message, confirm it lands in the queue, then deliberately dead-letter
-it and confirm it lands in the dead-letter subqueue. That proves the two paths
-this sprint is responsible for -- "reaches the queue" and "reaches the DLQ" --
-before either service exists.
+It needs neither the ingestion service nor the processing worker. It plays both
+sides itself: publish one message, confirm it lands in the queue, then
+deliberately dead-letter it and confirm it lands in the dead-letter subqueue.
+That was how the two paths this queue is responsible for -- "reaches the queue"
+and "reaches the DLQ" -- were proven before either service existed, and it
+remains the way to test the queue in isolation when a service is misbehaving and
+the question is which side the fault is on.
 
 Auth is the same managed-identity story as the running services: no connection
 string, no SAS key. Locally that resolves to your `az login`; in a container it
