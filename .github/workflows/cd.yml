@@ -8,6 +8,7 @@ on:
       - main
     paths:
       - 'ingestion-service/**'
+      - 'worker-service/**'
       - 'infra/**'
       - '.github/workflows/cd.yml'
   workflow_dispatch:
@@ -52,8 +53,8 @@ jobs:
             --query properties.outputs -o json)
           for key in registryName registryLoginServer environmentId \
             ingestionIdentityId ingestionIdentityClientId \
-            workerIdentityId workerIdentityClientId \
-            serviceBusFqdn incidentQueueName; do
+            workerIdentityId workerIdentityClientId scalerIdentityId \
+            serviceBusName serviceBusFqdn incidentQueueName; do
             value=$(echo "$outputs" | jq -r ".${key}.value")
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
           done
@@ -64,21 +65,27 @@ jobs:
       # Retried because this step depends on two registries we do not control:
       # Docker Hub for the base image and ACR for the push. A 502 from either
       # has already failed a deployment whose code was perfectly fine.
-      - name: Build and push image
+      - name: Build and push images
         id: image
         run: |
           registry='${{ steps.core.outputs.registryLoginServer }}'
-          image="${registry}/incident-ingestion:${GITHUB_SHA}"
+
+          # $1 repository, $2 build context.
+          build_and_push() {
+            docker buildx build \
+              --platform linux/amd64 \
+              --tag "${registry}/$1:${GITHUB_SHA}" \
+              --tag "${registry}/$1:latest" \
+              --push \
+              "./$2"
+          }
 
           for attempt in 1 2 3; do
             if az acr login --name '${{ steps.core.outputs.registryName }}' \
-              && docker buildx build \
-                --platform linux/amd64 \
-                --tag "$image" \
-                --tag "${registry}/incident-ingestion:latest" \
-                --push \
-                ./ingestion-service; then
-              echo "reference=${image}" >> "$GITHUB_OUTPUT"
+              && build_and_push incident-ingestion ingestion-service \
+              && build_and_push incident-worker worker-service; then
+              echo "ingestion=${registry}/incident-ingestion:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+              echo "worker=${registry}/incident-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
@@ -106,15 +113,13 @@ jobs:
               identityClientId='${{ steps.core.outputs.ingestionIdentityClientId }}' \
               serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
               serviceBusQueue='${{ steps.core.outputs.incidentQueueName }}' \
-              image='${{ steps.image.outputs.reference }}' \
+              image='${{ steps.image.outputs.ingestion }}' \
             --query properties.outputs.url.value -o tsv)
           echo "url=${url}" >> "$GITHUB_OUTPUT"
 
-      # Processing worker skeleton. It deploys on a public placeholder image and
-      # takes no ingress, so it proves the environment, identity and Service Bus
-      # receive wiring without waiting on the real consumer. When that image
-      # exists, pass registryServer and image here; nothing else changes.
-      - name: Deploy the processing worker (skeleton)
+      # The consumer side of the platform. No ingress and no health probe: it
+      # is scaled, and judged, by the queue -- see the verification step below.
+      - name: Deploy the processing worker
         run: |
           az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
@@ -124,8 +129,12 @@ jobs:
               environmentId='${{ steps.core.outputs.environmentId }}' \
               identityId='${{ steps.core.outputs.workerIdentityId }}' \
               identityClientId='${{ steps.core.outputs.workerIdentityClientId }}' \
+              scalerIdentityId='${{ steps.core.outputs.scalerIdentityId }}' \
               serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
+              serviceBusNamespace='${{ steps.core.outputs.serviceBusName }}' \
               serviceBusQueue='${{ steps.core.outputs.incidentQueueName }}' \
+              registryServer='${{ steps.core.outputs.registryLoginServer }}' \
+              image='${{ steps.image.outputs.worker }}' \
             --query properties.outputs.appName.value -o tsv
 
       # A deployment that reports success without being reachable is worse
@@ -149,4 +158,81 @@ jobs:
             sleep 6
           done
           echo "::error::${url}/health did not report healthy" >&2
+          exit 1
+
+      # The worker has no ingress, so "is it alive" cannot be a health probe.
+      # The only honest question is whether incidents actually leave the queue,
+      # so this posts one through the deployed ingestion service and waits for
+      # the backlog to come back down. That exercises the whole path in one
+      # assertion: ingress -> publish -> queue -> KEDA wakes a replica from
+      # zero -> receive -> complete. Five minutes because a cold start from
+      # zero costs a scaler poll (30s) plus an image pull.
+      - name: Verify the worker drains the queue
+        run: |
+          url='${{ steps.app.outputs.url }}'
+          namespace='${{ steps.core.outputs.serviceBusName }}'
+          queue='${{ steps.core.outputs.incidentQueueName }}'
+
+          counts() {
+            az servicebus queue show \
+              --resource-group "$RESOURCE_GROUP" \
+              --namespace-name "$namespace" \
+              --name "$queue" \
+              --query '[countDetails.activeMessageCount, countDetails.deadLetterMessageCount]' \
+              -o tsv
+          }
+
+          # A dead-letter left over from an earlier run is not this run's
+          # failure, so the assertion is on the change, not the total.
+          read -r active_before dead_before <<< "$(counts)"
+          echo "before: active=${active_before} dead-lettered=${dead_before}"
+
+          # Posted through the real contract endpoint, not /simulate: that one
+          # answers 200 with {"status":"error"} when the publish fails, so curl
+          # would succeed, nothing would reach the queue, and the drain check
+          # below would pass on an empty queue without the worker ever waking.
+          # /api/v1/incidents answers 502 on a failed publish, and the body is
+          # asserted as well so a future change to that status cannot quietly
+          # hollow this check out again.
+          body=$(curl -fsS --max-time 30 -X POST "${url}/api/v1/incidents" \
+            -H 'content-type: application/json' \
+            -d "{
+              \"event_id\": \"EVT-CD-${GITHUB_SHA::7}-$(date +%s)\",
+              \"tenant_id\": \"TENANT-CD\",
+              \"site_id\": \"SITE-CD\",
+              \"source_id\": \"CAM-CD\",
+              \"source_name\": \"Deployment verification\",
+              \"source_type\": \"video_analytics\",
+              \"analytics_type\": \"intrusion_detection\",
+              \"event_type\": \"intrusion_detected\",
+              \"severity\": \"low\",
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S)\",
+              \"confidence\": 0.99,
+              \"description\": \"Synthetic incident from the CD pipeline\"
+            }")
+
+          if ! echo "$body" | grep -q '"status":"accepted"'; then
+            echo "::error::Ingestion did not accept the verification incident: ${body}" >&2
+            exit 1
+          fi
+          echo "published one incident through ${url}"
+
+          for attempt in $(seq 1 30); do
+            sleep 10
+            read -r active dead <<< "$(counts)"
+
+            if [ "$dead" -gt "$dead_before" ]; then
+              echo "::error::The worker dead-lettered the incident instead of processing it (dead-letter count ${dead_before} -> ${dead}). Check the worker logs." >&2
+              exit 1
+            fi
+
+            if [ "$active" -eq 0 ]; then
+              echo "::notice::Worker drained ${queue} after $((attempt * 10))s"
+              exit 0
+            fi
+
+            echo "waiting: ${active} message(s) still on ${queue}"
+          done
+
+          echo "::error::${queue} still holds ${active} message(s) after 5 minutes; the worker is not consuming" >&2
           exit 1

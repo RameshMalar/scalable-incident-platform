@@ -7,6 +7,11 @@ updates:
     schedule:
       interval: weekly
 
+  - package-ecosystem: pip
+    directory: /worker-service
+    schedule:
+      interval: weekly
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -14,5 +19,10 @@ updates:
 
   - package-ecosystem: docker
     directory: /ingestion-service
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /worker-service
     schedule:
       interval: weekly

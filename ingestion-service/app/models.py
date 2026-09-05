@@ -1,3 +1,17 @@
+"""The Common Event Model.
+
+This module is the platform's contract between analytics producers and
+downstream consumers, so every service that speaks it carries the same file:
+`ingestion-service/app/models.py` and `worker-service/app/models.py` are
+byte-identical copies, and CI fails the build if the two ever drift. Edit one,
+copy it over the other.
+
+They are copies rather than a shared package because each service builds from
+its own directory as its Docker context; sharing the model as a real package
+means moving both builds to a repository-root context, which is a change to the
+deployment pipeline rather than to the model.
+"""
+
 from datetime import datetime
 from typing import Optional
 

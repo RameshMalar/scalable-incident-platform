@@ -6,13 +6,15 @@ downstream consumers. Intrusion Detection is the seed producer used to validate
 the architecture.
 
 Sprint 1 delivers the Common Event Model and the Incident Ingestion Service.
+Sprint 2 adds the Processing Worker and scales it on queue depth.
 
 ## Repository layout
 
 | Path | Contents |
 | --- | --- |
 | `ingestion-service/` | Incident Ingestion Service (FastAPI) and its tests |
-| `infra/` | Azure infrastructure as Bicep: `core.bicep` (shared) and `ingestion.bicep` (per service) |
+| `worker-service/` | Processing Worker: consumes `incident-events`, and its tests |
+| `infra/` | Azure infrastructure as Bicep: `core.bicep` (shared), `ingestion.bicep` and `worker.bicep` (per service) |
 | `scripts/` | One-off setup scripts |
 | `.github/workflows/` | CI, CD and static analysis pipelines |
 
@@ -69,6 +71,32 @@ Generate a sample incident without a real camera:
 curl -X POST http://localhost:8000/api/v1/simulate/intrusion
 ```
 
+### Running the worker locally
+
+The worker has no mock mode: a consumer with nothing to consume from is not a
+consumer. It needs a real queue, so point it at the deployed namespace. Your
+`az login` user needs **Azure Service Bus Data Receiver** on it.
+
+```bash
+cd worker-service
+pip install -r requirements-dev.txt
+export SERVICE_BUS_FQDN="$(az servicebus namespace list -g rg-incident-platform \
+  --query "[?starts_with(name, 'incident-bus')].serviceBusEndpoint | [0]" -o tsv \
+  | sed -E 's~https://~~; s~:443/?$~~')"
+python -m app.main
+```
+
+It logs one line per incident and exits cleanly on Ctrl-C, draining whatever it
+already holds. Run it alongside the ingestion service and every
+`POST /api/v1/simulate/intrusion` should appear in its output within a second.
+
+Its tests need no queue and no credentials:
+
+```bash
+cd worker-service
+python -m pytest tests -v
+```
+
 ## Deploying to Azure
 
 Deployment is automatic: **every push to `main` builds, deploys and verifies
@@ -119,16 +147,15 @@ Only needed when working on the infrastructure itself:
 ```bash
 az deployment group create \
   --resource-group <your-resource-group> \
-  --template-file infra/main.bicep
+  --template-file infra/core.bicep
 ```
 
-The template is idempotent — re-running it reconciles drift rather than
-creating duplicates. It provisions a container registry, a Log Analytics
-workspace, a Container Apps environment, and the ingestion service scaled from
-zero to ten replicas on HTTP concurrency.
-
-On the very first deployment the app starts on a placeholder image; the CD
-pipeline replaces it with the real one.
+The templates are idempotent — re-running them reconciles drift rather than
+creating duplicates. `core.bicep` provisions the shared platform: a container
+registry, a Log Analytics workspace, a Container Apps environment, the Service
+Bus namespace and queue, and the identities. `ingestion.bicep` and
+`worker.bicep` each deploy one service on top of it and both require an `image`
+parameter, so in practice they are deployed by CD, which has just built one.
 
 ### Region
 
@@ -187,11 +214,48 @@ moves to the queue's built-in **dead-letter subqueue** rather than blocking the
 queue or vanishing. The dead-letter path is not a separate resource — it is
 `incident-events/$deadletterqueue`, read by opening a receiver on that subqueue.
 
-The processing worker itself deploys today as a skeleton on a public placeholder
-image (`infra/worker.bicep`): it takes no ingress and does not yet consume, but
-its environment, identity and receive rights are provisioned and wired. Replacing
-the placeholder with the real image is a one-parameter change once that code
-lands.
+### The consumer side
+
+The worker revalidates every message against the Common Event Model rather than
+trusting the producer, and settles each one in exactly one of three ways:
+
+| Outcome | Settlement | Why |
+| --- | --- | --- |
+| Processed, or recognised as already processed | complete | The incident is done with |
+| Malformed — not JSON, or not an incident | dead-letter immediately | No number of retries will make it valid, and retrying it occupies a delivery slot the rest of the queue could use |
+| Anything else, such as an unavailable downstream | abandon | Transient; the broker redelivers, and dead-letters it itself after `maxDeliveryCount` |
+
+Because delivery is at-least-once, the worker also dedupes on `event_id` — the
+same id the publisher puts in the message's `message_id`. Today that memory is
+per-replica and bounded, so it suppresses a redelivery to the same replica and
+nothing more; a shared store makes it exact, and the natural place for it is the
+incident store, where an idempotent upsert makes the dedupe check and the write
+the same operation.
+
+The dedupe entry is written *after* the handler succeeds, not before. Claiming
+first would turn a crash midway through processing into a silently dropped
+incident, because the redelivery would be mistaken for a duplicate. This way a
+crash costs a reprocess, which is the cheaper of the two mistakes.
+
+On SIGTERM — a scale-in, a new revision, a node move — the worker finishes
+settling the batch it already holds before exiting. Messages dropped with their
+locks held are not lost, but nothing else can have them until the lock expires.
+
+### Scaling the worker
+
+The worker takes no HTTP, so there is nothing to scale it on but the queue.
+`worker.bicep` gives it a KEDA `azure-servicebus` rule: one replica per 20
+messages of backlog, from zero up to ten. A queue that is empty costs nothing,
+and a burst of incidents wakes replicas without anyone being paged.
+
+That rule needs to read the queue's depth, and **Data Receiver does not carry
+that right** — it can take messages off a queue but not ask how many are on it.
+The only built-in role that can is **Service Bus Data Owner**, which also grants
+send. Handing that to the worker identity would quietly give the worker's own
+code the ability to publish incidents, so it goes to a third identity,
+`incident-scaler-id`, scoped to the `incident-events` queue rather than to the
+namespace. The autoscaler can manage exactly one queue; the worker still only
+receives.
 
 ### Verifying the queue without the producer or worker
 
@@ -240,8 +304,8 @@ az role assignment create --assignee "$ME" --scope "$NS" --role "Azure Service B
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Every push and pull request | Runs unit tests; builds the image and smoke tests the running container; scans the image (Trivy), the source (Bandit) and the dependencies (pip-audit) |
-| `cd.yml` | Push to `main` | Deploys infrastructure (registry, logging, Container Apps environment, Service Bus namespace and queue, identities), builds and pushes a SHA-tagged image, rolls out the ingestion revision, deploys the processing-worker skeleton, and verifies `/health` reports both healthy **and** publishing to Service Bus |
+| `ci.yml` | Every push and pull request | Checks the Common Event Model is identical in both services; runs both test suites; builds both images and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit) |
+| `cd.yml` | Push to `main` | Deploys infrastructure (registry, logging, Container Apps environment, Service Bus namespace and queue, identities), builds and pushes SHA-tagged images for both services, rolls out the ingestion and worker revisions, verifies `/health` reports both healthy **and** publishing to Service Bus, then publishes a real incident and waits for the worker to drain the queue |
 
 Dependabot raises weekly pull requests for Python, Docker and Actions
 dependencies.
@@ -251,6 +315,18 @@ missing runtime dependency. The health verification exists so a deployment
 cannot report success while being unreachable — and, because `/health` names the
 active publisher, so it cannot report success while quietly dropping every
 incident it accepts.
+
+The worker has no endpoint to probe, so its verification is behavioural: CD
+posts one incident through the deployed ingestion service and fails unless the
+queue's backlog returns to zero, or if the message dead-letters instead. That
+single assertion covers the whole path — ingress, publish, queue, the autoscaler
+waking a replica from zero, receive, complete — and it is the only check that
+would notice the worker's receive rights or its scale rule being wrong.
+
+The model-drift check exists because both services carry their own copy of the
+Common Event Model, so that each can build from its own directory. Drift between
+the copies is a protocol break that neither service's unit tests can see: each
+would still agree with itself.
 
 Image builds are retried three times with increasing backoff. Both pipelines
 pull the base image from Docker Hub and push to a registry, neither of which
