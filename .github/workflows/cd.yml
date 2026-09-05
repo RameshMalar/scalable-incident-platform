@@ -182,9 +182,33 @@ jobs:
               -o tsv
           }
 
+          # `az --query '[a, b]' -o tsv` prints the two values on SEPARATE
+          # LINES, not tab-separated on one, so `read a b <<< "$(counts)"` takes
+          # only the first line and leaves the second variable empty. That is
+          # how the dead-letter guard below came to be silently disabled:
+          # `[ 0 -gt "" ]` errors out and reads as false, and since a
+          # dead-lettered message also leaves activeMessageCount at 0, the drain
+          # check then reported success on exactly the failure it exists to
+          # catch. Both values are parsed by line and asserted to be numbers, so
+          # a future change to the query shape fails loudly instead.
+          read_counts() {
+            local out
+            out="$(counts)"
+            active="$(echo "$out" | sed -n 1p)"
+            dead="$(echo "$out" | sed -n 2p)"
+            case "${active}:${dead}" in
+              *[!0-9:]*|:*|*:)
+                echo "::error::Could not read queue counts (active='${active}' dead='${dead}'). The az query shape changed." >&2
+                exit 1
+                ;;
+            esac
+          }
+
           # A dead-letter left over from an earlier run is not this run's
           # failure, so the assertion is on the change, not the total.
-          read -r active_before dead_before <<< "$(counts)"
+          read_counts
+          active_before=$active
+          dead_before=$dead
           echo "before: active=${active_before} dead-lettered=${dead_before}"
 
           # Posted through the real contract endpoint, not /simulate: that one
@@ -219,7 +243,7 @@ jobs:
 
           for attempt in $(seq 1 30); do
             sleep 10
-            read -r active dead <<< "$(counts)"
+            read_counts
 
             if [ "$dead" -gt "$dead_before" ]; then
               echo "::error::The worker dead-lettered the incident instead of processing it (dead-letter count ${dead_before} -> ${dead}). Check the worker logs." >&2
