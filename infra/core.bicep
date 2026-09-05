@@ -81,9 +81,9 @@ resource ingestionAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   }
 }
 
-// Provisioned now so the messaging RBAC and the worker's pull rights exist
-// before Malar's processing worker has an image. The worker deploys today on a
-// placeholder; only its container image changes when that work lands.
+// The processing worker's identity: it pulls the worker image from the registry
+// and receives from the queue. Kept separate from the ingestion identity so
+// either service's rights can be revoked without touching the other.
 resource workerIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${namePrefix}-worker-id'
   location: location
@@ -145,7 +145,7 @@ resource incidentQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-previe
   }
 }
 
-// Ingestion (Yixin's POST) only ever publishes.
+// The ingestion service only ever publishes.
 resource ingestionBusSender 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(serviceBus.id, ingestionIdentity.id, serviceBusDataSenderRoleId)
   scope: serviceBus
@@ -156,7 +156,7 @@ resource ingestionBusSender 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
-// The worker (Malar's processor) only ever consumes.
+// The processing worker only ever consumes.
 resource workerBusReceiver 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(serviceBus.id, workerIdentity.id, serviceBusDataReceiverRoleId)
   scope: serviceBus
