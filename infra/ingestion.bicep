@@ -80,6 +80,19 @@ resource ingestion 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'AZURE_CLIENT_ID'
               value: identityClientId
             }
+            // Without this the service falls back to the in-memory mock
+            // publisher: it would answer 202 to every incident and drop it.
+            {
+              name: 'EVENT_PUBLISHER'
+              value: 'servicebus'
+            }
+            // Native AMQP on 5671. The WebSocket default exists for laptops
+            // behind a firewall; here the egress is ours and the native port is
+            // the faster of the two, which matters for the throughput figures.
+            {
+              name: 'SERVICE_BUS_TRANSPORT'
+              value: 'amqp'
+            }
           ]
           probes: [
             {

@@ -109,5 +109,14 @@ and is not shared across replicas.
 Health check used by the deploy pipeline and Container Apps.
 
 ```json
-{ "status": "healthy", "service": "incident-ingestion-service" }
+{
+  "status": "healthy",
+  "service": "incident-ingestion-service",
+  "publisher": "servicebus"
+}
 ```
+
+`publisher` names the publisher the process actually started with: `servicebus`
+when `EVENT_PUBLISHER=servicebus`, otherwise `mock`. A deployed service
+answering `mock` is accepting incidents and discarding them, so the CD pipeline
+fails the deployment on that value rather than on `status` alone.
