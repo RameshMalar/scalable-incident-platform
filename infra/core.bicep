@@ -25,7 +25,7 @@ var cosmosName = toLower('${namePrefix}-cosmos-${suffix}')
 var cosmosDatabaseName = 'incidents'
 var cosmosContainerName = 'incidents'
 
-var keyVaultName = toLower('${namePrefix}-kv-${suffix}')
+var keyVaultName = toLower('${take(namePrefix, 8)}kv${suffix}')
 
 
 // Azure Container Registry pull role.
