@@ -1,13 +1,13 @@
 targetScope = 'resourceGroup'
 
-// Processing Worker. Consumes incidents from `incident-events`, validates them
-// against the Common Event Model, and settles each one -- complete, abandon or
-// dead-letter. It takes no inbound HTTP, so it has no ingress and no health
-// probe: the platform's evidence that it is alive is the queue draining.
+// Processing Worker.
 //
-// That is also why it scales on queue depth rather than request concurrency.
-// Without the KEDA rule below, an app with no ingress and `minReplicas: 0`
-// scales to zero and has no way to start back up.
+// Consumes incidents from `incident-events`, validates them against the Common
+// Event Model, persists them to Cosmos DB, and publishes them to
+// `notification-events` for downstream notification delivery.
+//
+// The worker has no inbound HTTP traffic, so it has no ingress and no HTTP
+// health probe. It scales based on Service Bus queue depth.
 
 @description('Region for all resources.')
 param location string = 'malaysiawest'
@@ -18,23 +18,26 @@ param namePrefix string = 'incident'
 @description('Resource id of the Container Apps environment from core.bicep.')
 param environmentId string
 
-@description('Resource id of the worker identity (has Service Bus Data Receiver and AcrPull).')
+@description('Resource id of the worker identity (has Service Bus Data Receiver, notification queue Sender, and AcrPull).')
 param identityId string
 
-@description('Client id of that identity, for DefaultAzureCredential.')
+@description('Client id of the worker identity, for DefaultAzureCredential.')
 param identityClientId string
 
-@description('Resource id of the identity the autoscaler polls the queue with (has Service Bus Data Owner on the queue).')
+@description('Resource id of the identity the autoscaler uses to read queue depth.')
 param scalerIdentityId string
 
 @description('Fully qualified Service Bus host, e.g. incident-bus-xxx.servicebus.windows.net.')
 param serviceBusFqdn string
 
-@description('Short name of the Service Bus namespace. The KEDA scaler identifies the namespace by name, not by host.')
+@description('Short name of the Service Bus namespace used by the KEDA scaler.')
 param serviceBusNamespace string
 
 @description('Queue the worker consumes incidents from.')
 param serviceBusQueue string = 'incident-events'
+
+@description('Queue the worker publishes processed incidents to for notification delivery.')
+param notificationQueue string = 'notification-events'
 
 @description('Cosmos DB account endpoint the worker writes incidents to.')
 param cosmosEndpoint string
@@ -57,29 +60,34 @@ param minReplicas int = 0
 @description('Maximum replicas the autoscaler may create.')
 param maxReplicas int = 10
 
-@description('Backlog each replica is expected to absorb. KEDA runs ceil(queueDepth / this) replicas, capped at maxReplicas.')
+@description('Backlog each replica is expected to absorb.')
 param messagesPerReplica int = 20
 
 resource worker 'Microsoft.App/containerApps@2025-01-01' = {
   name: '${namePrefix}-worker'
   location: location
+
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
-      // The worker's own identity, used by the container to pull the image and
-      // to receive messages, plus the autoscaler's, which the platform uses on
-      // the app's behalf to read queue depth.
+      // Worker identity:
+      // - pulls the image from ACR
+      // - receives from incident-events
+      // - sends to notification-events
       '${identityId}': {}
+
+      // Separate identity used by the KEDA scaler to inspect queue depth.
       '${scalerIdentityId}': {}
     }
   }
+
   properties: {
     managedEnvironmentId: environmentId
+
     configuration: {
-      // Required for non-HTTP event scale rules: with multiple active
-      // revisions the platform cannot decide which one the queue should
-      // scale.
+      // Required for queue-based scaling when minReplicas is zero.
       activeRevisionsMode: 'Single'
+
       registries: [
         {
           server: registryServer
@@ -87,53 +95,71 @@ resource worker 'Microsoft.App/containerApps@2025-01-01' = {
         }
       ]
     }
+
     template: {
       containers: [
         {
           name: 'worker'
           image: image
+
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
           }
+
           env: [
+            // Service Bus namespace shared by both the consumer and publisher.
             {
               name: 'SERVICE_BUS_FQDN'
               value: serviceBusFqdn
             }
+
+            // Queue consumed by the Processing Worker.
             {
               name: 'SERVICE_BUS_QUEUE'
               value: serviceBusQueue
             }
-            // Selects the worker identity for DefaultAzureCredential. Two
-            // identities are attached, so leaving this unset would leave the
-            // SDK no way to choose between them.
+
+            // Enable downstream notification publishing.
+            {
+              name: 'NOTIFICATION_PUBLISHER'
+              value: 'servicebus'
+            }
+
+            // Queue used for notification handoff.
+            {
+              name: 'NOTIFICATION_QUEUE'
+              value: notificationQueue
+            }
+
+            // Required because multiple user-assigned identities are attached
+            // to this Container App.
             {
               name: 'AZURE_CLIENT_ID'
               value: identityClientId
             }
-            // Native AMQP on 5671, for the same reason the ingestion service
-            // sets it: the WebSocket default exists for laptops behind a
-            // firewall, and here the egress is ours.
+
             {
               name: 'SERVICE_BUS_TRANSPORT'
               value: 'amqp'
             }
-            // Without this the worker logs incidents and stores none of them.
-            // Same shape as EVENT_PUBLISHER on the ingestion side, and asserted
-            // by CD for the same reason.
+
+            // Enable Cosmos persistence.
             {
               name: 'INCIDENT_STORE'
               value: 'cosmos'
             }
+
             {
               name: 'COSMOS_ENDPOINT'
               value: cosmosEndpoint
             }
+
             {
               name: 'COSMOS_DATABASE'
               value: cosmosDatabase
             }
+
             {
               name: 'COSMOS_CONTAINER'
               value: cosmosContainer
@@ -141,18 +167,22 @@ resource worker 'Microsoft.App/containerApps@2025-01-01' = {
           ]
         }
       ]
+
       scale: {
         minReplicas: minReplicas
         maxReplicas: maxReplicas
+
         rules: [
           {
             name: 'queue-depth'
+
             custom: {
               type: 'azure-servicebus'
-              // Managed identity rather than a connection string: the
-              // namespace has `disableLocalAuth: true`, so there is no SAS key
-              // for the scaler to hold even if we wanted one.
+
+              // Managed identity is used instead of a Service Bus connection
+              // string because local/SAS authentication is disabled.
               identity: scalerIdentityId
+
               metadata: {
                 namespace: serviceBusNamespace
                 queueName: serviceBusQueue

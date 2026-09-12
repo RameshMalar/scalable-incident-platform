@@ -13,6 +13,11 @@ import signal
 import sys
 
 from app.consumer import IncidentConsumer
+from app.notification_handler import PersistAndNotifyHandler
+from app.notification_publisher import (
+    MockNotificationPublisher,
+    ServiceBusNotificationPublisher,
+)
 from app.processor import IncidentHandler, IncidentProcessor, LoggingIncidentHandler
 from app.store import CosmosIncidentStore
 
@@ -32,20 +37,58 @@ def configure_logging() -> None:
 
 
 def build_handler() -> IncidentHandler:
-    """Pick where incidents go.
+    """Pick the worker processing pipeline.
 
-    Defaults to the logging handler so the worker runs locally with no Azure
-    account and no credentials. The deployed worker sets INCIDENT_STORE=cosmos;
-    without it the worker would consume the queue, log each incident and store
-    none of them -- which is why CD asserts on the store, not just on the drain.
+    Local development defaults to the logging handler so the worker can run
+    without Azure credentials.
+
+    The deployed worker uses:
+    - INCIDENT_STORE=cosmos
+    - NOTIFICATION_PUBLISHER=servicebus
+
+    This produces the processing flow:
+
+        incident-events
+              |
+              v
+        Processing Worker
+              |
+              +--> Cosmos DB
+              |
+              +--> notification-events
+
+    When Cosmos reports an incident as a duplicate, the notification publisher
+    still attempts the downstream handoff. This protects against the case where
+    persistence succeeded but notification publishing failed on an earlier
+    delivery.
     """
-    if os.environ.get("INCIDENT_STORE") == "cosmos":
-        return CosmosIncidentStore()
-    return LoggingIncidentHandler()
+
+    if os.environ.get("INCIDENT_STORE") != "cosmos":
+        return LoggingIncidentHandler()
+
+    store = CosmosIncidentStore()
+
+    if os.environ.get("NOTIFICATION_PUBLISHER") == "servicebus":
+        publisher = ServiceBusNotificationPublisher()
+    else:
+        # Allows Cosmos-related local/unit testing without requiring access to
+        # Service Bus.
+        publisher = MockNotificationPublisher()
+
+    return PersistAndNotifyHandler(
+        store=store,
+        publisher=publisher,
+    )
 
 
 def handler_name(handler: IncidentHandler) -> str:
-    return "cosmos" if isinstance(handler, CosmosIncidentStore) else "logging"
+    if isinstance(handler, PersistAndNotifyHandler):
+        return "cosmos+notification"
+
+    if isinstance(handler, CosmosIncidentStore):
+        return "cosmos"
+
+    return "logging"
 
 
 def install_shutdown_handler(stop: asyncio.Event) -> None:
@@ -58,6 +101,7 @@ def install_shutdown_handler(stop: asyncio.Event) -> None:
     saves that.
     """
     loop = asyncio.get_running_loop()
+
     for sig in (signal.SIGTERM, signal.SIGINT):
         try:
             loop.add_signal_handler(sig, stop.set)
@@ -72,7 +116,9 @@ async def run() -> int:
 
     try:
         handler = build_handler()
-        consumer = IncidentConsumer(processor=IncidentProcessor(handler))
+        consumer = IncidentConsumer(
+            processor=IncidentProcessor(handler)
+        )
     except ValueError as exc:
         logger.error("worker cannot start: %s", exc)
         return 2
@@ -85,15 +131,21 @@ async def run() -> int:
         await start()
 
     await consumer.start()
+
     logger.info(
-        "worker ready queue=%s store=%s", consumer.queue_name, handler_name(handler)
+        "worker ready queue=%s store=%s",
+        consumer.queue_name,
+        handler_name(handler),
     )
 
     try:
         await consumer.run(stop)
+
     finally:
         logger.info("worker draining and shutting down")
+
         await consumer.close()
+
         close = getattr(handler, "close", None)
         if close is not None:
             await close()
