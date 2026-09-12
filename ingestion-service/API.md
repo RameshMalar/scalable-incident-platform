@@ -8,6 +8,46 @@ running, generated from the same code this document describes. Use `/docs`
 as the source of truth for field types and constraints; use this document
 for the behavior that a schema can't express.
 
+## Authentication
+
+Every write to `/api/v1/incidents` requires an Entra access token:
+
+```
+Authorization: Bearer <token>
+```
+
+The token must be signed by the platform's Entra directory, name this API as its
+audience, be unexpired, and carry **`Incidents.Write`** — as an application role
+for a producer service, or as a delegated scope for an operator or test client.
+
+Producers authenticate with the client credentials flow against their own app
+registration. Anything else is refused with **401**; a valid token lacking the
+role is refused with **403**.
+
+### Tenant isolation
+
+Authentication and authorisation are separate questions here, and the second one
+matters as much as the first.
+
+`tenant_id` is an ordinary field of the Common Event Model, so a producer holding
+a valid token could otherwise submit incidents attributed to another customer.
+The token's client id identifies the producer, the platform maps that to the one
+tenant the producer may speak for, and a mismatch is refused with **403**:
+
+```json
+{ "detail": "this producer may not publish incidents for TENANT-02" }
+```
+
+That mapping is configuration today (`TENANT_MAP`). It is the tenant registry the
+Subscription API takes over, and the shape is deliberately the same: producer
+identity in, tenant out.
+
+Local development runs with `AUTH_MODE` unset, which switches authentication off
+so the service needs no Entra directory and no token. `/health` reports which
+mode is active, and the deployment pipeline fails on anything but `entra` --
+then posts an unauthenticated incident and requires a 401, rather than trusting
+the field.
+
 ## `POST /api/v1/incidents`
 
 The real ingestion endpoint. Accepts one incident, validates it against the
@@ -112,7 +152,8 @@ Health check used by the deploy pipeline and Container Apps.
 {
   "status": "healthy",
   "service": "incident-ingestion-service",
-  "publisher": "servicebus"
+  "publisher": "servicebus",
+  "auth": "entra"
 }
 ```
 

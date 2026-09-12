@@ -49,9 +49,11 @@ def test_health_reports_service_identity_and_active_publisher(client):
     assert response.json() == {
         "status": "healthy",
         "service": "incident-ingestion-service",
-        # No EVENT_PUBLISHER in the test environment, so the process falls back
-        # to the mock and says so. The deployment pipeline asserts the opposite.
+        # No EVENT_PUBLISHER and no AUTH_MODE in the test environment, so the
+        # process falls back to the mock publisher and open access, and says so
+        # in both cases. The deployment pipeline asserts the opposite of each.
         "publisher": "mock",
+        "auth": "disabled",
     }
 
 
@@ -184,3 +186,21 @@ def test_debug_events_endpoint_is_removed(client):
     response = client.get("/api/v1/debug/events")
 
     assert response.status_code == 404
+
+
+def test_an_anonymous_incident_is_refused_once_authentication_is_on(client):
+    # The gap this closes: the deployed API answered 202 to anyone on the
+    # internet, for any tenant they cared to name.
+    from app.auth import TokenVerifier
+
+    client.app.state.verifier = TokenVerifier(
+        tenant_id="a-tenant",
+        audience="api://an-api",
+        tenant_map={},
+        jwk_client=object(),
+    )
+
+    response = client.post("/api/v1/incidents", json=sample_event())
+
+    assert response.status_code == 401
+    assert "Bearer" in response.headers.get("WWW-Authenticate", "")

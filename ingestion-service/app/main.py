@@ -9,6 +9,13 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 
+from app.auth import (
+    Producer,
+    auth_mode,
+    build_verifier,
+    enforce_tenant,
+    get_producer,
+)
 from app.models import IncidentEvent
 from app.publisher import (
     EventPublisher,
@@ -47,7 +54,17 @@ async def lifespan(app: FastAPI):
     publisher = _build_default_publisher()
     await publisher.start()
     app.state.publisher = publisher
-    logger.info("ingestion ready publisher=%s", _publisher_name(publisher))
+
+    verifier = build_verifier()
+    verifier.warm()
+    app.state.verifier = verifier
+
+    logger.info(
+        "ingestion ready publisher=%s auth=%s tenants=%d",
+        _publisher_name(publisher),
+        auth_mode(verifier),
+        len(getattr(verifier, "tenant_map", {})),
+    )
     try:
         yield
     finally:
@@ -109,6 +126,7 @@ def health_check(request: Request):
         "status": "healthy",
         "service": "incident-ingestion-service",
         "publisher": _publisher_name(request.app.state.publisher),
+        "auth": auth_mode(request.app.state.verifier),
     }
 
 
@@ -158,7 +176,14 @@ async def create_incident(
     event: IncidentEvent,
     response: Response,
     publisher: EventPublisher = Depends(get_publisher),
+    producer: Producer | None = Depends(get_producer),
 ):
+    # Authentication proves the caller holds a valid token. It does not prove
+    # they may speak for the tenant named in the body -- tenant_id is an
+    # ordinary field of the Common Event Model, so without this an
+    # authenticated producer could attribute incidents to another customer.
+    enforce_tenant(producer, event.tenant_id)
+
     try:
         await publisher.publish(event)
     except PublishError as exc:

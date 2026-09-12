@@ -8,3 +8,4 @@ azure-identity==1.25.3
 # dies at startup with "aiohttp package is not installed" -- azure-servicebus
 # alone does not pull it in, because AMQP does not go through the HTTP pipeline.
 azure-core[aio]==1.41.0
+pyjwt[crypto]==2.14.0
