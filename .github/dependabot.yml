@@ -17,12 +17,35 @@ updates:
     schedule:
       interval: weekly
 
+  # The interpreter version is a decision the team makes deliberately, not a
+  # dependency to be carried forward weekly. CI runs the unit tests on 3.12,
+  # and both services must sit on the same interpreter so that the Common Event
+  # Model behaves identically on the producer and the consumer side -- so a
+  # bump is only ever correct if both images move together and the suites are
+  # re-run on the new version.
+  #
+  # Every bump proposed so far has been closed rather than merged: 3.14 twice
+  # (#2, #14), and 3.13 once (#19), that last one because python:3.13-slim
+  # ships msgpack and setuptools at versions Trivy fails the build on. Ignoring
+  # major and minor updates stops the same pull request being reopened every
+  # week. Patch updates to 3.12 still come through, which is where the base
+  # image security fixes we actually want are published.
   - package-ecosystem: docker
     directory: /ingestion-service
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: python
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
 
   - package-ecosystem: docker
     directory: /worker-service
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: python
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
