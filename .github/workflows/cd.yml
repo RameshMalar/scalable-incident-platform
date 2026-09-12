@@ -264,7 +264,12 @@ jobs:
             exit 1
           fi
 
-          body=$(curl -fsS --max-time 30 -X POST "${url}/api/v1/incidents" \
+          # -w writes the status onto the end of the body rather than -f
+          # discarding it. The first run of this failed with a bare
+          # "curl: (22) ... error: 401" and nothing to say which check refused
+          # the token; an auth failure should explain itself.
+          body=$(curl -sS --max-time 30 -w '\n<<HTTP:%{http_code}>>' \
+            -X POST "${url}/api/v1/incidents" \
             -H "Authorization: Bearer ${token}" \
             -H 'content-type: application/json' \
             -d "{
@@ -283,7 +288,10 @@ jobs:
             }")
 
           if ! echo "$body" | grep -q '"status":"accepted"'; then
-            echo "::error::Ingestion did not accept the verification incident: ${body}" >&2
+            echo "::error::Ingestion did not accept the verification incident. Response: ${body}" >&2
+            # A 401 or 403 here is about the token, not the queue, so say which
+            # claim the API objected to rather than leaving a status code.
+            echo "$body" | grep -o '"detail":"[^"]*"' >&2 || true
             exit 1
           fi
           echo "published one incident through ${url}"

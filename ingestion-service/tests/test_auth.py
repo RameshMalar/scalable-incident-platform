@@ -212,3 +212,44 @@ def test_entra_mode_requires_a_tenant_and_an_audience(monkeypatch):
 def test_auth_mode_names_what_is_actually_running():
     assert auth_mode(build_verifier()) == "entra"
     assert auth_mode(OpenAccess()) == "disabled"
+
+
+# --- both token versions ---------------------------------------------------
+#
+# Entra issues two shapes and which one a caller gets depends on how they
+# asked. `az account get-access-token --resource api://...` yields v1.0;
+# `--scope api://.../.default` yields v2.0. An API that accepts only one
+# rejects legitimate callers -- which is exactly how the first deployment of
+# this failed, with CD's own token refused as "issued by a different tenant".
+
+V1_ISSUER = f"https://sts.windows.net/{TENANT}/"
+APP_ID = AUDIENCE[len("api://"):]
+
+
+def test_a_v1_token_is_accepted():
+    token = make_token(
+        iss=V1_ISSUER, aud=AUDIENCE, azp=None, appid=PRODUCER_01
+    )
+
+    assert build_verifier().verify(token).tenant_id == "TENANT-01"
+
+
+def test_a_v2_token_is_accepted():
+    token = make_token(aud=APP_ID)
+
+    assert build_verifier().verify(token).tenant_id == "TENANT-01"
+
+
+def test_the_bare_app_id_and_the_api_uri_are_the_same_audience():
+    for audience in (AUDIENCE, APP_ID):
+        assert build_verifier().verify(make_token(aud=audience)).client_id == PRODUCER_01
+
+
+def test_a_v1_token_from_another_directory_is_still_rejected():
+    # Accepting two issuer shapes must not mean accepting two directories.
+    token = make_token(iss="https://sts.windows.net/some-other-tenant/")
+
+    with pytest.raises(AuthError) as exc:
+        build_verifier().verify(token)
+
+    assert "different tenant" in exc.value.detail

@@ -32,10 +32,17 @@ logger = logging.getLogger("app.auth")
 ENTRA = "entra"
 DISABLED = "disabled"
 
-# Entra publishes v2.0 tokens under this issuer. Pinning it means a token signed
-# by some other tenant -- valid, but not ours -- is rejected rather than merely
-# well-formed.
-ISSUER_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}/v2.0"
+# Entra issues two token versions and they differ in ways an API has to handle
+# explicitly. A v2.0 token carries iss=login.microsoftonline.com/<tid>/v2.0,
+# azp, and the client id as its audience; a v1.0 token carries
+# iss=sts.windows.net/<tid>/, appid, and the resource URI as its audience.
+# Which one a caller gets depends on how they asked -- `--scope .../.default`
+# yields v2.0 where `--resource api://...` yields v1.0 -- so an API that accepts
+# only one rejects perfectly legitimate callers. Both issuers are pinned to this
+# directory, which is the part that actually matters: a token from some other
+# tenant is refused either way.
+V2_ISSUER_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}/v2.0"
+V1_ISSUER_TEMPLATE = "https://sts.windows.net/{tenant_id}/"
 JWKS_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
 
 
@@ -104,7 +111,16 @@ class TokenVerifier:
                 "AUTH_MODE=entra"
             )
 
-        self.issuer = ISSUER_TEMPLATE.format(tenant_id=self.tenant_id)
+        self.issuers = {
+            V2_ISSUER_TEMPLATE.format(tenant_id=self.tenant_id),
+            V1_ISSUER_TEMPLATE.format(tenant_id=self.tenant_id),
+        }
+        # `api://<appId>` and the bare `<appId>` are the same API. v1.0 tokens
+        # name the first, v2.0 tokens the second.
+        self.audiences = {self.audience}
+        if self.audience.startswith("api://"):
+            self.audiences.add(self.audience[len("api://"):])
+
         self._jwk_client = jwk_client
 
     def _keys(self):
@@ -132,18 +148,20 @@ class TokenVerifier:
                 token,
                 signing_key.key,
                 algorithms=["RS256"],
-                audience=self.audience,
-                issuer=self.issuer,
-                options={"require": ["exp", "iss", "aud"]},
+                audience=list(self.audiences),
+                # Checked below against the set rather than here against one
+                # string, so both token versions are accepted.
+                options={"require": ["exp", "iss", "aud"], "verify_iss": False},
             )
         except jwt.ExpiredSignatureError:
             raise AuthError("the access token has expired")
         except jwt.InvalidAudienceError:
             raise AuthError("the access token was issued for a different API")
-        except jwt.InvalidIssuerError:
-            raise AuthError("the access token was issued by a different tenant")
         except jwt.PyJWTError as exc:
             raise AuthError(f"the access token is not valid: {exc}")
+
+        if claims.get("iss") not in self.issuers:
+            raise AuthError("the access token was issued by a different tenant")
 
         # Producers are services, so the right is granted as an application role.
         # A delegated scope is accepted too, which is how a human operator or a
