@@ -114,6 +114,8 @@ jobs:
               identityClientId='${{ steps.core.outputs.ingestionIdentityClientId }}' \
               serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
               serviceBusQueue='${{ steps.core.outputs.incidentQueueName }}' \
+              authAudience='${{ vars.AUTH_AUDIENCE }}' \
+              tenantMap='${{ vars.TENANT_MAP }}' \
               image='${{ steps.image.outputs.ingestion }}' \
             --query properties.outputs.url.value -o tsv)
           echo "url=${url}" >> "$GITHUB_OUTPUT"
@@ -162,7 +164,27 @@ jobs:
                   echo "::error::${url} is healthy but not ready to publish: ${ready}" >&2
                   exit 1
                 fi
-                echo "::notice::Deployed, healthy and ready at ${url}"
+
+                # The ingress is public. A revision that came up with
+                # authentication switched off would accept an incident from
+                # anyone, for any tenant they named -- which is how this service
+                # ran until now. Fail the deployment rather than ship it.
+                if ! echo "$body" | grep -q '"auth":"entra"'; then
+                  echo "::error::${url} is serving with authentication disabled: ${body}" >&2
+                  exit 1
+                fi
+
+                # And prove it end to end rather than trusting the field: an
+                # unauthenticated POST must be refused.
+                anon=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+                  -X POST "${url}/api/v1/incidents" -H 'content-type: application/json' \
+                  -d '{"event_id":"EVT-ANON","tenant_id":"T","site_id":"S","source_id":"C","source_name":"n","source_type":"video_analytics","analytics_type":"intrusion_detection","event_type":"intrusion_detected","severity":"low","timestamp":"2026-01-01T00:00:00"}')
+                if [ "$anon" != "401" ]; then
+                  echo "::error::An unauthenticated POST returned ${anon}, expected 401. The API is open." >&2
+                  exit 1
+                fi
+
+                echo "::notice::Deployed, healthy, ready, and refusing anonymous writes at ${url}"
                 exit 0
               fi
               echo "::error::${url}/health is healthy but not publishing to Service Bus: ${body}" >&2
@@ -231,11 +253,23 @@ jobs:
           # /api/v1/incidents answers 502 on a failed publish, and the body is
           # asserted as well so a future change to that status cannot quietly
           # hollow this check out again.
+          # The API now refuses anonymous writes, so this step has to
+          # authenticate like any other producer. It uses the deploy identity's
+          # own token, which means the drain check exercises the authenticated
+          # path rather than a back door.
+          token=$(az account get-access-token --resource '${{ vars.AUTH_AUDIENCE }}' \
+            --query accessToken -o tsv 2>/dev/null || true)
+          if [ -z "$token" ]; then
+            echo "::error::Could not get a token for ${{ vars.AUTH_AUDIENCE }}. The deploy identity needs the Incidents.Write app role and an entry in TENANT_MAP." >&2
+            exit 1
+          fi
+
           body=$(curl -fsS --max-time 30 -X POST "${url}/api/v1/incidents" \
+            -H "Authorization: Bearer ${token}" \
             -H 'content-type: application/json' \
             -d "{
               \"event_id\": \"EVT-CD-${GITHUB_SHA::7}-$(date +%s)\",
-              \"tenant_id\": \"TENANT-CD\",
+              \"tenant_id\": \"${{ vars.CD_TENANT_ID }}\",
               \"site_id\": \"SITE-CD\",
               \"source_id\": \"CAM-CD\",
               \"source_name\": \"Deployment verification\",

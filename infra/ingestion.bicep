@@ -21,6 +21,15 @@ param serviceBusFqdn string
 @description('Queue the ingestion service publishes incidents to.')
 param serviceBusQueue string = 'incident-events'
 
+@description('Application ID URI of the platform API app registration, e.g. api://<appId>. Tokens must name it as their audience.')
+param authAudience string
+
+@description('Producer client id to tenant mapping, as "appId:TENANT-01,appId:TENANT-02". This is the tenant registry the Subscription API takes over.')
+param tenantMap string
+
+@description('Entra directory that issues producer tokens. Defaults to the subscription\'s own tenant.')
+param authTenantId string = subscription().tenantId
+
 @description('Fully qualified image reference, tagged with the commit it was built from.')
 param image string
 
@@ -92,6 +101,28 @@ resource ingestion 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'SERVICE_BUS_TRANSPORT'
               value: 'amqp'
+            }
+            // Without this the API accepts an incident from anyone on the
+            // internet, attributed to any tenant they name. /health reports the
+            // mode and CD fails the deployment on anything but 'entra'.
+            {
+              name: 'AUTH_MODE'
+              value: 'entra'
+            }
+            {
+              name: 'AUTH_TENANT_ID'
+              value: authTenantId
+            }
+            {
+              name: 'AUTH_AUDIENCE'
+              value: authAudience
+            }
+            // Not a secret: these are public client ids and tenant labels. The
+            // authorisation they carry comes from the signed token, not from
+            // this list.
+            {
+              name: 'TENANT_MAP'
+              value: tenantMap
             }
           ]
           probes: [

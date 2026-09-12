@@ -306,6 +306,44 @@ az role assignment create --assignee "$ME" --scope "$NS" --role "Azure Service B
 az role assignment create --assignee "$ME" --scope "$NS" --role "Azure Service Bus Data Receiver"
 ```
 
+## Authentication and tenant isolation
+
+The ingress is public, so the API requires an Entra access token carrying
+`Incidents.Write`. Producers are services and authenticate with client
+credentials against their own app registration; the role is granted as an
+application role on the platform's API registration.
+
+Authentication is only half of it. `tenant_id` is an ordinary field of the
+Common Event Model, so an authenticated producer for one customer could
+otherwise submit incidents attributed to another. The token's client id
+identifies the producer, `TENANT_MAP` gives the one tenant that producer may
+speak for, and a mismatch is refused with 403. That map is the tenant registry
+the Subscription API takes over; the shape is the same either way.
+
+Local development runs with `AUTH_MODE` unset and authentication switched off,
+so the service needs no directory and no token. The deployed service must never
+do that, and two things stop it: `/health` reports the active mode and CD fails
+on anything but `entra`, and CD then posts an unauthenticated incident and
+requires a 401 rather than trusting the field.
+
+### One-time Entra setup
+
+Needed once per directory, by someone who can register applications.
+
+| Registration | Purpose |
+| --- | --- |
+| `incident-platform-api` | The API. Exposes `api://<appId>` as its Application ID URI and defines the `Incidents.Write` application role |
+| One per producer | Each analytics producer. Granted `Incidents.Write`, and mapped to its tenant in `TENANT_MAP` |
+
+Two repository variables carry the result, both identifiers rather than secrets:
+`AUTH_AUDIENCE` (the `api://<appId>` URI) and `TENANT_MAP`
+(`<producer appId>:TENANT-01,...`). `AUTH_TENANT_ID` defaults to the
+subscription's own tenant.
+
+The deploy identity needs `Incidents.Write` and an entry in `TENANT_MAP` too:
+CD's queue-drain check posts a real incident, and it now goes through the
+authenticated path like any other producer rather than round a back door.
+
 ## The incident store
 
 Incidents are persisted in Cosmos DB, NoSQL API, partitioned on `tenant_id` --
