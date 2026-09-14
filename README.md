@@ -14,6 +14,7 @@ Sprint 2 adds the Processing Worker and scales it on queue depth.
 | --- | --- |
 | `ingestion-service/` | Incident Ingestion Service (FastAPI) and its tests |
 | `worker-service/` | Processing Worker: consumes `incident-events`, and its tests |
+| `business-dashboard/` | Streamlit dashboard reading incidents straight out of Cosmos DB |
 | `infra/` | Azure infrastructure as Bicep: `core.bicep` (shared), `ingestion.bicep` and `worker.bicep` (per service) |
 | `scripts/` | One-off setup scripts |
 | `.github/workflows/` | CI, CD and static analysis pipelines |
@@ -159,9 +160,10 @@ az deployment group create \
 The templates are idempotent — re-running them reconciles drift rather than
 creating duplicates. `core.bicep` provisions the shared platform: a container
 registry, a Log Analytics workspace, a Container Apps environment, the Service
-Bus namespace and queue, and the identities. `ingestion.bicep` and
-`worker.bicep` each deploy one service on top of it and both require an `image`
-parameter, so in practice they are deployed by CD, which has just built one.
+Bus namespace and queue, and the identities. `ingestion.bicep`, `worker.bicep`
+and `dashboard.bicep` each deploy one service on top of it and all three
+require an `image` parameter, so in practice they are deployed by CD, which
+has just built one.
 
 ### Region
 
@@ -358,9 +360,11 @@ The account is provisioned with `enableFreeTier: true` and a
 past the free grant by accident. An overrun throttles rather than bills, which
 matters on a subscription whose spending limit disables everything once the
 credit is gone. `disableLocalAuth: true` matches the Service Bus posture: no
-keys, so the only way in is a managed identity holding a data-plane role. Only
-the worker has one -- ingestion publishes to the queue and never touches the
-store.
+keys, so the only way in is a managed identity holding a data-plane role. The
+worker holds **Data Contributor** (read and write); the business dashboard
+holds **Data Reader** on an identity of its own, so a bug in the dashboard can
+never corrupt the store. Ingestion has neither -- it publishes to the queue and
+never touches the store.
 
 **A measured number for planning the scalability run:** one incident write costs
 **9.9 RU**, so the free grant sustains roughly **101 writes per second**. A
@@ -386,12 +390,63 @@ The logging handler, which keeps the in-memory deduplicator, remains the local
 development path: the worker runs with no Azure account and no credentials, and
 stores nothing.
 
+### The deployed dashboard
+
+CD deploys `business-dashboard/` alongside the other two services, via
+`infra/dashboard.bicep`, on its own reader-only identity (see above). It runs
+as a Container App with external ingress and **no authentication in front of
+it** -- that is a deliberate choice, not an oversight, made because adding
+login was out of scope for now. Anyone with the URL can see every tenant's
+incident data. `cd.yml`'s deploy job prints the URL; it is also visible with:
+
+```bash
+az containerapp show -g rg-incident-platform -n incident-dashboard \
+  --query properties.configuration.ingress.fqdn -o tsv
+```
+
+If this ever needs to be locked down, Container Apps' built-in Entra
+authentication (an `authConfig` sub-resource, no application code change) is
+the natural next step -- the same directory already used for the ingestion
+API's producer tokens can gate this too.
+
+### Running the business dashboard locally
+
+`business-dashboard/` is a read-only Streamlit view over the same Cosmos DB
+account the worker writes to. `disableLocalAuth: true` applies here too, so
+there is no connection string to hand it — it authenticates the same way the
+worker does, with `DefaultAzureCredential`, just against a role that can only
+read.
+
+```bash
+az login
+cd business-dashboard
+pip install -r requirements.txt
+export COSMOS_ENDPOINT="$(az cosmosdb list -g rg-incident-platform \
+  --query "[?starts_with(name, 'incident-cosmos')].documentEndpoint | [0]" -o tsv)"
+streamlit run app.py
+```
+
+Your `az login` user needs **Cosmos DB Built-in Data Reader** on the account —
+not the worker's Data Contributor role, which also grants write. Cosmos data-plane
+RBAC is not an Azure role and is not granted with `az role assignment create`;
+it has its own command:
+
+```bash
+COSMOS_ACCOUNT="$(az cosmosdb list -g rg-incident-platform \
+  --query "[?starts_with(name, 'incident-cosmos')].name | [0]" -o tsv)"
+ME="$(az ad signed-in-user show --query id -o tsv)"
+az cosmosdb sql role assignment create \
+  --account-name "$COSMOS_ACCOUNT" --resource-group rg-incident-platform \
+  --scope "/" --principal-id "$ME" \
+  --role-definition-id 00000000-0000-0000-0000-000000000001
+```
+
 ## Pipelines
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Every push and pull request | Checks the Common Event Model is identical in both services; runs both test suites; builds both images and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit) |
-| `cd.yml` | Push to `main` | Deploys infrastructure (registry, logging, Container Apps environment, Service Bus namespace and queue, identities), builds and pushes SHA-tagged images for both services, rolls out the ingestion and worker revisions, verifies `/health` reports both healthy **and** publishing to Service Bus, then publishes a real incident and waits for the worker to drain the queue |
+| `ci.yml` | Every push and pull request | Checks the Common Event Model is identical between the two Cosmos-facing services; runs their test suites; builds all three images and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit) |
+| `cd.yml` | Push to `main` | Deploys infrastructure (registry, logging, Container Apps environment, Service Bus namespace and queue, identities), builds and pushes SHA-tagged images for all three services, rolls out the ingestion, worker and dashboard revisions, verifies `/health` reports the ingestion service healthy **and** publishing to Service Bus and that the dashboard is serving, then publishes a real incident and waits for the worker to drain the queue |
 
 Dependabot raises weekly pull requests for Python, Docker and Actions
 dependencies.

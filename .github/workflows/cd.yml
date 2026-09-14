@@ -9,6 +9,7 @@ on:
     paths:
       - 'ingestion-service/**'
       - 'worker-service/**'
+      - 'business-dashboard/**'
       - 'infra/**'
       - '.github/workflows/cd.yml'
   workflow_dispatch:
@@ -54,6 +55,7 @@ jobs:
           for key in registryName registryLoginServer environmentId \
             ingestionIdentityId ingestionIdentityClientId \
             workerIdentityId workerIdentityClientId scalerIdentityId \
+            dashboardIdentityId dashboardIdentityClientId \
             serviceBusName serviceBusFqdn incidentQueueName \
             cosmosEndpoint cosmosDatabaseName cosmosContainerName; do
             value=$(echo "$outputs" | jq -r ".${key}.value")
@@ -84,9 +86,11 @@ jobs:
           for attempt in 1 2 3; do
             if az acr login --name '${{ steps.core.outputs.registryName }}' \
               && build_and_push incident-ingestion ingestion-service \
-              && build_and_push incident-worker worker-service; then
+              && build_and_push incident-worker worker-service \
+              && build_and_push incident-dashboard business-dashboard; then
               echo "ingestion=${registry}/incident-ingestion:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               echo "worker=${registry}/incident-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+              echo "dashboard=${registry}/incident-dashboard:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
@@ -142,6 +146,40 @@ jobs:
               registryServer='${{ steps.core.outputs.registryLoginServer }}' \
               image='${{ steps.image.outputs.worker }}' \
             --query properties.outputs.appName.value -o tsv
+
+      # Read-only view over the same store, on its own reader identity so a
+      # bug here can never write. See infra/dashboard.bicep for why it has no
+      # auth in front of it.
+      - name: Deploy the business dashboard
+        id: dashboard
+        run: |
+          url=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/dashboard.bicep \
+            --name "dashboard-${GITHUB_SHA::7}" \
+            --parameters \
+              environmentId='${{ steps.core.outputs.environmentId }}' \
+              identityId='${{ steps.core.outputs.dashboardIdentityId }}' \
+              identityClientId='${{ steps.core.outputs.dashboardIdentityClientId }}' \
+              cosmosEndpoint='${{ steps.core.outputs.cosmosEndpoint }}' \
+              cosmosDatabase='${{ steps.core.outputs.cosmosDatabaseName }}' \
+              cosmosContainer='${{ steps.core.outputs.cosmosContainerName }}' \
+              image='${{ steps.image.outputs.dashboard }}' \
+            --query properties.outputs.url.value -o tsv)
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the dashboard is serving
+        run: |
+          url='${{ steps.dashboard.outputs.url }}'
+          for attempt in $(seq 1 20); do
+            if curl -fsS --max-time 20 "${url}/_stcore/health"; then
+              echo "::notice::Dashboard healthy at ${url}"
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::${url}/_stcore/health did not respond" >&2
+          exit 1
 
       # A deployment that reports success without being reachable is worse
       # than a failed one -- and one that is reachable while silently dropping
