@@ -39,6 +39,8 @@ var cosmosContainerName = 'incidents'
 // definitions and cannot be assigned with Microsoft.Authorization. The
 // Contributor role reads and writes documents but cannot manage the account.
 var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
+// Reader cannot write, which is all the dashboard should ever be able to do.
+var cosmosDataReaderRoleId = '00000000-0000-0000-0000-000000000001'
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: '${namePrefix}-logs'
@@ -163,6 +165,24 @@ resource workerBusReceiver 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', serviceBusDataReceiverRoleId)
     principalId: workerIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// The business dashboard's identity: it pulls its own image from the
+// registry and reads incidents from Cosmos. Kept separate from the worker
+// identity so revoking write access never has to also revoke read access.
+resource dashboardIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${namePrefix}-dashboard-id'
+  location: location
+}
+
+resource dashboardAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(registry.id, dashboardIdentity.id, acrPullRoleId)
+  scope: registry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    principalId: dashboardIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
@@ -307,6 +327,18 @@ resource workerCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleA
   }
 }
 
+// The dashboard only ever reads. Granting it Contributor "just in case" would
+// mean a bug in dashboard code could corrupt the store the worker owns.
+resource dashboardCosmosReader 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
+  parent: cosmos
+  name: guid(cosmos.id, dashboardIdentity.id, cosmosDataReaderRoleId)
+  properties: {
+    roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataReaderRoleId}'
+    principalId: dashboardIdentity.properties.principalId
+    scope: cosmos.id
+  }
+}
+
 output registryLoginServer string = registry.properties.loginServer
 output registryName string = registry.name
 output environmentId string = containerEnv.id
@@ -315,6 +347,8 @@ output ingestionIdentityClientId string = ingestionIdentity.properties.clientId
 output workerIdentityId string = workerIdentity.id
 output workerIdentityClientId string = workerIdentity.properties.clientId
 output scalerIdentityId string = scalerIdentity.id
+output dashboardIdentityId string = dashboardIdentity.id
+output dashboardIdentityClientId string = dashboardIdentity.properties.clientId
 output serviceBusName string = serviceBus.name
 // Fully qualified host the SDK connects to, e.g. incident-bus-xxx.servicebus.windows.net
 output serviceBusFqdn string = replace(replace(serviceBus.properties.serviceBusEndpoint, 'https://', ''), ':443/', '')
