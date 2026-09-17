@@ -147,6 +147,19 @@ jobs:
               image='${{ steps.image.outputs.worker }}' \
             --query properties.outputs.appName.value -o tsv
 
+      # Azure resource health over Azure Monitor, kept as its own view rather
+      # than folded into the incident dashboard. No image to build: it is a
+      # managed PaaS resource, so nothing here to health-check the way the
+      # app deployments below are.
+      - name: Deploy Grafana
+        run: |
+          endpoint=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/grafana.bicep \
+            --name "grafana-${GITHUB_SHA::7}" \
+            --query properties.outputs.grafanaEndpoint.value -o tsv)
+          echo "::notice::Grafana available at ${endpoint}"
+
       # Read-only view over the same store, on its own reader identity so a
       # bug here can never write. See infra/dashboard.bicep for why it has no
       # auth in front of it.
