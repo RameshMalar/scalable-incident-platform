@@ -334,68 +334,18 @@ jobs:
           fi
           echo "published one incident through ${url}"
 
-      # Azure resource health over Azure Monitor, kept as its own view rather
-      # than folded into the incident dashboard. No image to build: it is a
-      # managed PaaS resource, so nothing here to health-check the way the
-      # app deployments above are. Placed last and allowed to fail on its own
-      # (e.g. Microsoft.Dashboard not yet registered on the subscription)
+      # Azure resource health over Azure Resource Graph, kept as its own view
+      # rather than folded into the incident dashboard. Free (a workbook is
+      # just a saved query/layout), unlike Managed Grafana, which this
+      # replaced -- see infra/workbook.bicep for why. No image to build: it is
+      # a workbook resource, so nothing here to health-check the way the app
+      # deployments above are. Placed last and allowed to fail on its own
       # without failing the whole deployment: it is an optional add-on, not
       # part of the platform the verification steps above exist to protect.
-      - name: Deploy Grafana
+      - name: Deploy resource-health workbook
         continue-on-error: true
         run: |
-          endpoint=$(az deployment group create \
+          az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
-            --template-file infra/grafana.bicep \
-            --name "grafana-${GITHUB_SHA::7}" \
-            --query properties.outputs.grafanaEndpoint.value -o tsv)
-          echo "::notice::Grafana available at ${endpoint}"
-
-          for attempt in $(seq 1 30); do
-            sleep 10
-            read_counts
-
-            if [ "$dead" -gt "$dead_before" ]; then
-              echo "::error::The worker dead-lettered the incident instead of processing it (dead-letter count ${dead_before} -> ${dead}). Check the worker logs." >&2
-              exit 1
-            fi
-
-            if [ "$active" -eq 0 ]; then
-              echo "::notice::Worker drained ${queue} after $((attempt * 10))s"
-              drained=yes
-              break
-            fi
-
-            echo "waiting: ${active} message(s) still on ${queue}"
-          done
-
-          if [ "${drained:-no}" != "yes" ]; then
-            echo "::error::${queue} still holds ${active} message(s) after 5 minutes; the worker is not consuming" >&2
-            exit 1
-          fi
-
-          # Draining proves the queue emptied, not that the incident was kept.
-          # Two different failures hide in there, and only one of them is
-          # already covered.
-          #
-          # A worker that CANNOT store -- no Cosmos role, wrong endpoint -- has
-          # create_item raise, abandons the message, and after five deliveries
-          # dead-letters it. The guard above catches that.
-          #
-          # A worker that simply DOES NOT store -- INCIDENT_STORE unset, so it
-          # logs each incident and completes it -- drains perfectly cleanly and
-          # looks identical to success. That is the failure the ingestion
-          # service shipped with once already, so assert the deployed revision
-          # is actually configured to persist.
-          store=$(az containerapp show \
-            --resource-group "$RESOURCE_GROUP" \
-            --name incident-worker \
-            --query "properties.template.containers[0].env[?name=='INCIDENT_STORE'].value | [0]" \
-            -o tsv)
-
-          if [ "$store" != "cosmos" ]; then
-            echo "::error::The worker drained ${queue} but is not configured to persist (INCIDENT_STORE='${store}'). It is consuming incidents and discarding them." >&2
-            exit 1
-          fi
-
-          echo "::notice::Worker is consuming and persisting to Cosmos"
+            --template-file infra/workbook.bicep \
+            --name "workbook-${GITHUB_SHA::7}"
