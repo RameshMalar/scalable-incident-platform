@@ -111,9 +111,27 @@ echo
 echo "Granted ${granted}, already held ${skipped}."
 
 current="$(gh variable get TENANT_MAP --repo "${GITHUB_REPO}" 2>/dev/null || true)"
-merged="${tenant_map_entries}"
-if [ -n "${current}" ]; then
-  merged="${current},${tenant_map_entries}"
+
+# Appended, not replaced: the map already carries the real producers and the
+# deploy identity, and printing a value that dropped them would take the
+# platform down on the next deployment. Entries already present are left
+# alone, so a re-run prints the same map rather than a longer one.
+merged="${current}"
+IFS=',' read -ra additions <<<"${tenant_map_entries}"
+for entry in "${additions[@]}"; do
+  case ",${merged}," in
+  *",${entry},"*) continue ;;
+  esac
+  merged="${merged:+${merged},}${entry}"
+done
+
+if [ "${merged}" = "${current}" ]; then
+  cat <<MSG
+
+TENANT_MAP already maps every producer identity to its tenant, so there is
+nothing left to set.
+MSG
+  exit 0
 fi
 
 cat <<MSG
