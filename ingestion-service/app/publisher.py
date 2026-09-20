@@ -25,6 +25,12 @@ SERVICE_BUS_SCOPE = "https://servicebus.azure.net/.default"
 # rest is in the SDK's own troubleshooting output.
 MAX_READINESS_DETAIL = 200
 
+# How many AMQP links one replica may hold open at once, which is also how many
+# incidents it can be publishing at once. Each link is a connection, so this is
+# not free; eight is well above what a replica sees before the autoscaler gives
+# it a sibling at fifty concurrent requests.
+DEFAULT_POOL_SIZE = 8
+
 
 def _summarise(exc: Exception) -> str:
     first_line = str(exc).strip().splitlines()[0] if str(exc).strip() else repr(exc)
@@ -76,10 +82,21 @@ class ServiceBusEventPublisher(EventPublisher):
     Locally `DefaultAzureCredential` resolves to `az login`; in the container it
     resolves to the user-assigned identity named by `AZURE_CLIENT_ID`.
 
-    The client and sender are opened once and reused for the life of the
-    process. Opening them per message costs a TLS and AMQP handshake on every
-    request -- invisible in a demo, and ruinous in the throughput and latency
-    measurements this platform is assessed on.
+    Senders are pooled and reused for the life of the process. Opening one per
+    message costs a TLS and AMQP handshake on every request -- invisible in a
+    demo, and ruinous in the throughput and latency measurements this platform
+    is assessed on.
+
+    A pool rather than one shared sender, because a sender is not safe to use
+    from two coroutines at once. An AMQP link is a state machine, and
+    concurrent sends interleave frames on it: the SDK detaches the link
+    mid-send, shuts the handler down, and every request after that fails
+    against a half-dismantled object. That is not theoretical -- the load
+    simulator's first run at five incidents a second failed 94 of 100 requests
+    exactly that way, while every check that published one incident at a time
+    had passed for weeks. So each sender is held by one coroutine at a time,
+    and a sender that failed is discarded rather than handed to the next
+    caller.
     """
 
     def __init__(
@@ -89,6 +106,7 @@ class ServiceBusEventPublisher(EventPublisher):
         timeout_seconds: float | None = None,
         credential=None,
         readiness_timeout_seconds: float | None = None,
+        pool_size: int | None = None,
     ):
         self.fully_qualified_namespace = (
             fully_qualified_namespace or os.environ.get("SERVICE_BUS_FQDN")
@@ -104,6 +122,12 @@ class ServiceBusEventPublisher(EventPublisher):
         self.readiness_timeout_seconds = readiness_timeout_seconds or float(
             os.environ.get("READINESS_TIMEOUT_SECONDS", "3")
         )
+        self.pool_size = pool_size or int(
+            os.environ.get("PUBLISH_POOL_SIZE", DEFAULT_POOL_SIZE)
+        )
+
+        if self.pool_size < 1:
+            raise ValueError("PUBLISH_POOL_SIZE must be at least 1")
 
         if not self.fully_qualified_namespace:
             raise ValueError(
@@ -116,7 +140,9 @@ class ServiceBusEventPublisher(EventPublisher):
         # close.
         self._owns_credential = credential is None
         self._client: ServiceBusClient | None = None
-        self._sender = None
+        # Holds senders that are free, and None for a slot no sender has been
+        # built for yet. Taking from it is what reserves the right to send.
+        self._pool: asyncio.LifoQueue | None = None
         self._lock = asyncio.Lock()
         self._token_expires_at: float = 0.0
         # Only state *changes* are logged, so a replica that stays unready does
@@ -128,7 +154,7 @@ class ServiceBusEventPublisher(EventPublisher):
             self._open()
 
     def _open(self) -> None:
-        if self._sender is not None:
+        if self._pool is not None:
             return
 
         if self._credential is None:
@@ -139,17 +165,30 @@ class ServiceBusEventPublisher(EventPublisher):
             credential=self._credential,
             transport_type=_transport_type(),
         )
-        self._sender = self._client.get_queue_sender(queue_name=self.queue_name)
+
+        # One sender built now so the first incident does not pay for it, and
+        # the rest of the slots left empty. Building a sender does no I/O, but
+        # a replica that never sees two incidents at once has no reason to
+        # hold eight links open.
+        #
+        # Last in, first out, so that replica keeps reusing the one sender it
+        # has. A queue would hand back the slots in turn and open a link for
+        # every one of them, which is the opposite of what a pool is for.
+        self._pool = asyncio.LifoQueue()
+        for _ in range(self.pool_size - 1):
+            self._pool.put_nowait(None)
+        self._pool.put_nowait(self._client.get_queue_sender(queue_name=self.queue_name))
 
         logger.info(
-            "service bus sender ready namespace=%s queue=%s transport=%s",
+            "service bus sender pool ready namespace=%s queue=%s transport=%s size=%d",
             self.fully_qualified_namespace,
             self.queue_name,
             _transport_type().name,
+            self.pool_size,
         )
 
     async def publish(self, event: IncidentEvent) -> None:
-        if self._sender is None:
+        if self._pool is None:
             async with self._lock:
                 self._open()
 
@@ -169,11 +208,21 @@ class ServiceBusEventPublisher(EventPublisher):
             message_id=event.event_id,
         )
 
+        # Waiting here, when every sender is busy, is back pressure: the
+        # replica is already publishing as many incidents at once as it holds
+        # links for, and the autoscaler answers sustained concurrency with
+        # another replica.
+        sender = await self._pool.get()
+        sent = False
         try:
+            if sender is None:
+                sender = self._client.get_queue_sender(queue_name=self.queue_name)
+
             await asyncio.wait_for(
-                self._sender.send_messages(message),
+                sender.send_messages(message),
                 timeout=self.timeout_seconds,
             )
+            sent = True
         except ServiceBusError as exc:
             logger.error(
                 "failed to publish event_id=%s: %s", event.event_id, exc
@@ -198,8 +247,33 @@ class ServiceBusEventPublisher(EventPublisher):
             raise PublishError(
                 f"unexpected error publishing event {event.event_id}: {exc}"
             ) from exc
+        finally:
+            if sent:
+                self._pool.put_nowait(sender)
+            else:
+                # The slot is given back before the close is attempted, and
+                # empty rather than holding this sender. The timeout above
+                # cancels a send that was part-way onto the wire, and a
+                # request cancelled by its client does the same, so what is
+                # left is a link nobody can reason about -- while closing it
+                # may itself be interrupted.
+                self._pool.put_nowait(None)
+                if sender is not None:
+                    await self._discard(sender)
 
         logger.info("published event_id=%s", event.event_id)
+
+    async def _discard(self, sender) -> None:
+        """Close a sender that failed, without letting the close raise.
+
+        A link that has already broken often refuses to shut down tidily, and
+        the caller is on its way to reporting the send failure, which is the
+        error that matters.
+        """
+        try:
+            await sender.close()
+        except Exception as exc:
+            logger.debug("could not close a failed sender: %s", exc)
 
     async def ready(self) -> tuple[bool, str]:
         """Prove the credential can mint a Service Bus token.
@@ -254,9 +328,15 @@ class ServiceBusEventPublisher(EventPublisher):
 
     async def close(self) -> None:
         async with self._lock:
-            if self._sender is not None:
-                await self._sender.close()
-                self._sender = None
+            if self._pool is not None:
+                # Only the free senders are here to be closed. Any still out
+                # with a request are closed by the client below, which is the
+                # reason shutdown waits for requests to drain first.
+                while not self._pool.empty():
+                    sender = self._pool.get_nowait()
+                    if sender is not None:
+                        await self._discard(sender)
+                self._pool = None
             if self._client is not None:
                 await self._client.close()
                 self._client = None

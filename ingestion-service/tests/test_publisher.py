@@ -155,6 +155,199 @@ async def test_service_bus_publisher_reuses_one_sender_across_messages(
     assert sender.send_messages.call_count == 3
 
 
+# --- concurrency -----------------------------------------------------------
+#
+# An AMQP link is a state machine, and a sender is not safe to use from two
+# coroutines at once: concurrent sends interleave frames on it, the SDK
+# detaches the link mid-send and shuts the handler down, and every request
+# after that fails against a half-dismantled object. Against the deployed
+# service this failed 94 of 100 requests at five incidents a second, while
+# every check that published one at a time had been passing for weeks. These
+# tests are what stop a future refactor from quietly going back to one sender.
+
+
+def tracking_client(mock_client_cls, send=None):
+    """A client whose senders record whether two sends ever overlap."""
+    senders = []
+    overlaps = []
+
+    def build_sender(queue_name=None):
+        sender = MagicMock()
+        busy = []
+
+        async def send_messages(message):
+            if busy:
+                overlaps.append(sender)
+            busy.append(message)
+            try:
+                if send is not None:
+                    await send(message)
+                else:
+                    await asyncio.sleep(0.01)
+            finally:
+                busy.pop()
+
+        sender.send_messages = send_messages
+        sender.close = AsyncMock()
+        senders.append(sender)
+        return sender
+
+    client = MagicMock()
+    client.get_queue_sender.side_effect = build_sender
+    client.close = AsyncMock()
+    mock_client_cls.return_value = client
+    return senders, overlaps
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_a_sender_is_never_used_by_two_incidents_at_once(mock_client_cls):
+    senders, overlaps = tracking_client(mock_client_cls)
+
+    publisher = build_publisher(pool_size=4)
+    await asyncio.gather(
+        *(publisher.publish(sample_event(event_id=f"EVT-{i:04d}")) for i in range(20))
+    )
+
+    assert overlaps == []
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_concurrency_is_bounded_by_the_pool_rather_than_the_traffic(
+    mock_client_cls,
+):
+    # Twenty incidents at once must not open twenty links. Each is a
+    # connection to the namespace, and a replica under load would otherwise
+    # open one per in-flight request.
+    senders, _ = tracking_client(mock_client_cls)
+
+    publisher = build_publisher(pool_size=4)
+    await asyncio.gather(
+        *(publisher.publish(sample_event(event_id=f"EVT-{i:04d}")) for i in range(20))
+    )
+
+    assert len(senders) == 4
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_a_replica_that_sees_no_concurrency_opens_no_extra_links(
+    mock_client_cls,
+):
+    senders, _ = tracking_client(mock_client_cls)
+
+    publisher = build_publisher(pool_size=8)
+    for index in range(5):
+        await publisher.publish(sample_event(event_id=f"EVT-{index:04d}"))
+
+    assert len(senders) == 1
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_a_sender_that_failed_is_discarded_not_handed_to_the_next_caller(
+    mock_client_cls,
+):
+    # Whatever broke the link is still broken for the next request, and the
+    # SDK's own recovery is what produced the AttributeError seen in
+    # production.
+    senders, _ = tracking_client(mock_client_cls)
+    failing = AsyncMock(side_effect=ServiceBusError("link detached"))
+
+    publisher = build_publisher(pool_size=2)
+    await publisher.start()
+    senders[0].send_messages = failing
+
+    with pytest.raises(PublishError):
+        await publisher.publish(sample_event())
+
+    senders[0].close.assert_awaited_once()
+
+    await publisher.publish(sample_event(event_id="EVT-AFTER"))
+
+    assert len(senders) == 2
+    assert failing.await_count == 1
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_repeated_failures_do_not_drain_the_pool(mock_client_cls):
+    # A slot returned empty is a slot that refills. Returning nothing at all
+    # would shrink the pool on every failure until the replica accepted no
+    # incidents and reported nothing wrong.
+    tracking_client(mock_client_cls, send=AsyncMock(side_effect=ServiceBusError("down")))
+
+    publisher = build_publisher(pool_size=2)
+
+    for index in range(6):
+        with pytest.raises(PublishError):
+            await publisher.publish(sample_event(event_id=f"EVT-{index:04d}"))
+
+    assert publisher._pool.qsize() == 2
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_a_cancelled_request_gives_its_slot_back(mock_client_cls):
+    # A client that hangs up mid-publish cancels the handler. The link it was
+    # using is half-written and goes, but the capacity it held must not.
+    async def never(message):
+        await asyncio.sleep(10)
+
+    tracking_client(mock_client_cls, send=never)
+
+    publisher = build_publisher(pool_size=2)
+    await publisher.start()
+
+    task = asyncio.create_task(publisher.publish(sample_event()))
+    await asyncio.sleep(0.01)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert publisher._pool.qsize() == 2
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_a_timed_out_send_does_not_poison_the_next_one(mock_client_cls):
+    # The timeout cancels a send that is part-way onto the wire, which is
+    # itself enough to leave the link unusable.
+    slow = True
+
+    async def send(message):
+        if slow:
+            await asyncio.sleep(10)
+
+    senders, _ = tracking_client(mock_client_cls, send=send)
+
+    publisher = build_publisher(pool_size=2, timeout_seconds=0.05)
+    await publisher.start()
+
+    with pytest.raises(PublishError):
+        await publisher.publish(sample_event())
+
+    senders[0].close.assert_awaited_once()
+
+    slow = False
+    await publisher.publish(sample_event(event_id="EVT-AFTER"))
+
+
+async def test_a_pool_of_no_senders_is_refused():
+    with pytest.raises(ValueError, match="at least 1"):
+        ServiceBusEventPublisher(fully_qualified_namespace=NAMESPACE, pool_size=-1)
+
+
+@patch("app.publisher.ServiceBusClient")
+async def test_closing_releases_every_sender_in_the_pool(mock_client_cls):
+    senders, _ = tracking_client(mock_client_cls)
+
+    publisher = build_publisher(pool_size=4)
+    await asyncio.gather(
+        *(publisher.publish(sample_event(event_id=f"EVT-{i:04d}")) for i in range(8))
+    )
+    await publisher.close()
+
+    assert len(senders) == 4
+    for sender in senders:
+        sender.close.assert_awaited_once()
+
+
 @patch("app.publisher.ServiceBusClient")
 async def test_start_opens_the_sender_before_the_first_incident(mock_client_cls):
     sender = fake_sender()

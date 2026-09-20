@@ -12,6 +12,7 @@ on:
       - 'worker-service/**'
       - 'notification-service/**'
       - 'business-dashboard/**'
+      - 'load-simulator/**'
       - 'infra/**'
       - '.github/workflows/cd.yml'
 
@@ -41,7 +42,6 @@ jobs:
 
       - uses: actions/checkout@v7
 
-
       # -----------------------------------------------------------------------
       # Azure authentication
       # -----------------------------------------------------------------------
@@ -53,24 +53,10 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-
       # -----------------------------------------------------------------------
       # Core infrastructure
       # -----------------------------------------------------------------------
 
-      # Shared resources:
-      # - ACR
-      # - Log Analytics
-      # - Container Apps environment
-      # - Service Bus
-      # - incident-events queue
-      # - notification-events queue
-      # - Cosmos DB
-      # - Managed identities
-      # - Key Vault
-      #
-      # This deployment is idempotent and reconciles infrastructure on
-      # every deployment.
       - name: Deploy core infrastructure
         id: core
         run: |
@@ -108,20 +94,10 @@ jobs:
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
           done
 
-
       # -----------------------------------------------------------------------
       # Build container images
       # -----------------------------------------------------------------------
 
-      # Container Apps requires linux/amd64.
-      #
-      # Three images are built:
-      # - ingestion-service
-      # - worker-service
-      # - notification-service
-      #
-      # Retried because Docker Hub or ACR can occasionally return transient
-      # registry errors.
       - name: Build and push images
         id: image
         run: |
@@ -142,27 +118,26 @@ jobs:
               && build_and_push incident-ingestion ingestion-service \
               && build_and_push incident-worker worker-service \
               && build_and_push incident-notification notification-service \
-              && build_and_push incident-dashboard business-dashboard
-            then
+              && build_and_push incident-dashboard business-dashboard \
+              && build_and_push incident-load-simulator load-simulator; then
+
               echo "ingestion=${registry}/incident-ingestion:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               echo "worker=${registry}/incident-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               echo "notification=${registry}/incident-notification:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               echo "dashboard=${registry}/incident-dashboard:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+              echo "simulator=${registry}/incident-load-simulator:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               exit 0
             fi
 
             if [ "$attempt" -lt 3 ]; then
               delay=$((attempt * 20))
-
               echo "::warning::Build attempt ${attempt} failed, retrying in ${delay}s"
-
               sleep "$delay"
             fi
           done
 
           echo "::error::Build failed after 3 attempts" >&2
           exit 1
-
 
       # -----------------------------------------------------------------------
       # Deploy ingestion service
@@ -189,23 +164,10 @@ jobs:
 
           echo "url=${url}" >> "$GITHUB_OUTPUT"
 
-
       # -----------------------------------------------------------------------
       # Deploy processing worker
       # -----------------------------------------------------------------------
 
-      # Worker:
-      #
-      # incident-events
-      #       |
-      #       v
-      # Processing Worker
-      #       |
-      #       +--> Cosmos DB
-      #       |
-      #       +--> notification-events
-      #
-      # No ingress is configured because the worker is queue-driven.
       - name: Deploy the processing worker
         run: |
           az deployment group create \
@@ -229,10 +191,10 @@ jobs:
             --query properties.outputs.appName.value \
             -o tsv
 
+      # -----------------------------------------------------------------------
+      # Deploy business dashboard
+      # -----------------------------------------------------------------------
 
-      # Read-only view over the same store, on its own reader identity so a
-      # bug here can never write. See infra/dashboard.bicep for why it has no
-      # auth in front of it.
       - name: Deploy the business dashboard
         id: dashboard
         run: |
@@ -248,33 +210,31 @@ jobs:
               cosmosDatabase='${{ steps.core.outputs.cosmosDatabaseName }}' \
               cosmosContainer='${{ steps.core.outputs.cosmosContainerName }}' \
               image='${{ steps.image.outputs.dashboard }}' \
-            --query properties.outputs.url.value -o tsv)
+            --query properties.outputs.url.value \
+            -o tsv)
+
           echo "url=${url}" >> "$GITHUB_OUTPUT"
 
       - name: Verify the dashboard is serving
         run: |
           url='${{ steps.dashboard.outputs.url }}'
+
           for attempt in $(seq 1 20); do
             if curl -fsS --max-time 20 "${url}/_stcore/health"; then
               echo "::notice::Dashboard healthy at ${url}"
               exit 0
             fi
+
             sleep 6
           done
+
           echo "::error::${url}/_stcore/health did not respond" >&2
           exit 1
-
 
       # -----------------------------------------------------------------------
       # Verify ingestion deployment
       # -----------------------------------------------------------------------
 
-      # A successful deployment must prove:
-      # - HTTP service is healthy
-      # - Service Bus publisher is active
-      # - Managed identity can obtain a Service Bus token
-      # - Entra authentication is enabled
-      # - Anonymous incident writes are rejected
       - name: Verify the deployment
         run: |
           url='${{ steps.app.outputs.url }}'
@@ -331,7 +291,6 @@ jobs:
                 fi
 
                 echo "::notice::Deployed, healthy, ready, and refusing anonymous writes at ${url}"
-
                 exit 0
               fi
 
@@ -345,33 +304,15 @@ jobs:
           echo "::error::${url}/health did not report healthy" >&2
           exit 1
 
-
       # -----------------------------------------------------------------------
       # Verify worker end-to-end
       # -----------------------------------------------------------------------
 
-      # Worker has no HTTP ingress, so verification uses the real platform:
-      #
-      # API
-      #  |
-      #  v
-      # incident-events
-      #  |
-      #  v
-      # Worker
-      #  |
-      #  v
-      # Cosmos DB
-      #
-      # The worker must drain the queue without increasing the DLQ count.
       - name: Verify the worker drains the queue
         run: |
           url='${{ steps.app.outputs.url }}'
-
           namespace='${{ steps.core.outputs.serviceBusName }}'
-
           queue='${{ steps.core.outputs.incidentQueueName }}'
-
 
           counts() {
             az servicebus queue show \
@@ -381,7 +322,6 @@ jobs:
               --query '[countDetails.activeMessageCount, countDetails.deadLetterMessageCount]' \
               -o tsv
           }
-
 
           read_counts() {
             local out
@@ -399,8 +339,6 @@ jobs:
             esac
           }
 
-
-          # Record the current queue state.
           read_counts
 
           active_before=$active
@@ -408,8 +346,6 @@ jobs:
 
           echo "before: active=${active_before} dead-lettered=${dead_before}"
 
-
-          # Obtain an Entra token for the authenticated ingestion API.
           token=$(az account get-access-token \
             --resource '${{ vars.AUTH_AUDIENCE }}' \
             --query accessToken \
@@ -422,8 +358,6 @@ jobs:
             exit 1
           fi
 
-
-          # Submit a synthetic incident through the real API.
           body=$(curl \
             -sS \
             --max-time 30 \
@@ -447,7 +381,6 @@ jobs:
               \"description\": \"Synthetic incident from the CD pipeline\"
             }")
 
-
           if ! echo "$body" | grep -q '"status":"accepted"'; then
             echo "::error::Ingestion did not accept the verification incident. Response: ${body}" >&2
 
@@ -458,9 +391,7 @@ jobs:
             exit 1
           fi
 
-
           echo "published one incident through ${url}"
-
 
           # Wait up to five minutes for the Worker to consume the message.
           for attempt in $(seq 1 30); do
@@ -475,7 +406,6 @@ jobs:
 
             if [ "$active" -eq 0 ]; then
               echo "::notice::Worker drained ${queue} after $((attempt * 10))s"
-
               drained=yes
               break
             fi
@@ -483,40 +413,55 @@ jobs:
             echo "waiting: ${active} message(s) still on ${queue}"
           done
 
-
           if [ "${drained:-no}" != "yes" ]; then
             echo "::error::${queue} still holds ${active} message(s) after 5 minutes; the worker is not consuming" >&2
             exit 1
           fi
 
-
-          # Queue drain alone is not sufficient.
-          #
-          # Verify that the deployed Worker is configured to persist incidents
-          # rather than merely logging and completing them.
+          # Draining proves the queue emptied, not that the incident was kept.
+          # A worker that cannot store will eventually dead-letter the message.
+          # A worker with INCIDENT_STORE unset could drain it without
+          # persisting it, so explicitly verify the deployed configuration.
           store=$(az containerapp show \
             --resource-group "$RESOURCE_GROUP" \
             --name incident-worker \
             --query "properties.template.containers[0].env[?name=='INCIDENT_STORE'].value | [0]" \
             -o tsv)
 
-
           if [ "$store" != "cosmos" ]; then
             echo "::error::The worker drained ${queue} but is not configured to persist (INCIDENT_STORE='${store}'). It is consuming incidents and discarding them." >&2
             exit 1
           fi
 
-
           echo "::notice::Worker is consuming and persisting to Cosmos"
 
-      # Azure resource health over Azure Resource Graph, kept as its own view
-      # rather than folded into the incident dashboard. Free (a workbook is
-      # just a saved query/layout), unlike Managed Grafana, which this
-      # replaced -- see infra/workbook.bicep for why. No image to build: it is
-      # a workbook resource, so nothing here to health-check the way the app
-      # deployments above are. Placed last and allowed to fail on its own
-      # without failing the whole deployment: it is an optional add-on, not
-      # part of the platform the verification steps above exist to protect.
+      # -----------------------------------------------------------------------
+      # Deploy load simulator
+      # -----------------------------------------------------------------------
+
+      - name: Deploy the load simulator job
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/simulator.bicep \
+            --name "simulator-${GITHUB_SHA::7}" \
+            --parameters \
+              environmentId='${{ steps.core.outputs.environmentId }}' \
+              registryName='${{ steps.core.outputs.registryName }}' \
+              targetUrl='${{ steps.app.outputs.url }}' \
+              authAudience='${{ vars.AUTH_AUDIENCE }}' \
+              image='${{ steps.image.outputs.simulator }}' \
+            --query properties.outputs \
+            -o json)
+
+          echo "::notice::Load simulator job: $(echo "$outputs" | jq -r '.jobName.value')"
+          echo "::notice::TENANT_MAP needs: $(echo "$outputs" | jq -r '.tenantMapAdditions.value | join(",")')"
+          echo "::notice::Grant Incidents.Write to: $(echo "$outputs" | jq -r '.producerPrincipalIds.value | join(", ")')"
+
+      # -----------------------------------------------------------------------
+      # Resource-health workbook
+      # -----------------------------------------------------------------------
+
       - name: Deploy resource-health workbook
         continue-on-error: true
         run: |

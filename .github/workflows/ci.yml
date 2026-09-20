@@ -35,15 +35,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - service: ingestion-service
-            bandit_target: app
-          - service: worker-service
-            bandit_target: app
-          - service: notification-service
-            bandit_target: app
-          - service: business-dashboard
-            bandit_target: .
+        service:
+          - ingestion-service
+          - worker-service
+          - notification-service
+          - load-simulator
 
     defaults:
       run:
@@ -84,6 +80,9 @@ jobs:
 
           - service: business-dashboard
             image: incident-dashboard
+
+          - service: load-simulator
+            image: incident-load-simulator
 
     steps:
       - uses: actions/checkout@v7
@@ -163,18 +162,42 @@ jobs:
         if: matrix.service == 'business-dashboard'
         run: |
           docker run -d --name smoke -p 8501:8501 ${{ matrix.image }}:ci
+
           for attempt in $(seq 1 15); do
             if curl -fsS http://localhost:8501/_stcore/health; then
               echo "healthy after ${attempt} attempt(s)"
               exit 0
             fi
+
             sleep 2
           done
+
           echo "service never became healthy" >&2
           docker logs smoke >&2
           exit 1
 
+      # The simulator has no endpoint either, and unlike the worker it is
+      # supposed to exit: it drives a profile and stops. So the check is the
+      # same shape as the worker's -- start with nothing configured and require
+      # it to refuse the job by name rather than hang, crash on an import, or
+      # worse, start driving load at a default target.
+      - name: Smoke test the load simulator container
+        if: matrix.service == 'load-simulator'
+        run: |
+          output=$(docker run --rm ${{ matrix.image }}:ci 2>&1) && rc=0 || rc=$?
 
+          echo "$output"
+
+          if [ "$rc" -ne 2 ]; then
+            echo "::error::simulator exited ${rc}, expected 2 for missing configuration" >&2
+            exit 1
+          fi
+
+          echo "$output" | grep -q 'TARGET_URL is required'
+
+      # Code scanning upload needs GitHub Advanced Security, which this private
+      # repository does not have. The report is kept as a build artifact and the
+      # gate is enforced by failing the job instead.
       - name: Scan image for known vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -211,12 +234,18 @@ jobs:
         include:
           - service: ingestion-service
             bandit_target: app
+
           - service: worker-service
             bandit_target: app
+
           - service: notification-service
             bandit_target: app
+
           - service: business-dashboard
             bandit_target: .
+
+          - service: load-simulator
+            bandit_target: app
 
     defaults:
       run:
