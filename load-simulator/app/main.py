@@ -132,8 +132,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=int(os.environ.get("SEED", 0)),
         help="Makes the run reproducible. Env: SEED",
     )
-    parser.add_argument("--max-inflight", type=int, default=200)
-    parser.add_argument("--timeout", type=float, default=15.0)
+    parser.add_argument(
+        "--max-inflight",
+        type=int,
+        default=int(os.environ.get("MAX_INFLIGHT", 200)),
+        help=(
+            "Ceiling on requests in flight at once. Reaching it turns an "
+            "open-loop run closed: the schedule stalls behind the platform's "
+            "latency and the achieved rate becomes a property of this ceiling "
+            "rather than of the platform. The lag warning says when that "
+            "happened. Env: MAX_INFLIGHT"
+        ),
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=float(os.environ.get("REQUEST_TIMEOUT", 15.0)),
+        help="Seconds before a request is abandoned. Env: REQUEST_TIMEOUT",
+    )
     parser.add_argument(
         "--out-dir",
         default=os.environ.get("OUT_DIR", "results"),

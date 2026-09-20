@@ -570,12 +570,40 @@ az containerapp job start -g rg-incident-platform -n incident-load-simulator
 
 The summary is written to `OUT_DIR` and printed to stdout as one line of JSON
 behind a `LOAD_SUMMARY_JSON` marker, because a job has no volume to read
-afterwards and an exit code cannot carry a result. To read it back:
+afterwards and an exit code cannot carry a result.
+
+Read it back from Log Analytics rather than from the job. `az containerapp job
+logs show` streams from the replica, and a finished execution has none — it
+answers `No replicas found for execution`, which is about the replica, not
+about the run. A job's console logs also arrive with `ContainerAppName_s`
+empty, so they are found by the replica name in `ContainerGroupName_s`:
 
 ```bash
-az containerapp job logs show -g rg-incident-platform -n incident-load-simulator \
-  --container load-simulator | grep LOAD_SUMMARY_JSON
+az monitor log-analytics query --workspace "$WORKSPACE_ID" --analytics-query "
+  ContainerAppConsoleLogs_CL
+  | where TimeGenerated > ago(1h)
+  | where ContainerGroupName_s startswith 'incident-load-simulator'
+  | where Log_s has 'LOAD_SUMMARY_JSON'
+  | project TimeGenerated, Log_s
+  | order by TimeGenerated desc"
 ```
+
+### Reading the result honestly
+
+Check `generator_kept_up` before anything else. When it is false the run
+describes the simulator and every other number in it is void.
+
+The usual cause is `MAX_INFLIGHT`. It caps how many requests may be in flight
+at once, and reaching it turns an open-loop run closed: the schedule stalls
+behind the platform's latency, and the achieved rate becomes that ceiling
+divided by the latency. A first run asked for 500 incidents a second, hit the
+default ceiling of 200, and reported 112 — which is arithmetic about the
+simulator, not a measurement of the platform. It is set to 2,000 for the
+deployed job for that reason.
+
+Achieved rate is also not a ceiling unless the platform refused something.
+A run where every request returned 202 found no limit; it just did not ask
+for enough.
 
 ## Pipelines
 
