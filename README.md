@@ -521,13 +521,24 @@ would be measuring the distance between two Azure regions.
 Each simulated producer is a user-assigned managed identity, so the run holds no
 client secret anywhere — not in the repository, not in a GitHub secret, not in
 the job's environment. Two grants remain, both in the directory rather than in
-ARM, and CD prints exactly what to use for each:
+ARM:
 
 1. `Incidents.Write` on the API registration, for each producer identity
 2. an entry per identity in the `TENANT_MAP` repository variable
 
 Until both are done the job authenticates and is refused with 403, which is the
 same answer any unregistered producer gets.
+
+`scripts/grant-producer-roles.sh` does the first and prints the second. It reads
+the identities and their tenants back from the deployment that created them, so
+it cannot disagree with what was actually deployed, and it skips any identity
+that already holds the role. Assigning application roles needs an Application
+Administrator or an owner of the API registration; anyone else gets 403 from
+Microsoft Graph, which is what that restriction is for.
+
+`TENANT_MAP` reaches the ingestion service as an environment variable set at
+deploy time, so it takes effect on the next CD run rather than when the variable
+is saved.
 
 CD deploys the job definition on every merge but never starts it. A profile that
 ran itself would drive the platform, and the bill, on each merge and would

@@ -10,6 +10,7 @@ on:
       - 'ingestion-service/**'
       - 'worker-service/**'
       - 'business-dashboard/**'
+      - 'load-simulator/**'
       - 'infra/**'
       - '.github/workflows/cd.yml'
   workflow_dispatch:
