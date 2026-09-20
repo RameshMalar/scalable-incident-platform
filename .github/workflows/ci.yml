@@ -35,10 +35,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service:
-          - ingestion-service
-          - worker-service
-          - notification-service
+        include:
+          - service: ingestion-service
+            bandit_target: app
+          - service: worker-service
+            bandit_target: app
+          - service: notification-service
+            bandit_target: app
+          - service: business-dashboard
+            bandit_target: .
 
     defaults:
       run:
@@ -76,6 +81,9 @@ jobs:
 
           - service: notification-service
             image: incident-notification
+
+          - service: business-dashboard
+            image: incident-dashboard
 
     steps:
       - uses: actions/checkout@v7
@@ -147,6 +155,26 @@ jobs:
 
           echo "$output" | grep -q 'SERVICE_BUS_FQDN is required'
 
+      # No COSMOS_ENDPOINT here, same as the ingestion smoke test running with
+      # no Service Bus: the server must still come up and answer its own
+      # health check, even though every session that connects will show an
+      # error banner instead of data.
+      - name: Smoke test the dashboard container
+        if: matrix.service == 'business-dashboard'
+        run: |
+          docker run -d --name smoke -p 8501:8501 ${{ matrix.image }}:ci
+          for attempt in $(seq 1 15); do
+            if curl -fsS http://localhost:8501/_stcore/health; then
+              echo "healthy after ${attempt} attempt(s)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "service never became healthy" >&2
+          docker logs smoke >&2
+          exit 1
+
+
       - name: Scan image for known vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -180,10 +208,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service:
-          - ingestion-service
-          - worker-service
-          - notification-service
+        include:
+          - service: ingestion-service
+            bandit_target: app
+          - service: worker-service
+            bandit_target: app
+          - service: notification-service
+            bandit_target: app
+          - service: business-dashboard
+            bandit_target: .
 
     defaults:
       run:
@@ -200,7 +233,7 @@ jobs:
         run: pip install bandit==1.8.0 pip-audit==2.7.3
 
       - name: Scan source for insecure patterns
-        run: bandit -r app -ll
+        run: bandit -r ${{ matrix.bandit_target }} -ll
 
       - name: Scan dependencies for known vulnerabilities
         run: pip-audit -r requirements.txt

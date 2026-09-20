@@ -38,6 +38,7 @@ var serviceBusDataOwnerRoleId = '090c5cfd-751d-490a-894a-3ce6f1109419'
 
 // Cosmos DB data-plane contributor role.
 var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
+var cosmosDataReaderRoleId = '00000000-0000-0000-0000-000000000001'
 
 // Key Vault Secrets User.
 // Notification Service may read secret values but cannot manage them.
@@ -171,6 +172,26 @@ resource notificationAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01
     )
 
     principalId: notificationIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+
+// Business dashboard uses its own read-only identity.
+resource dashboardIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${namePrefix}-dashboard-id'
+  location: location
+}
+
+resource dashboardAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(registry.id, dashboardIdentity.id, acrPullRoleId)
+  scope: registry
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      acrPullRoleId
+    )
+    principalId: dashboardIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
@@ -502,6 +523,18 @@ resource workerCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleA
 }
 
 
+// Dashboard is read-only in Cosmos DB.
+resource dashboardCosmosReader 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
+  parent: cosmos
+  name: guid(cosmos.id, dashboardIdentity.id, cosmosDataReaderRoleId)
+  properties: {
+    roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataReaderRoleId}'
+    principalId: dashboardIdentity.properties.principalId
+    scope: cosmos.id
+  }
+}
+
+
 // -----------------------------------------------------------------------------
 // Key Vault
 // -----------------------------------------------------------------------------
@@ -573,6 +606,9 @@ output workerIdentityId string = workerIdentity.id
 output workerIdentityClientId string = workerIdentity.properties.clientId
 
 output scalerIdentityId string = scalerIdentity.id
+
+output dashboardIdentityId string = dashboardIdentity.id
+output dashboardIdentityClientId string = dashboardIdentity.properties.clientId
 
 output serviceBusName string = serviceBus.name
 

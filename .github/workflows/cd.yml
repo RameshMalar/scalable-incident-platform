@@ -11,6 +11,7 @@ on:
       - 'ingestion-service/**'
       - 'worker-service/**'
       - 'notification-service/**'
+      - 'business-dashboard/**'
       - 'infra/**'
       - '.github/workflows/cd.yml'
 
@@ -99,7 +100,9 @@ jobs:
             notificationIdentityClientId \
             notificationScalerIdentityId \
             notificationQueueName \
-            keyVaultName
+            keyVaultName \
+            dashboardIdentityId \
+            dashboardIdentityClientId
           do
             value=$(echo "$outputs" | jq -r ".${key}.value")
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
@@ -138,11 +141,13 @@ jobs:
               --name '${{ steps.core.outputs.registryName }}' \
               && build_and_push incident-ingestion ingestion-service \
               && build_and_push incident-worker worker-service \
-              && build_and_push incident-notification notification-service
+              && build_and_push incident-notification notification-service \
+              && build_and_push incident-dashboard business-dashboard
             then
               echo "ingestion=${registry}/incident-ingestion:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               echo "worker=${registry}/incident-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               echo "notification=${registry}/incident-notification:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+              echo "dashboard=${registry}/incident-dashboard:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               exit 0
             fi
 
@@ -223,6 +228,41 @@ jobs:
               image='${{ steps.image.outputs.worker }}' \
             --query properties.outputs.appName.value \
             -o tsv
+
+
+      # Read-only view over the same store, on its own reader identity so a
+      # bug here can never write. See infra/dashboard.bicep for why it has no
+      # auth in front of it.
+      - name: Deploy the business dashboard
+        id: dashboard
+        run: |
+          url=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/dashboard.bicep \
+            --name "dashboard-${GITHUB_SHA::7}" \
+            --parameters \
+              environmentId='${{ steps.core.outputs.environmentId }}' \
+              identityId='${{ steps.core.outputs.dashboardIdentityId }}' \
+              identityClientId='${{ steps.core.outputs.dashboardIdentityClientId }}' \
+              cosmosEndpoint='${{ steps.core.outputs.cosmosEndpoint }}' \
+              cosmosDatabase='${{ steps.core.outputs.cosmosDatabaseName }}' \
+              cosmosContainer='${{ steps.core.outputs.cosmosContainerName }}' \
+              image='${{ steps.image.outputs.dashboard }}' \
+            --query properties.outputs.url.value -o tsv)
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the dashboard is serving
+        run: |
+          url='${{ steps.dashboard.outputs.url }}'
+          for attempt in $(seq 1 20); do
+            if curl -fsS --max-time 20 "${url}/_stcore/health"; then
+              echo "::notice::Dashboard healthy at ${url}"
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::${url}/_stcore/health did not respond" >&2
+          exit 1
 
 
       # -----------------------------------------------------------------------
@@ -468,3 +508,19 @@ jobs:
 
 
           echo "::notice::Worker is consuming and persisting to Cosmos"
+
+      # Azure resource health over Azure Resource Graph, kept as its own view
+      # rather than folded into the incident dashboard. Free (a workbook is
+      # just a saved query/layout), unlike Managed Grafana, which this
+      # replaced -- see infra/workbook.bicep for why. No image to build: it is
+      # a workbook resource, so nothing here to health-check the way the app
+      # deployments above are. Placed last and allowed to fail on its own
+      # without failing the whole deployment: it is an optional add-on, not
+      # part of the platform the verification steps above exist to protect.
+      - name: Deploy resource-health workbook
+        continue-on-error: true
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/workbook.bicep \
+            --name "workbook-${GITHUB_SHA::7}"
