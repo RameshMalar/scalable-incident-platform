@@ -209,10 +209,30 @@ it; the processing worker consumes from it. Neither holds a connection string:
 worker identity **Service Bus Data Receiver**, and local auth on the namespace
 is switched off, so the only way in is a managed identity with an explicit role.
 
-The ingestion service opens its queue sender once, at startup, and reuses it for
-the life of the process. Opening a client per message costs a TLS and AMQP
-handshake on every request: harmless in a demo, and enough to dominate the
-throughput and latency figures the platform is assessed on.
+The ingestion service opens its queue senders at startup and reuses them for the
+life of the process. Opening a client per message costs a TLS and AMQP handshake
+on every request: harmless in a demo, and enough to dominate the throughput and
+latency figures the platform is assessed on.
+
+It keeps a small **pool** of them rather than one, because a sender is not safe
+to use from two coroutines at once. An AMQP link is a state machine, and
+concurrent sends interleave frames on it: the SDK detaches the link mid-send,
+shuts the handler down, and every request after that fails against a
+half-dismantled object. One sender is therefore held by one request at a time,
+a request that finds them all busy waits — which is back pressure, and the
+autoscaler answers sustained concurrency with another replica — and a sender
+whose send failed or was cancelled is discarded rather than handed to the next
+caller, since a link that was part-way onto the wire is one nobody can reason
+about.
+
+This was not designed in. The service ran for weeks with a single shared sender
+and every check passed, because every check published one incident at a time:
+CD's queue-drain verification posts one, `verify-servicebus.py` posts one, and
+the unit tests use a double. The first load run that offered five incidents a
+second failed 94 of 100 requests, and the logs showed the link detaching and the
+SDK failing inside itself with `'NoneType' object has no attribute
+'create_sender_link'`. The concurrency tests in
+`ingestion-service/tests/test_publisher.py` exist to keep it from coming back.
 
 Transport is a switch rather than a constant. Native AMQP needs port 5671, which
 campus and corporate firewalls routinely block, so the default everywhere is
