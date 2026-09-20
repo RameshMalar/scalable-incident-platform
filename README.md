@@ -6,7 +6,9 @@ downstream consumers. Intrusion Detection is the seed producer used to validate
 the architecture.
 
 Sprint 1 delivers the Common Event Model and the Incident Ingestion Service.
-Sprint 2 adds the Processing Worker and scales it on queue depth.
+Sprint 2 adds the Processing Worker and scales it on queue depth. Sprint 3 adds
+authentication and tenant isolation, the business dashboard, and the load
+simulator the scalability claims are measured with.
 
 ## Repository layout
 
@@ -15,7 +17,8 @@ Sprint 2 adds the Processing Worker and scales it on queue depth.
 | `ingestion-service/` | Incident Ingestion Service (FastAPI) and its tests |
 | `worker-service/` | Processing Worker: consumes `incident-events`, and its tests |
 | `business-dashboard/` | Streamlit dashboard reading incidents straight out of Cosmos DB |
-| `infra/` | Azure infrastructure as Bicep: `core.bicep` (shared), `ingestion.bicep` and `worker.bicep` (per service) |
+| `load-simulator/` | Load generator for the scalability run, and its tests |
+| `infra/` | Azure infrastructure as Bicep: `core.bicep` (shared), then `ingestion.bicep`, `worker.bicep`, `dashboard.bicep`, `simulator.bicep` per component, and `workbook.bicep` for resource health |
 | `scripts/` | One-off setup scripts |
 | `.github/workflows/` | CI, CD and static analysis pipelines |
 
@@ -441,12 +444,114 @@ az cosmosdb sql role assignment create \
   --role-definition-id 00000000-0000-0000-0000-000000000001
 ```
 
+## Measuring scalability
+
+`load-simulator/` drives synthetic incidents at the deployed ingestion service
+so the platform's scalability is demonstrated rather than asserted. It exists
+because the two things worth showing cannot be produced by hand: the ingestion
+service scaling on HTTP concurrency, and the worker scaling on queue depth from
+zero.
+
+The generator is **open loop**. A request is issued when its slot comes due,
+not when the previous one returns. A closed-loop generator cannot exceed
+`concurrency / latency` requests per second, so as the platform slows the
+generator quietly slows with it: the queue never builds, the autoscaler never
+sees a backlog, and the run reports a system that coped. Backlog is the thing
+being measured, so the schedule has to be independent of the responses.
+
+It also measures itself. Every request records how late it left against its
+schedule, and the summary reports `generator_kept_up`. When that is false the
+run describes the simulator rather than the platform, and every other figure
+in it is void — a runner short of CPU or sockets otherwise reports the platform
+as slow.
+
+The load is spread across several producers, each with its own identity and its
+own tenant, so incidents for different tenants are in flight at once. That is
+the condition tenant isolation has to hold under, and it cannot be shown by
+sending one at a time. A configurable fraction of incidents is re-sent under an
+`event_id` already used, which turns deduplication into an observed outcome:
+the store rejects the repeat rather than overwriting the original.
+
+### Plan the profile against the store, not against the workers
+
+One incident write costs a measured **9.9 RU** against a 1,000 RU/s free-tier
+grant, so the store sustains roughly **101 writes per second**. Ten worker
+replicas can exceed that. The default profile therefore steps up to the ceiling
+and then crosses it deliberately: throttling that was planned for is a result,
+throttling that was stumbled into is noise.
+
+### Running it locally
+
+Against the deployed service, with a token for your own user rather than a
+producer's. This cannot demonstrate tenant isolation, because every request
+then arrives with the same client id — it is for checking that the thing works
+before spending a real run on it.
+
+```bash
+cd load-simulator
+pip install -r requirements-dev.txt
+
+export TARGET_URL="https://<the ingestion service URL>"
+export STATIC_TOKEN="$(az account get-access-token \
+  --resource "$AUTH_AUDIENCE" --query accessToken -o tsv)"
+
+python -m app.main --stage 5:30 --stage 20:60 --producer alpha:TENANT-01
+```
+
+Every option has an environment variable, because the same image runs as a job
+in the cloud where there is no command line to type. Client secrets are read
+from the environment only, never from an argument: a secret on the command line
+is recorded in shell history and is visible in the process list.
+
+Its tests need no network and no credentials:
+
+```bash
+cd load-simulator
+python -m pytest tests -v
+```
+
+### Running the real measurement
+
+`infra/simulator.bicep` deploys the simulator as a **Container Apps job** in the
+same region as the platform. A job rather than an app because a load run starts,
+drives a profile and ends. Same region because a generator in one region driving
+a platform in another adds inter-region latency to every sample, and the figures
+would be measuring the distance between two Azure regions.
+
+Each simulated producer is a user-assigned managed identity, so the run holds no
+client secret anywhere — not in the repository, not in a GitHub secret, not in
+the job's environment. Two grants remain, both in the directory rather than in
+ARM, and CD prints exactly what to use for each:
+
+1. `Incidents.Write` on the API registration, for each producer identity
+2. an entry per identity in the `TENANT_MAP` repository variable
+
+Until both are done the job authenticates and is refused with 403, which is the
+same answer any unregistered producer gets.
+
+CD deploys the job definition on every merge but never starts it. A profile that
+ran itself would drive the platform, and the bill, on each merge and would
+collide with whatever measurement was already in progress. Start a run by hand:
+
+```bash
+az containerapp job start -g rg-incident-platform -n incident-load-simulator
+```
+
+The summary is written to `OUT_DIR` and printed to stdout as one line of JSON
+behind a `LOAD_SUMMARY_JSON` marker, because a job has no volume to read
+afterwards and an exit code cannot carry a result. To read it back:
+
+```bash
+az containerapp job logs show -g rg-incident-platform -n incident-load-simulator \
+  --container load-simulator | grep LOAD_SUMMARY_JSON
+```
+
 ## Pipelines
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Every push and pull request | Checks the Common Event Model is identical between the two Cosmos-facing services; runs their test suites; builds all three images and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit) |
-| `cd.yml` | Push to `main` | Deploys infrastructure (registry, logging, Container Apps environment, Service Bus namespace and queue, identities), builds and pushes SHA-tagged images for all three services, rolls out the ingestion, worker and dashboard revisions, verifies `/health` reports the ingestion service healthy **and** publishing to Service Bus and that the dashboard is serving, then publishes a real incident and waits for the worker to drain the queue |
+| `ci.yml` | Every push and pull request | Checks the Common Event Model is identical between the two Cosmos-facing services; runs every test suite; builds all four images and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit) |
+| `cd.yml` | Push to `main` | Deploys infrastructure (registry, logging, Container Apps environment, Service Bus namespace and queue, identities), builds and pushes SHA-tagged images for all four components, rolls out the ingestion, worker and dashboard revisions, verifies `/health` reports the ingestion service healthy **and** publishing to Service Bus and that the dashboard is serving, publishes a real incident and waits for the worker to drain the queue, then deploys the load simulator's job definition without starting it |
 
 Dependabot raises weekly pull requests for Python, Docker and Actions
 dependencies.
