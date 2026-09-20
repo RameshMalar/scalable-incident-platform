@@ -65,16 +65,38 @@ param producers array = [
 ]
 
 @description('''
-Load profile as rate:seconds stages. The default steps up to the store's
-sustainable write rate and then crosses it: one incident write costs 9.9 RU
-against a 1,000 RU/s free-tier grant, so about 101 writes per second is the
-ceiling. Throttling that was planned for is a result; throttling that was
-stumbled into is noise.
+Load profile as rate:seconds stages.
+
+Rates are set well above the store's sustainable write rate, which is about
+101 incidents a second: one write costs a measured 9.9 RU against a 1,000 RU/s
+free-tier grant. Everything above that builds a queue, which is the point --
+the queue is what the platform absorbs a burst with, and what the worker
+scales on.
+
+Ingestion is a separate question, and the reason the rates go as high as they
+do. It scales on fifty concurrent requests per replica, and at the twenty
+milliseconds it answers in, even 140 incidents a second is three concurrent
+requests: real traffic that never troubles the autoscaler. A rate that shows
+ingestion scaling has to be an order of magnitude higher.
+
+Stages are at least a minute because scaling is not instant. A first run
+measured roughly a minute to go from one replica to four, so a stage shorter
+than that measures the ramp rather than the platform at that rate.
 ''')
-param stages string = '20:120,60:180,100:240,140:120'
+param stages string = '50:60,200:120,400:120,600:60'
 
 @description('Fraction of incidents re-sent under an id already used, to exercise deduplication.')
 param duplicateRate string = '0.02'
+
+@description('''
+Ceiling on requests in flight at once, set well above any rate the profile
+asks for. Reaching it turns an open-loop run closed: the schedule stalls
+behind the platform's latency, and the rate the run reports is then a property
+of this number, not of the platform. A first run at 500 a second hit a ceiling
+of 200 and reported 112 -- which is 200 divided by the latency, and says
+nothing about what the platform could take.
+''')
+param maxInflight string = '2000'
 
 @description('Seconds a replica may run before Container Apps kills it. Must exceed the profile.')
 param replicaTimeout int = 1800
@@ -126,6 +148,7 @@ module job 'simulator-job.bicep' = {
     authAudience: authAudience
     stages: stages
     duplicateRate: duplicateRate
+    maxInflight: maxInflight
     replicaTimeout: replicaTimeout
   }
   dependsOn: [

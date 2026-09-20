@@ -40,6 +40,8 @@ ENV_KEYS = (
     "IDENTITY_HEADER",
     "DUPLICATE_RATE",
     "SEED",
+    "MAX_INFLIGHT",
+    "REQUEST_TIMEOUT",
     "LOAD_SIM_SECRET_ALPHA",
     "LOAD_SIM_SECRET_BETA",
 )
@@ -365,13 +367,26 @@ def test_missing_configuration_exits_two_so_a_smoke_test_can_tell_them_apart(cap
 
 
 def test_the_run_shape_can_be_set_from_the_environment(monkeypatch):
+    # The same image runs as a job in the cloud, where there is no command
+    # line to type: an option only settable by flag cannot be set at all
+    # there.
     monkeypatch.setenv("DUPLICATE_RATE", "0.05")
     monkeypatch.setenv("SEED", "7")
+    monkeypatch.setenv("MAX_INFLIGHT", "2000")
+    monkeypatch.setenv("REQUEST_TIMEOUT", "30")
 
     parsed = parse_args([])
 
     assert parsed.duplicate_rate == 0.05
     assert parsed.seed == 7
+    assert parsed.max_inflight == 2000
+    assert parsed.timeout == 30.0
+
+
+def test_a_flag_still_beats_the_environment(monkeypatch):
+    monkeypatch.setenv("MAX_INFLIGHT", "2000")
+
+    assert parse_args(["--max-inflight", "50"]).max_inflight == 50
 
 
 def test_a_malformed_duplicate_rate_is_a_configuration_fault_not_a_traceback(

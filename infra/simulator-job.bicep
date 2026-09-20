@@ -39,6 +39,9 @@ param stages string
 @description('Fraction of incidents re-sent under an id already used.')
 param duplicateRate string
 
+@description('Ceiling on requests in flight at once.')
+param maxInflight string
+
 @description('Seconds a replica may run before Container Apps kills it.')
 param replicaTimeout int
 
@@ -116,6 +119,14 @@ resource simulator 'Microsoft.App/jobs@2024-03-01' = {
             {
               name: 'DUPLICATE_RATE'
               value: duplicateRate
+            }
+            // Set well above any rate the profile asks for. Hitting this
+            // ceiling turns an open-loop run closed -- the schedule stalls
+            // behind the platform's latency, and the rate the run reports
+            // becomes a property of this number rather than of the platform.
+            {
+              name: 'MAX_INFLIGHT'
+              value: maxInflight
             }
           ]
         }
