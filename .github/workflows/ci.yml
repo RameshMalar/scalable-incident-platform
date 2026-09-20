@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [ingestion-service, worker-service]
+        service: [ingestion-service, worker-service, load-simulator]
     defaults:
       run:
         working-directory: ${{ matrix.service }}
@@ -68,6 +68,8 @@ jobs:
             image: incident-worker
           - service: business-dashboard
             image: incident-dashboard
+          - service: load-simulator
+            image: incident-load-simulator
     steps:
       - uses: actions/checkout@v7
 
@@ -143,6 +145,22 @@ jobs:
           docker logs smoke >&2
           exit 1
 
+      # The simulator has no endpoint either, and unlike the worker it is
+      # supposed to exit: it drives a profile and stops. So the check is the
+      # same shape as the worker's -- start with nothing configured and require
+      # it to refuse the job by name rather than hang, crash on an import, or
+      # worse, start driving load at a default target.
+      - name: Smoke test the load simulator container
+        if: matrix.service == 'load-simulator'
+        run: |
+          output=$(docker run --rm ${{ matrix.image }}:ci 2>&1) && rc=0 || rc=$?
+          echo "$output"
+          if [ "$rc" -ne 2 ]; then
+            echo "::error::simulator exited ${rc}, expected 2 for missing configuration" >&2
+            exit 1
+          fi
+          echo "$output" | grep -q 'TARGET_URL is required'
+
       # Code scanning upload needs GitHub Advanced Security, which this private
       # repository does not have. The report is kept as a build artifact and the
       # gate is enforced by failing the job instead.
@@ -189,6 +207,8 @@ jobs:
           # there is no app/ subdirectory to point bandit at.
           - service: business-dashboard
             bandit_target: .
+          - service: load-simulator
+            bandit_target: app
     defaults:
       run:
         working-directory: ${{ matrix.service }}

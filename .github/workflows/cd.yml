@@ -87,10 +87,12 @@ jobs:
             if az acr login --name '${{ steps.core.outputs.registryName }}' \
               && build_and_push incident-ingestion ingestion-service \
               && build_and_push incident-worker worker-service \
-              && build_and_push incident-dashboard business-dashboard; then
+              && build_and_push incident-dashboard business-dashboard \
+              && build_and_push incident-load-simulator load-simulator; then
               echo "ingestion=${registry}/incident-ingestion:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               echo "worker=${registry}/incident-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               echo "dashboard=${registry}/incident-dashboard:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+              echo "simulator=${registry}/incident-load-simulator:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
@@ -382,6 +384,34 @@ jobs:
           fi
 
           echo "::notice::Worker is consuming and persisting to Cosmos"
+
+      # The load simulator's job definition, not a load run. The job is
+      # manually triggered, so this makes it ready to start and nothing more:
+      # a profile that ran itself on every merge would drive the platform --
+      # and the bill -- on each one, and would collide with whatever
+      # measurement was already in progress.
+      #
+      # Its producer identities have to be granted Incidents.Write in the
+      # directory and mapped in TENANT_MAP, neither of which ARM can do, so
+      # the deployment prints what to grant rather than leaving it to be
+      # looked up.
+      - name: Deploy the load simulator job
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/simulator.bicep \
+            --name "simulator-${GITHUB_SHA::7}" \
+            --parameters \
+              environmentId='${{ steps.core.outputs.environmentId }}' \
+              registryName='${{ steps.core.outputs.registryName }}' \
+              targetUrl='${{ steps.app.outputs.url }}' \
+              authAudience='${{ vars.AUTH_AUDIENCE }}' \
+              image='${{ steps.image.outputs.simulator }}' \
+            --query properties.outputs -o json)
+
+          echo "::notice::Load simulator job: $(echo "$outputs" | jq -r '.jobName.value')"
+          echo "::notice::TENANT_MAP needs: $(echo "$outputs" | jq -r '.tenantMapAdditions.value | join(",")')"
+          echo "::notice::Grant Incidents.Write to: $(echo "$outputs" | jq -r '.producerPrincipalIds.value | join(", ")')"
 
       # Azure resource health over Azure Resource Graph, kept as its own view
       # rather than folded into the incident dashboard. Free (a workbook is
