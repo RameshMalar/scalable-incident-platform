@@ -1,0 +1,10 @@
+# The only runtime dependency. An async client is the whole point: the driver
+# has to keep issuing requests on schedule while hundreds are still in flight,
+# which a synchronous client cannot do without a thread per request.
+#
+# Tokens are fetched with the same client over a plain OAuth2 client-credentials
+# POST rather than through azure-identity or msal. Those libraries exist to hide
+# the credential chain of a workload running inside Azure; here each simulated
+# producer holds explicit credentials of its own, and the exchange is one form
+# post that the tests can drive through httpx's own mock transport.
+httpx==0.28.1
