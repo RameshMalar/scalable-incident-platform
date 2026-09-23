@@ -35,7 +35,7 @@ var workbookContent = {
       name: 'query - container apps'
       content: {
         version: 'KqlItem/1.0'
-        query: 'Resources\n| where resourceGroup =~ \'{ResourceGroup}\'\n| where type =~ \'microsoft.app/containerapps\'\n| project name, location, runningStatus = tostring(properties.runningStatus), latestRevisionName = tostring(properties.latestRevisionName)'
+        query: 'Resources\n| where resourceGroup =~ \'${resourceGroup().name}\'\n| where type =~ \'microsoft.app/containerapps\'\n| project name, location, runningStatus = tostring(properties.runningStatus), latestRevisionName = tostring(properties.latestRevisionName)'
         queryType: 1
         resourceType: 'microsoft.resourcegraph/resources'
       }
@@ -45,7 +45,7 @@ var workbookContent = {
       name: 'query - service bus queues'
       content: {
         version: 'KqlItem/1.0'
-        query: 'Resources\n| where resourceGroup =~ \'{ResourceGroup}\'\n| where type =~ \'microsoft.servicebus/namespaces/queues\'\n| project name, status = tostring(properties.status), activeMessageCount = tostring(properties.countDetails.activeMessageCount), deadLetterMessageCount = tostring(properties.countDetails.deadLetterMessageCount)'
+        query: 'Resources\n| where resourceGroup =~ \'${resourceGroup().name}\'\n| where type =~ \'microsoft.servicebus/namespaces/queues\'\n| project name, status = tostring(properties.status), activeMessageCount = tostring(properties.countDetails.activeMessageCount), deadLetterMessageCount = tostring(properties.countDetails.deadLetterMessageCount)'
         queryType: 1
         resourceType: 'microsoft.resourcegraph/resources'
       }
@@ -55,7 +55,7 @@ var workbookContent = {
       name: 'query - cosmos db'
       content: {
         version: 'KqlItem/1.0'
-        query: 'Resources\n| where resourceGroup =~ \'{ResourceGroup}\'\n| where type =~ \'microsoft.documentdb/databaseaccounts\'\n| project name, location, provisioningState = tostring(properties.provisioningState), documentEndpoint = tostring(properties.documentEndpoint)'
+        query: 'Resources\n| where resourceGroup =~ \'${resourceGroup().name}\'\n| where type =~ \'microsoft.documentdb/databaseaccounts\'\n| project name, location, provisioningState = tostring(properties.provisioningState), documentEndpoint = tostring(properties.documentEndpoint)'
         queryType: 1
         resourceType: 'microsoft.resourcegraph/resources'
       }
