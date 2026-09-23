@@ -192,6 +192,31 @@ jobs:
             -o tsv
 
       # -----------------------------------------------------------------------
+      # Deploy notification service
+      # -----------------------------------------------------------------------
+
+      - name: Deploy the notification service
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/notification.bicep \
+            --name "notification-${GITHUB_SHA::7}" \
+            --parameters \
+              environmentId='${{ steps.core.outputs.environmentId }}' \
+              identityId='${{ steps.core.outputs.notificationIdentityId }}' \
+              identityClientId='${{ steps.core.outputs.notificationIdentityClientId }}' \
+              scalerIdentityId='${{ steps.core.outputs.notificationScalerIdentityId }}' \
+              serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
+              serviceBusNamespace='${{ steps.core.outputs.serviceBusName }}' \
+              serviceBusQueue='${{ steps.core.outputs.notificationQueueName }}' \
+              registryServer='${{ steps.core.outputs.registryLoginServer }}' \
+              image='${{ steps.image.outputs.notification }}' \
+              telegramChatId='${{ vars.TELEGRAM_CHAT_ID }}' \
+              telegramBotTokenSecretUri='${{ vars.TELEGRAM_BOT_TOKEN_SECRET_URI }}' \
+            --query properties.outputs.appName.value \
+            -o tsv
+
+      # -----------------------------------------------------------------------
       # Deploy business dashboard
       # -----------------------------------------------------------------------
 
