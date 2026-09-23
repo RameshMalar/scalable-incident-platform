@@ -1,7 +1,8 @@
 name: CD
 
-# Deploys main to Azure. Authentication is OpenID Connect against a
-# user-assigned managed identity, so no Azure credential is stored in GitHub.
+# Deploys main to Azure.
+# Authentication uses OpenID Connect against a managed identity,
+# so no Azure credential is stored in GitHub.
 on:
   push:
     branches:
@@ -9,10 +10,12 @@ on:
     paths:
       - 'ingestion-service/**'
       - 'worker-service/**'
+      - 'notification-service/**'
       - 'business-dashboard/**'
       - 'load-simulator/**'
       - 'infra/**'
       - '.github/workflows/cd.yml'
+
   workflow_dispatch:
 
 permissions:
@@ -20,7 +23,6 @@ permissions:
   id-token: write
 
 concurrency:
-  # A queued deployment replaces an older one instead of racing it.
   group: deploy-production
   cancel-in-progress: false
 
@@ -32,8 +34,17 @@ jobs:
     name: Provision and deploy
     runs-on: ubuntu-latest
     environment: production
+
     steps:
+      # -----------------------------------------------------------------------
+      # Checkout
+      # -----------------------------------------------------------------------
+
       - uses: actions/checkout@v7
+
+      # -----------------------------------------------------------------------
+      # Azure authentication
+      # -----------------------------------------------------------------------
 
       - name: Sign in to Azure
         uses: azure/login@v3
@@ -42,9 +53,10 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      # Shared platform resources first: registry, logging, the Container Apps
-      # environment and the pull identity. Idempotent, so this both creates the
-      # environment on day one and reconciles drift on every later run.
+      # -----------------------------------------------------------------------
+      # Core infrastructure
+      # -----------------------------------------------------------------------
+
       - name: Deploy core infrastructure
         id: core
         run: |
@@ -52,29 +64,45 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/core.bicep \
             --name "core-${GITHUB_SHA::7}" \
-            --query properties.outputs -o json)
-          for key in registryName registryLoginServer environmentId \
-            ingestionIdentityId ingestionIdentityClientId \
-            workerIdentityId workerIdentityClientId scalerIdentityId \
-            dashboardIdentityId dashboardIdentityClientId \
-            serviceBusName serviceBusFqdn incidentQueueName \
-            cosmosEndpoint cosmosDatabaseName cosmosContainerName; do
+            --query properties.outputs \
+            -o json)
+
+          for key in \
+            registryName \
+            registryLoginServer \
+            environmentId \
+            ingestionIdentityId \
+            ingestionIdentityClientId \
+            workerIdentityId \
+            workerIdentityClientId \
+            scalerIdentityId \
+            serviceBusName \
+            serviceBusFqdn \
+            incidentQueueName \
+            cosmosEndpoint \
+            cosmosDatabaseName \
+            cosmosContainerName \
+            notificationIdentityId \
+            notificationIdentityClientId \
+            notificationScalerIdentityId \
+            notificationQueueName \
+            keyVaultName \
+            dashboardIdentityId \
+            dashboardIdentityClientId
+          do
             value=$(echo "$outputs" | jq -r ".${key}.value")
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
           done
 
-      # Container Apps only runs linux/amd64, so the platform is pinned rather
-      # than inherited from the runner.
-      #
-      # Retried because this step depends on two registries we do not control:
-      # Docker Hub for the base image and ACR for the push. A 502 from either
-      # has already failed a deployment whose code was perfectly fine.
+      # -----------------------------------------------------------------------
+      # Build container images
+      # -----------------------------------------------------------------------
+
       - name: Build and push images
         id: image
         run: |
           registry='${{ steps.core.outputs.registryLoginServer }}'
 
-          # $1 repository, $2 build context.
           build_and_push() {
             docker buildx build \
               --platform linux/amd64 \
@@ -85,17 +113,22 @@ jobs:
           }
 
           for attempt in 1 2 3; do
-            if az acr login --name '${{ steps.core.outputs.registryName }}' \
+            if az acr login \
+              --name '${{ steps.core.outputs.registryName }}' \
               && build_and_push incident-ingestion ingestion-service \
               && build_and_push incident-worker worker-service \
+              && build_and_push incident-notification notification-service \
               && build_and_push incident-dashboard business-dashboard \
               && build_and_push incident-load-simulator load-simulator; then
+
               echo "ingestion=${registry}/incident-ingestion:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               echo "worker=${registry}/incident-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+              echo "notification=${registry}/incident-notification:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               echo "dashboard=${registry}/incident-dashboard:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               echo "simulator=${registry}/incident-load-simulator:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               exit 0
             fi
+
             if [ "$attempt" -lt 3 ]; then
               delay=$((attempt * 20))
               echo "::warning::Build attempt ${attempt} failed, retrying in ${delay}s"
@@ -106,8 +139,10 @@ jobs:
           echo "::error::Build failed after 3 attempts" >&2
           exit 1
 
-      # The service is created directly on the image built above. There is no
-      # placeholder revision to fail its health probes first.
+      # -----------------------------------------------------------------------
+      # Deploy ingestion service
+      # -----------------------------------------------------------------------
+
       - name: Deploy the ingestion service
         id: app
         run: |
@@ -124,11 +159,15 @@ jobs:
               authAudience='${{ vars.AUTH_AUDIENCE }}' \
               tenantMap='${{ vars.TENANT_MAP }}' \
               image='${{ steps.image.outputs.ingestion }}' \
-            --query properties.outputs.url.value -o tsv)
+            --query properties.outputs.url.value \
+            -o tsv)
+
           echo "url=${url}" >> "$GITHUB_OUTPUT"
 
-      # The consumer side of the platform. No ingress and no health probe: it
-      # is scaled, and judged, by the queue -- see the verification step below.
+      # -----------------------------------------------------------------------
+      # Deploy processing worker
+      # -----------------------------------------------------------------------
+
       - name: Deploy the processing worker
         run: |
           az deployment group create \
@@ -143,16 +182,44 @@ jobs:
               serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
               serviceBusNamespace='${{ steps.core.outputs.serviceBusName }}' \
               serviceBusQueue='${{ steps.core.outputs.incidentQueueName }}' \
+              notificationQueue='${{ steps.core.outputs.notificationQueueName }}' \
               cosmosEndpoint='${{ steps.core.outputs.cosmosEndpoint }}' \
               cosmosDatabase='${{ steps.core.outputs.cosmosDatabaseName }}' \
               cosmosContainer='${{ steps.core.outputs.cosmosContainerName }}' \
               registryServer='${{ steps.core.outputs.registryLoginServer }}' \
               image='${{ steps.image.outputs.worker }}' \
-            --query properties.outputs.appName.value -o tsv
+            --query properties.outputs.appName.value \
+            -o tsv
 
-      # Read-only view over the same store, on its own reader identity so a
-      # bug here can never write. See infra/dashboard.bicep for why it has no
-      # auth in front of it.
+      # -----------------------------------------------------------------------
+      # Deploy notification service
+      # -----------------------------------------------------------------------
+
+      - name: Deploy the notification service
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/notification.bicep \
+            --name "notification-${GITHUB_SHA::7}" \
+            --parameters \
+              environmentId='${{ steps.core.outputs.environmentId }}' \
+              identityId='${{ steps.core.outputs.notificationIdentityId }}' \
+              identityClientId='${{ steps.core.outputs.notificationIdentityClientId }}' \
+              scalerIdentityId='${{ steps.core.outputs.notificationScalerIdentityId }}' \
+              serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
+              serviceBusNamespace='${{ steps.core.outputs.serviceBusName }}' \
+              serviceBusQueue='${{ steps.core.outputs.notificationQueueName }}' \
+              registryServer='${{ steps.core.outputs.registryLoginServer }}' \
+              image='${{ steps.image.outputs.notification }}' \
+              telegramChatId='${{ vars.TELEGRAM_CHAT_ID }}' \
+              telegramBotTokenSecretUri='${{ vars.TELEGRAM_BOT_TOKEN_SECRET_URI }}' \
+            --query properties.outputs.appName.value \
+            -o tsv
+
+      # -----------------------------------------------------------------------
+      # Deploy business dashboard
+      # -----------------------------------------------------------------------
+
       - name: Deploy the business dashboard
         id: dashboard
         run: |
@@ -168,58 +235,81 @@ jobs:
               cosmosDatabase='${{ steps.core.outputs.cosmosDatabaseName }}' \
               cosmosContainer='${{ steps.core.outputs.cosmosContainerName }}' \
               image='${{ steps.image.outputs.dashboard }}' \
-            --query properties.outputs.url.value -o tsv)
+            --query properties.outputs.url.value \
+            -o tsv)
+
           echo "url=${url}" >> "$GITHUB_OUTPUT"
 
       - name: Verify the dashboard is serving
         run: |
           url='${{ steps.dashboard.outputs.url }}'
+
           for attempt in $(seq 1 20); do
             if curl -fsS --max-time 20 "${url}/_stcore/health"; then
               echo "::notice::Dashboard healthy at ${url}"
               exit 0
             fi
+
             sleep 6
           done
+
           echo "::error::${url}/_stcore/health did not respond" >&2
           exit 1
 
-      # A deployment that reports success without being reachable is worse
-      # than a failed one -- and one that is reachable while silently dropping
-      # every incident is worse still. /health names the publisher the process
-      # actually started with, so a revision that fell back to the in-memory
-      # mock fails the deployment here instead of passing as healthy.
+      # -----------------------------------------------------------------------
+      # Verify ingestion deployment
+      # -----------------------------------------------------------------------
+
       - name: Verify the deployment
         run: |
           url='${{ steps.app.outputs.url }}'
+
           for attempt in $(seq 1 20); do
-            body=$(curl -fsS --max-time 20 "${url}/health" || true)
+            body=$(curl -fsS \
+              --max-time 20 \
+              "${url}/health" \
+              || true)
+
             if echo "$body" | grep -q '"status":"healthy"'; then
+
               if echo "$body" | grep -q '"publisher":"servicebus"'; then
-                # Liveness only proves the process is serving. /ready proves the
-                # attached identity can mint a Service Bus token, so a missing
-                # or unresolvable managed identity fails here, naming itself,
-                # rather than surfacing later as an ambiguous drain timeout.
-                ready=$(curl -fsS --max-time 20 "${url}/ready" || true)
+
+                ready=$(curl -fsS \
+                  --max-time 20 \
+                  "${url}/ready" \
+                  || true)
+
                 if ! echo "$ready" | grep -q '"status":"ready"'; then
                   echo "::error::${url} is healthy but not ready to publish: ${ready}" >&2
                   exit 1
                 fi
 
-                # The ingress is public. A revision that came up with
-                # authentication switched off would accept an incident from
-                # anyone, for any tenant they named -- which is how this service
-                # ran until now. Fail the deployment rather than ship it.
                 if ! echo "$body" | grep -q '"auth":"entra"'; then
                   echo "::error::${url} is serving with authentication disabled: ${body}" >&2
                   exit 1
                 fi
 
-                # And prove it end to end rather than trusting the field: an
-                # unauthenticated POST must be refused.
-                anon=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
-                  -X POST "${url}/api/v1/incidents" -H 'content-type: application/json' \
-                  -d '{"event_id":"EVT-ANON","tenant_id":"T","site_id":"S","source_id":"C","source_name":"n","source_type":"video_analytics","analytics_type":"intrusion_detection","event_type":"intrusion_detected","severity":"low","timestamp":"2026-01-01T00:00:00"}')
+                anon=$(curl \
+                  -s \
+                  -o /dev/null \
+                  -w '%{http_code}' \
+                  --max-time 20 \
+                  -X POST \
+                  "${url}/api/v1/incidents" \
+                  -H 'content-type: application/json' \
+                  -d '{
+                    "event_id":"EVT-ANON",
+                    "tenant_id":"T",
+                    "site_id":"S",
+                    "source_id":"C",
+                    "source_name":"n",
+                    "source_type":"video_analytics",
+                    "analytics_type":"intrusion_detection",
+                    "event_type":"intrusion_detected",
+                    "severity":"low",
+                    "timestamp":"2026-01-01T00:00:00"
+                  }')
+
                 if [ "$anon" != "401" ]; then
                   echo "::error::An unauthenticated POST returned ${anon}, expected 401. The API is open." >&2
                   exit 1
@@ -228,21 +318,21 @@ jobs:
                 echo "::notice::Deployed, healthy, ready, and refusing anonymous writes at ${url}"
                 exit 0
               fi
+
               echo "::error::${url}/health is healthy but not publishing to Service Bus: ${body}" >&2
               exit 1
             fi
+
             sleep 6
           done
+
           echo "::error::${url}/health did not report healthy" >&2
           exit 1
 
-      # The worker has no ingress, so "is it alive" cannot be a health probe.
-      # The only honest question is whether incidents actually leave the queue,
-      # so this posts one through the deployed ingestion service and waits for
-      # the backlog to come back down. That exercises the whole path in one
-      # assertion: ingress -> publish -> queue -> KEDA wakes a replica from
-      # zero -> receive -> complete. Five minutes because a cold start from
-      # zero costs a scaler poll (30s) plus an image pull.
+      # -----------------------------------------------------------------------
+      # Verify worker end-to-end
+      # -----------------------------------------------------------------------
+
       - name: Verify the worker drains the queue
         run: |
           url='${{ steps.app.outputs.url }}'
@@ -258,20 +348,14 @@ jobs:
               -o tsv
           }
 
-          # `az --query '[a, b]' -o tsv` prints the two values on SEPARATE
-          # LINES, not tab-separated on one, so `read a b <<< "$(counts)"` takes
-          # only the first line and leaves the second variable empty. That is
-          # how the dead-letter guard below came to be silently disabled:
-          # `[ 0 -gt "" ]` errors out and reads as false, and since a
-          # dead-lettered message also leaves activeMessageCount at 0, the drain
-          # check then reported success on exactly the failure it exists to
-          # catch. Both values are parsed by line and asserted to be numbers, so
-          # a future change to the query shape fails loudly instead.
           read_counts() {
             local out
+
             out="$(counts)"
+
             active="$(echo "$out" | sed -n 1p)"
             dead="$(echo "$out" | sed -n 2p)"
+
             case "${active}:${dead}" in
               *[!0-9:]*|:*|*:)
                 echo "::error::Could not read queue counts (active='${active}' dead='${dead}'). The az query shape changed." >&2
@@ -280,37 +364,31 @@ jobs:
             esac
           }
 
-          # A dead-letter left over from an earlier run is not this run's
-          # failure, so the assertion is on the change, not the total.
           read_counts
+
           active_before=$active
           dead_before=$dead
+
           echo "before: active=${active_before} dead-lettered=${dead_before}"
 
-          # Posted through the real contract endpoint, not /simulate: that one
-          # answers 200 with {"status":"error"} when the publish fails, so curl
-          # would succeed, nothing would reach the queue, and the drain check
-          # below would pass on an empty queue without the worker ever waking.
-          # /api/v1/incidents answers 502 on a failed publish, and the body is
-          # asserted as well so a future change to that status cannot quietly
-          # hollow this check out again.
-          # The API now refuses anonymous writes, so this step has to
-          # authenticate like any other producer. It uses the deploy identity's
-          # own token, which means the drain check exercises the authenticated
-          # path rather than a back door.
-          token=$(az account get-access-token --resource '${{ vars.AUTH_AUDIENCE }}' \
-            --query accessToken -o tsv 2>/dev/null || true)
+          token=$(az account get-access-token \
+            --resource '${{ vars.AUTH_AUDIENCE }}' \
+            --query accessToken \
+            -o tsv \
+            2>/dev/null \
+            || true)
+
           if [ -z "$token" ]; then
             echo "::error::Could not get a token for ${{ vars.AUTH_AUDIENCE }}. The deploy identity needs the Incidents.Write app role and an entry in TENANT_MAP." >&2
             exit 1
           fi
 
-          # -w writes the status onto the end of the body rather than -f
-          # discarding it. The first run of this failed with a bare
-          # "curl: (22) ... error: 401" and nothing to say which check refused
-          # the token; an auth failure should explain itself.
-          body=$(curl -sS --max-time 30 -w '\n<<HTTP:%{http_code}>>' \
-            -X POST "${url}/api/v1/incidents" \
+          body=$(curl \
+            -sS \
+            --max-time 30 \
+            -w '\n<<HTTP:%{http_code}>>' \
+            -X POST \
+            "${url}/api/v1/incidents" \
             -H "Authorization: Bearer ${token}" \
             -H 'content-type: application/json' \
             -d "{
@@ -330,15 +408,20 @@ jobs:
 
           if ! echo "$body" | grep -q '"status":"accepted"'; then
             echo "::error::Ingestion did not accept the verification incident. Response: ${body}" >&2
-            # A 401 or 403 here is about the token, not the queue, so say which
-            # claim the API objected to rather than leaving a status code.
-            echo "$body" | grep -o '"detail":"[^"]*"' >&2 || true
+
+            echo "$body" \
+              | grep -o '"detail":"[^"]*"' >&2 \
+              || true
+
             exit 1
           fi
+
           echo "published one incident through ${url}"
 
+          # Wait up to five minutes for the Worker to consume the message.
           for attempt in $(seq 1 30); do
             sleep 10
+
             read_counts
 
             if [ "$dead" -gt "$dead_before" ]; then
@@ -361,18 +444,9 @@ jobs:
           fi
 
           # Draining proves the queue emptied, not that the incident was kept.
-          # Two different failures hide in there, and only one of them is
-          # already covered.
-          #
-          # A worker that CANNOT store -- no Cosmos role, wrong endpoint -- has
-          # create_item raise, abandons the message, and after five deliveries
-          # dead-letters it. The guard above catches that.
-          #
-          # A worker that simply DOES NOT store -- INCIDENT_STORE unset, so it
-          # logs each incident and completes it -- drains perfectly cleanly and
-          # looks identical to success. That is the failure the ingestion
-          # service shipped with once already, so assert the deployed revision
-          # is actually configured to persist.
+          # A worker that cannot store will eventually dead-letter the message.
+          # A worker with INCIDENT_STORE unset could drain it without
+          # persisting it, so explicitly verify the deployed configuration.
           store=$(az containerapp show \
             --resource-group "$RESOURCE_GROUP" \
             --name incident-worker \
@@ -386,16 +460,10 @@ jobs:
 
           echo "::notice::Worker is consuming and persisting to Cosmos"
 
-      # The load simulator's job definition, not a load run. The job is
-      # manually triggered, so this makes it ready to start and nothing more:
-      # a profile that ran itself on every merge would drive the platform --
-      # and the bill -- on each one, and would collide with whatever
-      # measurement was already in progress.
-      #
-      # Its producer identities have to be granted Incidents.Write in the
-      # directory and mapped in TENANT_MAP, neither of which ARM can do, so
-      # the deployment prints what to grant rather than leaving it to be
-      # looked up.
+      # -----------------------------------------------------------------------
+      # Deploy load simulator
+      # -----------------------------------------------------------------------
+
       - name: Deploy the load simulator job
         run: |
           outputs=$(az deployment group create \
@@ -408,20 +476,17 @@ jobs:
               targetUrl='${{ steps.app.outputs.url }}' \
               authAudience='${{ vars.AUTH_AUDIENCE }}' \
               image='${{ steps.image.outputs.simulator }}' \
-            --query properties.outputs -o json)
+            --query properties.outputs \
+            -o json)
 
           echo "::notice::Load simulator job: $(echo "$outputs" | jq -r '.jobName.value')"
           echo "::notice::TENANT_MAP needs: $(echo "$outputs" | jq -r '.tenantMapAdditions.value | join(",")')"
           echo "::notice::Grant Incidents.Write to: $(echo "$outputs" | jq -r '.producerPrincipalIds.value | join(", ")')"
 
-      # Azure resource health over Azure Resource Graph, kept as its own view
-      # rather than folded into the incident dashboard. Free (a workbook is
-      # just a saved query/layout), unlike Managed Grafana, which this
-      # replaced -- see infra/workbook.bicep for why. No image to build: it is
-      # a workbook resource, so nothing here to health-check the way the app
-      # deployments above are. Placed last and allowed to fail on its own
-      # without failing the whole deployment: it is an optional add-on, not
-      # part of the platform the verification steps above exist to protect.
+      # -----------------------------------------------------------------------
+      # Resource-health workbook
+      # -----------------------------------------------------------------------
+
       - name: Deploy resource-health workbook
         continue-on-error: true
         run: |

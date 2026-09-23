@@ -1,6 +1,6 @@
 targetScope = 'resourceGroup'
 
-@description('Region for all resources. Keep every resource in one region: the load simulator must sit next to the platform or the latency numbers are meaningless.')
+@description('Region for all resources.')
 param location string = 'malaysiawest'
 
 @description('Short prefix for generated resource names. Lowercase alphanumeric.')
@@ -8,170 +8,176 @@ param location string = 'malaysiawest'
 @maxLength(11)
 param namePrefix string = 'incident'
 
+
+// -----------------------------------------------------------------------------
+// Shared names and role definitions
+// -----------------------------------------------------------------------------
+
 var suffix = uniqueString(resourceGroup().id)
+
 var acrName = '${namePrefix}acr${suffix}'
-var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
-// Data-plane roles for Service Bus. Producers get Sender, consumers get
-// Receiver -- neither can manage the namespace, only push or pull messages.
-var serviceBusDataSenderRoleId = '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39'
-var serviceBusDataReceiverRoleId = '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0'
-// Owner is the only built-in role that lets KEDA read a queue's depth.
-// Receiver looks like it should be enough -- its management actions do include
-// `Microsoft.ServiceBus/*/queues/read` -- but the scaler does not go through
-// ARM. It asks the namespace itself for the queue's runtime properties, and
-// that is a data-plane operation, where Receiver grants only
-// `Microsoft.ServiceBus/*/receive/action`. Owner is the sole built-in role
-// whose data actions cover it, and it also grants send, which is why it goes
-// to a dedicated identity scoped to the one queue -- see `scalerIdentity`.
-var serviceBusDataOwnerRoleId = '090c5cfd-751d-490a-894a-3ce6f1109419'
-
-// Service Bus namespaces are globally addressed, so the name must be unique.
 var serviceBusName = '${namePrefix}-bus-${suffix}'
 var incidentQueueName = 'incident-events'
+var notificationQueueName = 'notification-events'
 
-// Cosmos account names are globally addressed too, and must be lowercase.
 var cosmosName = toLower('${namePrefix}-cosmos-${suffix}')
 var cosmosDatabaseName = 'incidents'
 var cosmosContainerName = 'incidents'
 
-// Cosmos data-plane RBAC is its own system: these are not Azure role
-// definitions and cannot be assigned with Microsoft.Authorization. The
-// Contributor role reads and writes documents but cannot manage the account.
+var keyVaultName = toLower('${take(namePrefix, 8)}kv${suffix}')
+
+
+// Azure Container Registry pull role.
+var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+
+// Service Bus data-plane roles.
+var serviceBusDataSenderRoleId = '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39'
+var serviceBusDataReceiverRoleId = '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0'
+var serviceBusDataOwnerRoleId = '090c5cfd-751d-490a-894a-3ce6f1109419'
+
+// Cosmos DB data-plane contributor role.
 var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
-// Reader cannot write, which is all the dashboard should ever be able to do.
 var cosmosDataReaderRoleId = '00000000-0000-0000-0000-000000000001'
+
+// Key Vault Secrets User.
+// Notification Service may read secret values but cannot manage them.
+var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+
+
+// -----------------------------------------------------------------------------
+// Monitoring
+// -----------------------------------------------------------------------------
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: '${namePrefix}-logs'
   location: location
+
   properties: {
     sku: {
       name: 'PerGB2018'
     }
+
     retentionInDays: 30
   }
 }
 
+
+// -----------------------------------------------------------------------------
+// Azure Container Registry
+// -----------------------------------------------------------------------------
+
 resource registry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
   name: acrName
   location: location
+
   sku: {
     name: 'Basic'
   }
+
   properties: {
-    // Deployments authenticate with a managed identity, so the shared admin
-    // account stays switched off.
+    // Workloads pull images using managed identities.
     adminUserEnabled: false
   }
 }
 
-// One identity per workload rather than a registry-wide admin credential, so
-// pull rights can be revoked for a single service.
+
+// -----------------------------------------------------------------------------
+// Managed identities
+// -----------------------------------------------------------------------------
+
 resource ingestionIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${namePrefix}-ingestion-id'
   location: location
 }
 
-resource ingestionAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, ingestionIdentity.id, acrPullRoleId)
-  scope: registry
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
-    principalId: ingestionIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// The processing worker's identity: it pulls the worker image from the registry
-// and receives from the queue. Kept separate from the ingestion identity so
-// either service's rights can be revoked without touching the other.
 resource workerIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${namePrefix}-worker-id'
   location: location
 }
 
-resource workerAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, workerIdentity.id, acrPullRoleId)
+resource notificationIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${namePrefix}-notification-id'
+  location: location
+}
+
+resource scalerIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${namePrefix}-scaler-id'
+  location: location
+}
+
+resource notificationScalerIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${namePrefix}-notification-scaler-id'
+  location: location
+}
+
+
+// -----------------------------------------------------------------------------
+// ACR permissions
+// -----------------------------------------------------------------------------
+
+resource ingestionAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    registry.id,
+    ingestionIdentity.id,
+    acrPullRoleId
+  )
+
   scope: registry
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
-    principalId: workerIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
 
-resource containerEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
-  name: '${namePrefix}-env'
-  location: location
   properties: {
-    appLogsConfiguration: {
-      destination: 'log-analytics'
-      logAnalyticsConfiguration: {
-        customerId: logAnalytics.properties.customerId
-        sharedKey: logAnalytics.listKeys().primarySharedKey
-      }
-    }
-  }
-}
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      acrPullRoleId
+    )
 
-// Standard rather than Basic: Basic cannot carry topics, sessions or duplicate
-// detection, so the first fan-out to a second consumer would force a namespace
-// rebuild. Standard costs a few dollars a month and keeps that door open.
-resource serviceBus 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
-  name: serviceBusName
-  location: location
-  sku: {
-    name: 'Standard'
-    tier: 'Standard'
-  }
-  properties: {
-    // Services authenticate with managed identity and Azure RBAC. Local SAS
-    // keys stay switched off so there is no shared secret to leak or rotate.
-    disableLocalAuth: true
-  }
-}
-
-resource incidentQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
-  parent: serviceBus
-  name: incidentQueueName
-  properties: {
-    // A message the worker abandons five times is a poison message: it moves to
-    // the dead-letter subqueue instead of blocking the queue behind it forever.
-    maxDeliveryCount: 5
-    // Expiry is a failure too, so time-out messages dead-letter rather than
-    // vanish -- nothing leaves the system without a trace.
-    deadLetteringOnMessageExpiration: true
-    lockDuration: 'PT1M'
-    defaultMessageTimeToLive: 'P14D'
-  }
-}
-
-// The ingestion service only ever publishes.
-resource ingestionBusSender 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(serviceBus.id, ingestionIdentity.id, serviceBusDataSenderRoleId)
-  scope: serviceBus
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', serviceBusDataSenderRoleId)
     principalId: ingestionIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-// The processing worker only ever consumes.
-resource workerBusReceiver 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(serviceBus.id, workerIdentity.id, serviceBusDataReceiverRoleId)
-  scope: serviceBus
+resource workerAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    registry.id,
+    workerIdentity.id,
+    acrPullRoleId
+  )
+
+  scope: registry
+
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', serviceBusDataReceiverRoleId)
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      acrPullRoleId
+    )
+
     principalId: workerIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-// The business dashboard's identity: it pulls its own image from the
-// registry and reads incidents from Cosmos. Kept separate from the worker
-// identity so revoking write access never has to also revoke read access.
+resource notificationAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    registry.id,
+    notificationIdentity.id,
+    acrPullRoleId
+  )
+
+  scope: registry
+
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      acrPullRoleId
+    )
+
+    principalId: notificationIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+
+// Business dashboard uses its own read-only identity.
 resource dashboardIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${namePrefix}-dashboard-id'
   location: location
@@ -181,65 +187,247 @@ resource dashboardAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   name: guid(registry.id, dashboardIdentity.id, acrPullRoleId)
   scope: registry
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      acrPullRoleId
+    )
     principalId: dashboardIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-// The autoscaler is a third party to the messaging: KEDA, running inside the
-// Container Apps platform, polls the queue's runtime properties every 30
-// seconds to decide how many worker replicas to run. That read is a data-plane
-// operation the worker's Receiver role deliberately does not cover.
-//
-// Giving that right to the worker identity would quietly hand the worker's own
-// code the ability to publish incidents, so it goes to an identity of its own,
-// scoped to `incident-events` rather than to the namespace: this principal can
-// manage exactly one queue and cannot see any topic or queue added later.
-resource scalerIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: '${namePrefix}-scaler-id'
+
+// -----------------------------------------------------------------------------
+// Container Apps environment
+// -----------------------------------------------------------------------------
+
+resource containerEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
+  name: '${namePrefix}-env'
   location: location
+
+  properties: {
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+
+      logAnalyticsConfiguration: {
+        customerId: logAnalytics.properties.customerId
+        sharedKey: logAnalytics.listKeys().primarySharedKey
+      }
+    }
+  }
 }
 
-resource scalerQueueOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(incidentQueue.id, scalerIdentity.id, serviceBusDataOwnerRoleId)
-  scope: incidentQueue
+
+// -----------------------------------------------------------------------------
+// Service Bus
+// -----------------------------------------------------------------------------
+
+resource serviceBus 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
+  name: serviceBusName
+  location: location
+
+  sku: {
+    name: 'Standard'
+    tier: 'Standard'
+  }
+
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', serviceBusDataOwnerRoleId)
+    // Authentication is through managed identity and Azure RBAC.
+    // SAS/local authentication remains disabled.
+    disableLocalAuth: true
+  }
+}
+
+
+// Main incident queue.
+resource incidentQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: serviceBus
+  name: incidentQueueName
+
+  properties: {
+    maxDeliveryCount: 5
+    deadLetteringOnMessageExpiration: true
+    lockDuration: 'PT1M'
+    defaultMessageTimeToLive: 'P14D'
+  }
+}
+
+
+// Notification delivery queue.
+resource notificationQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: serviceBus
+  name: notificationQueueName
+
+  properties: {
+    maxDeliveryCount: 5
+    deadLetteringOnMessageExpiration: true
+    lockDuration: 'PT1M'
+    defaultMessageTimeToLive: 'P14D'
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// Service Bus RBAC
+// -----------------------------------------------------------------------------
+
+// Ingestion publishes incident events.
+resource ingestionBusSender 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    serviceBus.id,
+    ingestionIdentity.id,
+    serviceBusDataSenderRoleId
+  )
+
+  scope: serviceBus
+
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      serviceBusDataSenderRoleId
+    )
+
+    principalId: ingestionIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+
+// Worker receives incident events.
+resource workerBusReceiver 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    serviceBus.id,
+    workerIdentity.id,
+    serviceBusDataReceiverRoleId
+  )
+
+  scope: serviceBus
+
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      serviceBusDataReceiverRoleId
+    )
+
+    principalId: workerIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+
+// After persistence, Worker publishes to notification-events.
+resource workerNotificationSender 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    notificationQueue.id,
+    workerIdentity.id,
+    serviceBusDataSenderRoleId
+  )
+
+  scope: notificationQueue
+
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      serviceBusDataSenderRoleId
+    )
+
+    principalId: workerIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+
+// Notification Service consumes notification-events.
+resource notificationBusReceiver 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    notificationQueue.id,
+    notificationIdentity.id,
+    serviceBusDataReceiverRoleId
+  )
+
+  scope: notificationQueue
+
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      serviceBusDataReceiverRoleId
+    )
+
+    principalId: notificationIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+
+// Worker queue scaler.
+resource scalerQueueOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    incidentQueue.id,
+    scalerIdentity.id,
+    serviceBusDataOwnerRoleId
+  )
+
+  scope: incidentQueue
+
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      serviceBusDataOwnerRoleId
+    )
+
     principalId: scalerIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-// The incident store. See AD-07: the free tier carries 1,000 RU/s and 25 GB at
-// no charge and does not expire, where the alternative -- PostgreSQL Flexible
-// Server B1ms -- is about $21 a month and, being always on, would be the only
-// component in this platform that cannot scale to zero.
+
+// Notification queue scaler.
+resource notificationScalerQueueOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    notificationQueue.id,
+    notificationScalerIdentity.id,
+    serviceBusDataOwnerRoleId
+  )
+
+  scope: notificationQueue
+
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      serviceBusDataOwnerRoleId
+    )
+
+    principalId: notificationScalerIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// Cosmos DB
+// -----------------------------------------------------------------------------
+
 resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
   name: cosmosName
   location: location
   kind: 'GlobalDocumentDB'
+
   properties: {
     databaseAccountOfferType: 'Standard'
-    // One free-tier account is allowed per subscription. If this deployment
-    // ever fails claiming the allocation is taken, another account in the
-    // subscription is holding it.
+
     enableFreeTier: true
-    // The hard ceiling AD-07 asks for. Provisioned throughput cannot be raised
-    // past the free grant by accident, so an overrun throttles instead of
-    // billing -- which matters on a subscription whose spending limit disables
-    // everything when the credit runs out.
+
     capacity: {
       totalThroughputLimit: 1000
     }
-    // Same posture as the Service Bus namespace: no keys to leak or rotate,
-    // so the only way in is a managed identity holding a data-plane role.
+
+    // Managed identity only.
     disableLocalAuth: true
+
     consistencyPolicy: {
-      // Session is the default and is sufficient here: one writer, and readers
-      // that only need to see their own writes.
       defaultConsistencyLevel: 'Session'
     }
+
     locations: [
       {
         locationName: location
@@ -247,8 +435,10 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
         isZoneRedundant: false
       }
     ]
+
     backupPolicy: {
       type: 'Periodic'
+
       periodicModeProperties: {
         backupIntervalInMinutes: 1440
         backupRetentionIntervalInHours: 48
@@ -258,49 +448,49 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
   }
 }
 
-// Throughput is shared at the database level rather than dedicated per
-// container, so the subscription registry can be added later as a second
-// container without provisioning a second 400 RU/s and leaving the free grant.
+
 resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-11-15' = {
   parent: cosmos
   name: cosmosDatabaseName
+
   properties: {
     resource: {
       id: cosmosDatabaseName
     }
+
     options: {
       throughput: 1000
     }
   }
 }
 
+
 resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = {
   parent: cosmosDatabase
   name: cosmosContainerName
+
   properties: {
     resource: {
       id: cosmosContainerName
-      // Partitioned by tenant, which is how incidents are read: a customer
-      // looks at their own sites. It also answers the "partitioning" item the
-      // proposal lists under Incident Repository in section 6.4.
+
       partitionKey: {
         paths: [
           '/tenant_id'
         ]
+
         kind: 'Hash'
       }
-      // The document id is the producer's event_id, so uniqueness is enforced
-      // by the store itself. That is what lets the worker drop its in-memory
-      // deduplication: a redelivered incident collides instead of being
-      // written twice.
+
       indexingPolicy: {
         indexingMode: 'consistent'
         automatic: true
+
         includedPaths: [
           {
             path: '/*'
           }
         ]
+
         excludedPaths: [
           {
             path: '/evidence_uri/?'
@@ -314,12 +504,17 @@ resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
   }
 }
 
-// The worker writes incidents. Ingestion deliberately gets nothing: it
-// publishes to the queue and never touches the store, which keeps the write
-// path single-writer.
+
+// Worker writes incident documents.
 resource workerCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
   parent: cosmos
-  name: guid(cosmos.id, workerIdentity.id, cosmosDataContributorRoleId)
+
+  name: guid(
+    cosmos.id,
+    workerIdentity.id,
+    cosmosDataContributorRoleId
+  )
+
   properties: {
     roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
     principalId: workerIdentity.properties.principalId
@@ -327,8 +522,8 @@ resource workerCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleA
   }
 }
 
-// The dashboard only ever reads. Granting it Contributor "just in case" would
-// mean a bug in dashboard code could corrupt the store the worker owns.
+
+// Dashboard is read-only in Cosmos DB.
 resource dashboardCosmosReader 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
   parent: cosmos
   name: guid(cosmos.id, dashboardIdentity.id, cosmosDataReaderRoleId)
@@ -339,20 +534,105 @@ resource dashboardCosmosReader 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAss
   }
 }
 
+
+// -----------------------------------------------------------------------------
+// Key Vault
+// -----------------------------------------------------------------------------
+
+// Stores secrets required by the Notification Service.
+//
+// IMPORTANT:
+// The actual Telegram bot token is NOT declared in this Bicep file.
+// It will be inserted separately into Key Vault.
+resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: keyVaultName
+  location: location
+
+  properties: {
+    tenantId: subscription().tenantId
+
+    sku: {
+      family: 'A'
+      name: 'standard'
+    }
+
+    // Use Azure RBAC instead of legacy access policies.
+    enableRbacAuthorization: true
+
+    // Protect against accidental secret deletion.
+    enableSoftDelete: true
+    softDeleteRetentionInDays: 7
+
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+
+// Notification Service may read Key Vault secret values.
+resource notificationKeyVaultSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    keyVault.id,
+    notificationIdentity.id,
+    keyVaultSecretsUserRoleId
+  )
+
+  scope: keyVault
+
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      keyVaultSecretsUserRoleId
+    )
+
+    principalId: notificationIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// Outputs
+// -----------------------------------------------------------------------------
+
 output registryLoginServer string = registry.properties.loginServer
 output registryName string = registry.name
+
 output environmentId string = containerEnv.id
+
 output ingestionIdentityId string = ingestionIdentity.id
 output ingestionIdentityClientId string = ingestionIdentity.properties.clientId
+
 output workerIdentityId string = workerIdentity.id
 output workerIdentityClientId string = workerIdentity.properties.clientId
+
 output scalerIdentityId string = scalerIdentity.id
+
 output dashboardIdentityId string = dashboardIdentity.id
 output dashboardIdentityClientId string = dashboardIdentity.properties.clientId
+
 output serviceBusName string = serviceBus.name
-// Fully qualified host the SDK connects to, e.g. incident-bus-xxx.servicebus.windows.net
-output serviceBusFqdn string = replace(replace(serviceBus.properties.serviceBusEndpoint, 'https://', ''), ':443/', '')
+
+// Fully qualified Service Bus hostname, e.g.
+// incident-bus-xxx.servicebus.windows.net
+output serviceBusFqdn string = replace(
+  replace(
+    serviceBus.properties.serviceBusEndpoint,
+    'https://',
+    ''
+  ),
+  ':443/',
+  ''
+)
+
 output incidentQueueName string = incidentQueue.name
+
 output cosmosEndpoint string = cosmos.properties.documentEndpoint
 output cosmosDatabaseName string = cosmosDatabase.name
 output cosmosContainerName string = cosmosContainer.name
+
+output notificationIdentityId string = notificationIdentity.id
+output notificationIdentityClientId string = notificationIdentity.properties.clientId
+output notificationScalerIdentityId string = notificationScalerIdentity.id
+output notificationQueueName string = notificationQueue.name
+
+output keyVaultName string = keyVault.name
