@@ -10,7 +10,16 @@ logger = logging.getLogger("app.notification_handler")
 
 def should_notify(event: IncidentEvent) -> bool:
     """Keep load-test traffic out of human notification channels."""
-    return not event.event_id.startswith("EVT-LOAD-")
+    if event.event_purpose == "load_test":
+        return False
+
+    # Messages already queued before event_purpose joined the contract have no
+    # explicit classification. Keep the old prefix check only for that finite
+    # backlog; every newly ingested event serialises event_purpose.
+    if "event_purpose" not in event.model_fields_set:
+        return not event.event_id.startswith("EVT-LOAD-")
+
+    return True
 
 
 class PersistAndNotifyHandler(IncidentHandler):

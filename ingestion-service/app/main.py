@@ -201,6 +201,7 @@ async def create_incident(
         "site_id": event.site_id,
         "analytics_type": event.analytics_type,
         "event_type": event.event_type,
+        "event_purpose": event.event_purpose,
         "message": "Incident received successfully"
     }
 
@@ -269,6 +270,7 @@ async def simulate_event(
         event_type=sample["event_type"],
         severity=sample["severity"],
         timestamp=datetime.now(),
+        event_purpose="e2e_test",
         confidence=round(random.uniform(0.80, 0.99), 2),
         description=sample["description"],
         evidence_uri=sample["evidence_uri"]
@@ -292,5 +294,6 @@ async def simulate_event(
         "site_id": event.site_id,
         "analytics_type": event.analytics_type,
         "event_type": event.event_type,
+        "event_purpose": event.event_purpose,
         "message": "Incident received successfully"
     }

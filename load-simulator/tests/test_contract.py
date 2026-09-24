@@ -18,6 +18,12 @@ def test_the_incident_is_attributed_to_the_tenant_it_was_asked_for():
     assert generator.next_event("TENANT-07").payload["tenant_id"] == "TENANT-07"
 
 
+def test_every_generated_event_is_explicitly_classified_as_load_test():
+    event = IncidentGenerator(seed=1).next_event("TENANT-01")
+
+    assert event.payload["event_purpose"] == "load_test"
+
+
 def test_the_same_seed_replays_the_same_run():
     def run():
         generator = IncidentGenerator(seed=42)

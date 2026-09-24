@@ -13,7 +13,7 @@ deployment pipeline rather than to the model.
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -60,6 +60,15 @@ class IncidentEvent(BaseModel):
         description="Time the incident occurred, as reported by the source."
     )
 
+    event_purpose: Literal["incident", "load_test", "e2e_test"] = Field(
+        default="incident",
+        description=(
+            "Processing purpose for this event. Load-test events exercise "
+            "ingestion, queues, and persistence without paging people; "
+            "e2e_test events exercise the notification path at low volume."
+        ),
+    )
+
     confidence: Optional[float] = Field(
         default=None,
         ge=0.0,
@@ -76,7 +85,7 @@ class IncidentEvent(BaseModel):
         default=None,
         description=(
             "Reference to evidence associated with the incident, such as an "
-            "image or video clip. Currently a dummy URI; will point to Azure "
-            "Blob Storage."
+            "image or video clip. Private Azure Blob references can be "
+            "resolved by the notification service with its managed identity."
         ),
     )

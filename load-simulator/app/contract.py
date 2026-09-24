@@ -43,6 +43,7 @@ REQUIRED_FIELDS = frozenset(
         "event_type",
         "severity",
         "timestamp",
+        "event_purpose",
     }
 )
 
@@ -117,6 +118,7 @@ class IncidentGenerator:
             "event_type": self._rng.choice(event_types),
             "severity": self._rng.choice(SEVERITIES),
             "timestamp": occurred.isoformat(),
+            "event_purpose": "load_test",
             "confidence": round(self._rng.uniform(0.70, 0.99), 2),
             "description": f"Synthetic {analytics_type} incident from the load simulator",
         }

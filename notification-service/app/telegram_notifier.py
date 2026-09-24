@@ -154,8 +154,13 @@ class TelegramNotifier(Notifier):
 
     @staticmethod
     def _format_message(event: IncidentEvent) -> str:
+        heading = (
+            "Incident Alert [E2E TEST]"
+            if event.event_purpose == "e2e_test"
+            else "Incident Alert"
+        )
         return (
-            "Incident Alert\n\n"
+            f"{heading}\n\n"
             f"Event ID: {event.event_id}\n"
             f"Tenant: {event.tenant_id}\n"
             f"Site: {event.site_id}\n"

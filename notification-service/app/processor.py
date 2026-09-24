@@ -18,7 +18,16 @@ class InvalidIncident(ValueError):
 
 def should_notify(event: IncidentEvent) -> bool:
     """Keep historical and future load-test traffic out of Telegram."""
-    return not event.event_id.startswith("EVT-LOAD-")
+    if event.event_purpose == "load_test":
+        return False
+
+    # The current queue predates event_purpose. Use the old id convention only
+    # for messages where that field was absent; all newly ingested events carry
+    # an explicit classification.
+    if "event_purpose" not in event.model_fields_set:
+        return not event.event_id.startswith("EVT-LOAD-")
+
+    return True
 
 
 class NotificationProcessor:

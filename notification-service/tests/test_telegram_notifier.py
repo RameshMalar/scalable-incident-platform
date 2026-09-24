@@ -51,7 +51,7 @@ class FakeClock:
         self.now += seconds
 
 
-def make_event(event_id="EVT-001"):
+def make_event(event_id="EVT-001", event_purpose="incident"):
     return IncidentEvent(
         event_id=event_id,
         tenant_id="TENANT-01",
@@ -63,8 +63,10 @@ def make_event(event_id="EVT-001"):
         event_type="intrusion_detected",
         severity="high",
         timestamp="2026-09-12T20:00:00+08:00",
+        event_purpose=event_purpose,
         confidence=0.95,
         description="Person detected in restricted area",
+        evidence_uri="https://evidence.example.test/incidents/EVT-001.jpg",
     )
 
 
@@ -96,6 +98,18 @@ async def test_successful_delivery_posts_formatted_message():
     assert url.endswith("/bottest-token/sendMessage")
     assert request["json"]["chat_id"] == "-100123"
     assert "Event ID: EVT-001" in request["json"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_e2e_delivery_is_clearly_labelled():
+    notifier, session, _ = make_notifier(
+        [FakeResponse(200, '{"ok":true}')],
+    )
+
+    await notifier.notify(make_event(event_purpose="e2e_test"))
+
+    _, request = session.requests[0]
+    assert request["json"]["text"].startswith("Incident Alert [E2E TEST]")
 
 
 @pytest.mark.asyncio

@@ -76,11 +76,18 @@ or `/docs` for the full field list and constraints. Example:
   "event_type": "intrusion_detected",
   "severity": "high",
   "timestamp": "2026-08-28T09:15:00",
+  "event_purpose": "incident",
   "confidence": 0.94,
   "description": "Person detected inside restricted area",
   "evidence_uri": "/evidence/intrusion_sample.jpg"
 }
 ```
+
+`event_purpose` is optional for backwards compatibility and defaults to
+`incident`. Use `load_test` for high-volume traffic that must exercise
+ingestion, messaging, and persistence without creating human alerts. Use
+`e2e_test` for a small controlled test that must follow the complete Telegram
+notification path.
 
 ### Responses
 
@@ -100,6 +107,7 @@ A `202` body looks like:
   "site_id": "SITE-01",
   "analytics_type": "intrusion_detection",
   "event_type": "intrusion_detected",
+  "event_purpose": "incident",
   "message": "Incident received successfully"
 }
 ```
@@ -117,7 +125,7 @@ A `502` body looks like:
 ```bash
 curl -X POST http://localhost:8000/api/v1/incidents \
   -H "Content-Type: application/json" \
-  -d '{"event_id":"EVT-A1B2C3D4","tenant_id":"TENANT-01","site_id":"SITE-01","source_id":"CAM-004","source_name":"North Gate Camera","source_type":"video_analytics","analytics_type":"intrusion_detection","event_type":"intrusion_detected","severity":"high","timestamp":"2026-08-28T09:15:00","confidence":0.94,"description":"Person detected inside restricted area","evidence_uri":"/evidence/intrusion_sample.jpg"}'
+  -d '{"event_id":"EVT-A1B2C3D4","tenant_id":"TENANT-01","site_id":"SITE-01","source_id":"CAM-004","source_name":"North Gate Camera","source_type":"video_analytics","analytics_type":"intrusion_detection","event_type":"intrusion_detected","severity":"high","timestamp":"2026-08-28T09:15:00","event_purpose":"incident","confidence":0.94,"description":"Person detected inside restricted area","evidence_uri":"/evidence/intrusion_sample.jpg"}'
 ```
 
 ## `POST /api/v1/simulate/{analytics_type}`
@@ -128,6 +136,10 @@ one of `intrusion`, `ppe`, or `crowd`, publishes it the same way
 `/api/v1/incidents` would, and also records it in the in-memory list backing
 the `/` dashboard. Use it when you want to see an event flow through the
 system without a real analytics producer.
+
+Generated samples carry `event_purpose: "e2e_test"`, so they intentionally
+exercise the real notification path and are visibly labelled as tests in
+Telegram.
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/simulate/intrusion
