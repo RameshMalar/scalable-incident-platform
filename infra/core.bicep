@@ -261,7 +261,10 @@ resource notificationQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-pr
   properties: {
     maxDeliveryCount: 5
     deadLetteringOnMessageExpiration: true
-    lockDuration: 'PT1M'
+    // A Telegram 429 response can ask the consumer to wait around 30 seconds
+    // before retrying. Five minutes leaves room for that wait and both HTTP
+    // attempts without the broker expiring the message lock mid-delivery.
+    lockDuration: 'PT5M'
     defaultMessageTimeToLive: 'P14D'
   }
 }
