@@ -118,6 +118,7 @@ def test_incident_is_accepted_and_echoed_back(client):
     assert body["status"] == "accepted"
     assert body["event_id"] == "EVT-TEST0001"
     assert body["analytics_type"] == "intrusion_detection"
+    assert body["event_purpose"] == "incident"
 
 
 def test_incident_is_published_as_a_valid_common_event_model_message(
@@ -133,6 +134,7 @@ def test_incident_is_published_as_a_valid_common_event_model_message(
     assert published.event_id == "EVT-TEST0001"
     assert published.tenant_id == "TENANT-01"
     assert published.analytics_type == "intrusion_detection"
+    assert published.event_purpose == "incident"
 
 
 def test_incident_publish_failure_returns_an_explicit_error(client):
@@ -174,6 +176,16 @@ def test_the_same_model_carries_every_analytics_type(client, mock_publisher):
 
     published = [e.analytics_type for e in mock_publisher.published_events]
     assert published == ["intrusion_detection", "PPE_detection", "crowd_detection"]
+    assert {e.event_purpose for e in mock_publisher.published_events} == {"e2e_test"}
+
+
+def test_invalid_event_purpose_is_rejected(client):
+    response = client.post(
+        "/api/v1/incidents",
+        json=sample_event(event_purpose="bulk_test"),
+    )
+
+    assert response.status_code == 422
 
 
 def test_unsupported_analytics_type_is_reported(client):

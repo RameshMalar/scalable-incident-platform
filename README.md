@@ -240,6 +240,62 @@ AMQP over WebSocket on 443 and local development just works. The deployed
 service sets `SERVICE_BUS_TRANSPORT=amqp` to take the faster native port, where
 the egress is ours to control.
 
+### Telegram notifications
+
+After the worker persists an incident, it publishes the event to
+`notification-events`. The Notification Service consumes that queue and calls
+Telegram. Notification policy is explicit in the Common Event Model rather
+than inferred from an id:
+
+- `incident` is the backwards-compatible default and reaches Telegram.
+- `load_test` exercises ingestion, Service Bus, and Cosmos without paging
+  people.
+- `e2e_test` follows the complete notification path at low volume and is
+  labelled as a test in the Telegram message.
+
+The worker applies the policy before publishing new notification messages. The
+Notification Service repeats it as a defence in depth and, only for messages
+created before `event_purpose` existed, recognises the old `EVT-LOAD-*`
+convention so the current backlog can drain safely.
+
+`evidence_uri` remains part of the event through ingestion, persistence, and
+the notification queue; notification filtering never strips or rewrites it.
+The Blob integration should give the Notification Service managed identity
+`Storage Blob Data Reader`, download private evidence with that identity, and
+upload the bytes through Telegram `sendPhoto`, falling back to the text alert
+if evidence is unavailable. This avoids public containers and long-lived SAS
+URLs while allowing both `incident` and `e2e_test` events to exercise the same
+image-delivery path.
+
+Telegram delivery is intentionally limited to one Notification Service replica
+and one message every 3.1 seconds. If Telegram returns HTTP 429, the notifier
+honours the response's `retry_after` value and retries once before handing the
+message back to Service Bus. The notification queue uses a five-minute message
+lock so that wait and both HTTP attempts can finish before the broker redelivers
+the event. This avoids the immediate redelivery loop that can otherwise turn
+one rate limit into five failed deliveries and a dead-lettered message.
+
+If the Notification Service has been manually stopped, deploy this filtering
+and rate-limiting behaviour before starting it. Do not purge the queue merely
+to make the count reach zero: explicitly classified load events and legacy
+`EVT-LOAD-*` messages can now be completed without contacting Telegram, while
+the dead-letter subqueue remains available for investigation. Check the counts,
+start the app, and watch them drain with:
+
+```bash
+NS="$(az servicebus namespace list -g "$RESOURCE_GROUP" \
+  --query '[0].name' -o tsv)"
+
+az servicebus queue show -g "$RESOURCE_GROUP" --namespace-name "$NS" \
+  -n notification-events --query countDetails -o json
+
+az containerapp start -g "$RESOURCE_GROUP" -n incident-notification
+```
+
+A fresh simulated intrusion should be used for the delivery check only after
+the active backlog is near zero. Historical dead-letter messages are not
+replayed or deleted automatically.
+
 A message the worker abandons five times, or one that outlives its time-to-live,
 moves to the queue's built-in **dead-letter subqueue** rather than blocking the
 queue or vanishing. The dead-letter path is not a separate resource — it is

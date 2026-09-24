@@ -56,8 +56,8 @@ param telegramBotTokenSecretUri string
 @description('Minimum replicas. Zero allows the service to scale down while the queue is empty.')
 param minReplicas int = 0
 
-@description('Maximum Notification Service replicas.')
-param maxReplicas int = 10
+@description('Maximum Notification Service replicas. Telegram delivery is intentionally single-replica so per-chat rate limiting is global.')
+param maxReplicas int = 1
 
 @description('Backlog each replica is expected to process.')
 param messagesPerReplica int = 20
@@ -172,6 +172,18 @@ resource notification 'Microsoft.App/containerApps@2025-01-01' = {
             {
               name: 'TELEGRAM_BOT_TOKEN'
               secretRef: 'telegram-bot-token'
+            }
+
+            // Keep group delivery below Telegram's per-chat burst threshold.
+            // With maxReplicas=1 this interval applies to the whole channel.
+            {
+              name: 'TELEGRAM_MIN_SEND_INTERVAL_SECONDS'
+              value: '3.1'
+            }
+
+            {
+              name: 'TELEGRAM_MAX_RATE_LIMIT_RETRIES'
+              value: '1'
             }
           ]
         }
