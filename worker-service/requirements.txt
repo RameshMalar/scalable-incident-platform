@@ -12,4 +12,4 @@ azure-core[aio]==1.41.0
 pydantic==2.13.5
 # The incident store (AD-07). The async client needs azure-core's aio extra,
 # which azure-identity above already pulls in.
-azure-cosmos==4.16.4
+azure-cosmos==4.17.1
