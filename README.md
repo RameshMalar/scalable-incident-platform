@@ -260,12 +260,51 @@ convention so the current backlog can drain safely.
 
 `evidence_uri` remains part of the event through ingestion, persistence, and
 the notification queue; notification filtering never strips or rewrites it.
-The Blob integration should give the Notification Service managed identity
-`Storage Blob Data Reader`, download private evidence with that identity, and
-upload the bytes through Telegram `sendPhoto`, falling back to the text alert
-if evidence is unavailable. This avoids public containers and long-lived SAS
-URLs while allowing both `incident` and `e2e_test` events to exercise the same
-image-delivery path.
+When the event carries evidence, the Notification Service downloads the blob
+with its managed identity, which holds `Storage Blob Data Reader` on the
+`evidence` container, and uploads the bytes through Telegram `sendPhoto`. The
+container blocks public access and the account disables shared-key access, so
+neither public containers nor long-lived SAS URLs are involved. Both `incident`
+and `e2e_test` events exercise the same image-delivery path.
+
+`evidence_uri` is producer-supplied and therefore untrusted. It is never
+fetched as given: its host and container must match the configured account, and
+only the remaining blob path is used to build the request, so a producer cannot
+aim the service at a URL of its own choosing or at another container. Any query
+string is dropped, because access is decided by the service's identity rather
+than by a caller-supplied SAS token.
+
+Evidence is best-effort. A missing blob, an oversized one, a non-image content
+type, a reference that fails the checks above, or a `sendPhoto` rejection all
+degrade to the text alert rather than dropping the notification. Captions are
+truncated to Telegram's 1024-character limit, so the text-only path is the one
+that carries a long description in full. Set `EVIDENCE_BLOB_ENDPOINT` to enable
+image delivery; leaving it empty keeps the service on the text-only path.
+
+#### Uploading evidence images
+
+`allowSharedKeyAccess` is off on the account, so there is no connection string
+or account key to upload with, and — as with Service Bus and Cosmos — a
+management role such as Owner does not grant blob data access. Uploading needs
+an explicit data-plane role and `--auth-mode login`:
+
+```bash
+ACCOUNT="$(az storage account list -g rg-incident-platform \
+  --query "[?starts_with(name, 'incidentevi')].name | [0]" -o tsv)"
+ME="$(az ad signed-in-user show --query id -o tsv)"
+
+az role assignment create --assignee "$ME" --role "Storage Blob Data Contributor" \
+  --scope "$(az storage account show -g rg-incident-platform -n "$ACCOUNT" \
+    --query id -o tsv)/blobServices/default/containers/evidence"
+
+az storage blob upload --auth-mode login --account-name "$ACCOUNT" \
+  --container-name evidence --name EVT-001.jpg --file ./EVT-001.jpg
+```
+
+The resulting `evidence_uri` is
+`https://<account>.blob.core.windows.net/evidence/EVT-001.jpg`. A URI with any
+other host or container is refused by the checks above, so evidence has to live
+in this container to be delivered.
 
 Telegram delivery is intentionally limited to one Notification Service replica
 and one message every 3.1 seconds. If Telegram returns HTTP 429, the notifier

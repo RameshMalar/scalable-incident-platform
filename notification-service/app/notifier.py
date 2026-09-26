@@ -13,6 +13,9 @@ class Notifier(ABC):
         """Deliver one incident notification."""
         raise NotImplementedError
 
+    async def close(self) -> None:
+        """Release any long-lived resources. Channels without any do nothing."""
+
 
 class MockNotifier(Notifier):
     """In-memory notifier used for local development and unit tests."""

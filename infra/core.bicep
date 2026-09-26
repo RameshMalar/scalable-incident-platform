@@ -27,6 +27,11 @@ var cosmosContainerName = 'incidents'
 
 var keyVaultName = toLower('${take(namePrefix, 8)}kv${suffix}')
 
+// Storage account names allow at most 24 lowercase alphanumeric characters,
+// and uniqueString() already consumes 13 of them.
+var evidenceStorageName = toLower('${take(namePrefix, 8)}evi${suffix}')
+var evidenceContainerName = 'evidence'
+
 
 // Azure Container Registry pull role.
 var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
@@ -43,6 +48,10 @@ var cosmosDataReaderRoleId = '00000000-0000-0000-0000-000000000001'
 // Key Vault Secrets User.
 // Notification Service may read secret values but cannot manage them.
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+
+// Storage Blob Data Reader.
+// Notification Service downloads evidence images but never writes them.
+var storageBlobDataReaderRoleId = '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
 
 
 // -----------------------------------------------------------------------------
@@ -594,6 +603,87 @@ resource notificationKeyVaultSecretsUser 'Microsoft.Authorization/roleAssignment
 
 
 // -----------------------------------------------------------------------------
+// Evidence blob storage
+// -----------------------------------------------------------------------------
+
+// Holds incident evidence images referenced by `evidence_uri`.
+//
+// Shared key access is disabled, so every caller authenticates through Entra
+// and Azure RBAC. That keeps account keys and long-lived SAS URLs out of the
+// system entirely, at the cost of requiring an explicit role assignment for
+// anyone who needs to upload.
+resource evidenceStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: evidenceStorageName
+  location: location
+
+  sku: {
+    name: 'Standard_LRS'
+  }
+
+  kind: 'StorageV2'
+
+  properties: {
+    accessTier: 'Hot'
+
+    allowSharedKeyAccess: false
+    allowBlobPublicAccess: false
+
+    supportsHttpsTrafficOnly: true
+    minimumTlsVersion: 'TLS1_2'
+
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+
+resource evidenceBlobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: evidenceStorage
+  name: 'default'
+
+  properties: {
+    deleteRetentionPolicy: {
+      enabled: true
+      days: 7
+    }
+  }
+}
+
+
+resource evidenceContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: evidenceBlobService
+  name: evidenceContainerName
+
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
+
+// Notification Service reads evidence to forward it through Telegram sendPhoto.
+// Scoped to the container rather than the account so the role cannot reach any
+// future container in the same account.
+resource notificationEvidenceReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    evidenceContainer.id,
+    notificationIdentity.id,
+    storageBlobDataReaderRoleId
+  )
+
+  scope: evidenceContainer
+
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      storageBlobDataReaderRoleId
+    )
+
+    principalId: notificationIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+
+// -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
 
@@ -639,3 +729,7 @@ output notificationScalerIdentityId string = notificationScalerIdentity.id
 output notificationQueueName string = notificationQueue.name
 
 output keyVaultName string = keyVault.name
+
+output evidenceStorageName string = evidenceStorage.name
+output evidenceContainerName string = evidenceContainer.name
+output evidenceBlobEndpoint string = evidenceStorage.properties.primaryEndpoints.blob

@@ -53,6 +53,12 @@ param telegramChatId string
 @description('Full Azure Key Vault secret URI containing the Telegram bot token.')
 param telegramBotTokenSecretUri string
 
+@description('Blob endpoint holding incident evidence. Empty disables image delivery, and alerts stay text-only.')
+param evidenceBlobEndpoint string = ''
+
+@description('Blob container holding incident evidence.')
+param evidenceContainer string = 'evidence'
+
 @description('Minimum replicas. Zero allows the service to scale down while the queue is empty.')
 param minReplicas int = 0
 
@@ -184,6 +190,24 @@ resource notification 'Microsoft.App/containerApps@2025-01-01' = {
             {
               name: 'TELEGRAM_MAX_RATE_LIMIT_RETRIES'
               value: '1'
+            }
+
+
+            // -----------------------------------------------------------------
+            // Evidence images
+            // -----------------------------------------------------------------
+
+            // Read with this app's managed identity, which holds
+            // Storage Blob Data Reader on the container. An empty endpoint
+            // leaves the service on the text-only path.
+            {
+              name: 'EVIDENCE_BLOB_ENDPOINT'
+              value: evidenceBlobEndpoint
+            }
+
+            {
+              name: 'EVIDENCE_CONTAINER'
+              value: evidenceContainer
             }
           ]
         }

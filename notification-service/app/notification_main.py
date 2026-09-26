@@ -4,6 +4,7 @@ import os
 import signal
 
 from app.consumer import NotificationConsumer
+from app.evidence import EvidenceStore
 from app.notifier import MockNotifier
 from app.processor import NotificationProcessor
 from app.telegram_notifier import TelegramNotifier
@@ -22,7 +23,7 @@ def build_notifier():
     mode = os.environ.get("NOTIFIER", "mock").lower()
 
     if mode == "telegram":
-        return TelegramNotifier()
+        return TelegramNotifier(evidence_store=EvidenceStore.from_env())
 
     return MockNotifier()
 
@@ -55,6 +56,7 @@ async def run() -> None:
 
     finally:
         await consumer.close()
+        await notifier.close()
 
         logger.info("notification service stopped")
 
