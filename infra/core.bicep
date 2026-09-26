@@ -8,6 +8,9 @@ param location string = 'malaysiawest'
 @maxLength(11)
 param namePrefix string = 'incident'
 
+@description('Deploy identity from scripts/setup-github-oidc.sh. It is also what uploads evidence images, because a tenant Conditional Access policy can refuse a person a storage data-plane token while leaving managed identities unaffected.')
+param deployIdentityName string = '${namePrefix}-github-deploy'
+
 
 // -----------------------------------------------------------------------------
 // Shared names and role definitions
@@ -52,6 +55,9 @@ var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 // Storage Blob Data Reader.
 // Notification Service downloads evidence images but never writes them.
 var storageBlobDataReaderRoleId = '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
+
+// Storage Blob Data Contributor, for whoever uploads evidence.
+var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 
 
 // -----------------------------------------------------------------------------
@@ -678,6 +684,38 @@ resource notificationEvidenceReader 'Microsoft.Authorization/roleAssignments@202
     )
 
     principalId: notificationIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+
+// The deploy identity already exists: scripts/setup-github-oidc.sh creates it
+// before anything here can be deployed, since it is what CD authenticates as.
+resource deployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
+  name: deployIdentityName
+}
+
+
+// Uploads go through the pipeline rather than someone's laptop. A tenant
+// Conditional Access policy can refuse a person a token for
+// `storage.azure.com` however much Azure RBAC it holds, and Conditional Access
+// does not apply to managed identities.
+resource deployEvidenceContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    evidenceContainer.id,
+    deployIdentity.id,
+    storageBlobDataContributorRoleId
+  )
+
+  scope: evidenceContainer
+
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      storageBlobDataContributorRoleId
+    )
+
+    principalId: deployIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }

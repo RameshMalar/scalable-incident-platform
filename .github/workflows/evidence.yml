@@ -1,0 +1,249 @@
+name: Evidence
+
+# Uploads an incident evidence image, and optionally proves it reaches Telegram.
+#
+# Uploading runs here rather than from a laptop because the tenant's
+# Conditional Access policy refuses a person a token for `storage.azure.com`
+# however much Azure RBAC they hold. Conditional Access governs user sign-in and
+# does not apply to managed identities, so the deploy identity can upload where
+# a subscription Owner cannot. It holds Storage Blob Data Contributor on the
+# evidence container only, granted in core.bicep.
+#
+# Authentication is the same OpenID Connect exchange CD uses, so no Azure
+# credential is stored in GitHub.
+
+on:
+  workflow_dispatch:
+    inputs:
+      blob_name:
+        description: "Blob path inside the evidence container, e.g. demo/EVT-DEMO.png"
+        required: true
+        default: demo/EVT-DEMO.png
+
+      image_path:
+        description: "File in the repository to upload. Leave empty to upload a generated placeholder."
+        required: false
+        default: ""
+
+      send_test_alert:
+        description: "Post an e2e_test incident referencing the blob, to exercise sendPhoto"
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: evidence-upload
+
+jobs:
+  upload:
+    name: Upload evidence
+    runs-on: ubuntu-latest
+
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Sign in to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Read from the deployed app rather than guessing a resource name, so the
+      # upload can only ever land where the service actually looks.
+      - name: Resolve the evidence container from the deployed service
+        id: target
+        run: |
+          endpoint=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name incident-notification \
+            --query "properties.template.containers[0].env[?name=='EVIDENCE_BLOB_ENDPOINT'].value | [0]" \
+            -o tsv)
+
+          container=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name incident-notification \
+            --query "properties.template.containers[0].env[?name=='EVIDENCE_CONTAINER'].value | [0]" \
+            -o tsv)
+
+          if [ -z "$endpoint" ] || [ "$endpoint" = "None" ]; then
+            echo "::error::The notification service has no EVIDENCE_BLOB_ENDPOINT, so it would ignore anything uploaded. Deploy core.bicep and notification.bicep first." >&2
+            exit 1
+          fi
+
+          # https://account.blob.core.windows.net/ -> account
+          account=${endpoint#https://}
+          account=${account%%.*}
+
+          echo "endpoint=${endpoint%/}" >> "$GITHUB_OUTPUT"
+          echo "container=${container:-evidence}" >> "$GITHUB_OUTPUT"
+          echo "account=${account}" >> "$GITHUB_OUTPUT"
+
+          echo "uploading to ${account}/${container:-evidence}"
+
+      - name: Prepare the image
+        id: image
+        run: |
+          given='${{ inputs.image_path }}'
+
+          if [ -n "$given" ]; then
+            if [ ! -f "$given" ]; then
+              echo "::error::${given} is not a file in this repository" >&2
+              exit 1
+            fi
+
+            path="$given"
+          else
+            path=placeholder.png
+            python3 scripts/make-placeholder-image.py "$path"
+          fi
+
+          case "${path##*.}" in
+            png)        content_type=image/png ;;
+            jpg|jpeg)   content_type=image/jpeg ;;
+            gif)        content_type=image/gif ;;
+            webp)       content_type=image/webp ;;
+            *)
+              echo "::error::${path} is not an image Telegram sendPhoto can carry; the service would fall back to text" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "path=${path}" >> "$GITHUB_OUTPUT"
+          echo "content_type=${content_type}" >> "$GITHUB_OUTPUT"
+
+      # Content type is set explicitly because the service refuses anything that
+      # is not image/*, and an unset type would send the alert as text instead.
+      - name: Upload to the evidence container
+        run: |
+          az storage blob upload \
+            --auth-mode login \
+            --account-name '${{ steps.target.outputs.account }}' \
+            --container-name '${{ steps.target.outputs.container }}' \
+            --name '${{ inputs.blob_name }}' \
+            --file '${{ steps.image.outputs.path }}' \
+            --content-type '${{ steps.image.outputs.content_type }}' \
+            --overwrite \
+            --only-show-errors \
+            --output none
+
+          uri='${{ steps.target.outputs.endpoint }}/${{ steps.target.outputs.container }}/${{ inputs.blob_name }}'
+          echo "::notice::Uploaded. evidence_uri=${uri}"
+
+      # -----------------------------------------------------------------------
+      # Prove the image reaches Telegram
+      # -----------------------------------------------------------------------
+
+      - name: Post an incident referencing the evidence
+        id: alert
+        if: inputs.send_test_alert
+        run: |
+          url=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name incident-ingestion \
+            --query "properties.configuration.ingress.fqdn" \
+            -o tsv)
+
+          token=$(az account get-access-token \
+            --resource '${{ vars.AUTH_AUDIENCE }}' \
+            --query accessToken \
+            -o tsv \
+            2>/dev/null \
+            || true)
+
+          if [ -z "$token" ]; then
+            echo "::error::Could not get a token for ${{ vars.AUTH_AUDIENCE }}. The deploy identity needs the Incidents.Write app role and an entry in TENANT_MAP." >&2
+            exit 1
+          fi
+
+          event_id="EVT-EVIDENCE-$(date +%s)"
+          uri='${{ steps.target.outputs.endpoint }}/${{ steps.target.outputs.container }}/${{ inputs.blob_name }}'
+
+          # e2e_test reaches Telegram and is labelled as a test there, which is
+          # exactly the path this is meant to exercise.
+          body=$(curl \
+            -sS \
+            --max-time 30 \
+            -w '\n<<HTTP:%{http_code}>>' \
+            -X POST \
+            "https://${url}/api/v1/incidents" \
+            -H "Authorization: Bearer ${token}" \
+            -H 'content-type: application/json' \
+            -d "{
+              \"event_id\": \"${event_id}\",
+              \"tenant_id\": \"${{ vars.CD_TENANT_ID }}\",
+              \"site_id\": \"SITE-EVIDENCE\",
+              \"source_id\": \"CAM-EVIDENCE\",
+              \"source_name\": \"Evidence delivery check\",
+              \"source_type\": \"video_analytics\",
+              \"analytics_type\": \"intrusion_detection\",
+              \"event_type\": \"intrusion_detected\",
+              \"severity\": \"low\",
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S)\",
+              \"event_purpose\": \"e2e_test\",
+              \"confidence\": 0.99,
+              \"description\": \"Evidence image delivery check\",
+              \"evidence_uri\": \"${uri}\"
+            }")
+
+          if ! echo "$body" | grep -q '"status":"accepted"'; then
+            echo "::error::Ingestion did not accept the incident. Response: ${body}" >&2
+            exit 1
+          fi
+
+          echo "event_id=${event_id}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Posted ${event_id} referencing ${uri}"
+
+      # The notifier logs which Telegram method it used, so the console logs say
+      # whether the image was delivered or the alert degraded to text.
+      - name: Confirm Telegram delivered a photo
+        if: inputs.send_test_alert
+        run: |
+          workspace=$(az monitor log-analytics workspace show \
+            --resource-group "$RESOURCE_GROUP" \
+            --workspace-name incident-logs \
+            --query customerId \
+            -o tsv)
+
+          event_id='${{ steps.alert.outputs.event_id }}'
+
+          query="ContainerAppConsoleLogs_CL
+            | where TimeGenerated > ago(30m)
+            | where Log_s has '${event_id}'
+            | where Log_s has 'Telegram notification delivered'
+            | project Log_s
+            | take 5"
+
+          # Log Analytics ingestion lags the event by a minute or two.
+          for attempt in $(seq 1 20); do
+            sleep 20
+
+            rows=$(az rest \
+              --method post \
+              --url "https://api.loganalytics.io/v1/workspaces/${workspace}/query" \
+              --resource "https://api.loganalytics.io" \
+              --body "$(jq -nc --arg q "$query" '{query: $q}')" \
+              --query "tables[0].rows" \
+              -o json 2>/dev/null || echo '[]')
+
+            if echo "$rows" | grep -q 'method=sendPhoto'; then
+              echo "::notice::Telegram delivered ${event_id} as a photo"
+              exit 0
+            fi
+
+            if echo "$rows" | grep -q 'method=sendMessage'; then
+              echo "::error::${event_id} went out as text, so the evidence was not delivered. The service logs a reason at WARNING: the blob may be missing, too large, not image/*, or rejected by its URI checks." >&2
+              exit 1
+            fi
+
+            echo "waiting for logs (${attempt}/20)"
+          done
+
+          echo "::warning::No delivery log found for ${event_id} within 6 minutes. Log Analytics ingestion can lag further than that, so check the Telegram chat and the notification service logs directly before assuming a failure."
