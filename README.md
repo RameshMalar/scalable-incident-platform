@@ -200,6 +200,28 @@ Rebuilding is one pipeline run (`gh workflow run cd.yml`). That the whole
 environment can be destroyed and reproduced from source is the point of
 keeping it in Bicep, and is worth demonstrating rather than just claiming.
 
+### Developer access
+
+Everyone working on the platform holds `Contributor` on the resource group,
+which covers the whole management plane. It does not cover the data planes:
+`Contributor` lists no `dataActions`, and Cosmos runs a separate RBAC system of
+its own. That is why a role such as Owner still cannot read a queue, a secret, a
+document, or a blob.
+
+The data-plane roles people need are declared in `core.bicep` and applied by CD,
+from the comma-separated object ids in the `DEVELOPER_PRINCIPAL_IDS` repository
+variable. Granting them by hand works too, but the declared form is reviewable
+in a diff, needs nobody to hold `Role Based Access Control Administrator`
+personally, and survives `teardown.sh` -- which removes resources by name
+prefix, taking hand-made assignments with them.
+
+Withholding these roles would not be a safety boundary in any case, since
+`Contributor` already allows deleting the accounts they apply to. The boundary
+that does mean something is `Role Based Access Control Administrator`, the one
+permission `Contributor` explicitly excludes and the only one that lets a
+principal grant itself anything further. The deploy identity holds it so that no
+person has to.
+
 ## Messaging
 
 Incidents move between services over an Azure Service Bus queue,
@@ -285,17 +307,22 @@ image delivery; leaving it empty keeps the service on the text-only path.
 
 `allowSharedKeyAccess` is off on the account, so there is no connection string
 or account key to upload with, and — as with Service Bus and Cosmos — a
-management role such as Owner does not grant blob data access. Uploading needs
-an explicit data-plane role and `--auth-mode login`:
+management role such as Owner does not grant blob data access.
+
+Use the **Evidence** workflow (`gh workflow run evidence.yml`), which uploads as
+the deploy identity and then verifies that Telegram received the image rather
+than the text fallback. It is the supported path, and not only for convenience:
+a tenant Conditional Access policy refuses user accounts a token for
+`storage.azure.com` regardless of the Azure roles they hold, so a person's
+`Storage Blob Data Contributor` currently cannot be used at all. Conditional
+Access governs authentication and does not apply to managed identities, so the
+pipeline is unaffected. The role is still assigned to the developers listed in
+`DEVELOPER_PRINCIPAL_IDS`, so uploading directly becomes possible if that policy
+is ever relaxed or the work happens from a managed device:
 
 ```bash
 ACCOUNT="$(az storage account list -g rg-incident-platform \
   --query "[?starts_with(name, 'incidentevi')].name | [0]" -o tsv)"
-ME="$(az ad signed-in-user show --query id -o tsv)"
-
-az role assignment create --assignee "$ME" --role "Storage Blob Data Contributor" \
-  --scope "$(az storage account show -g rg-incident-platform -n "$ACCOUNT" \
-    --query id -o tsv)/blobServices/default/containers/evidence"
 
 az storage blob upload --auth-mode login --account-name "$ACCOUNT" \
   --container-name evidence --name EVT-001.jpg --file ./EVT-001.jpg
@@ -544,10 +571,15 @@ export COSMOS_ENDPOINT="$(az cosmosdb list -g rg-incident-platform \
 streamlit run app.py
 ```
 
-Your `az login` user needs **Cosmos DB Built-in Data Reader** on the account —
-not the worker's Data Contributor role, which also grants write. Cosmos data-plane
-RBAC is not an Azure role and is not granted with `az role assignment create`;
-it has its own command:
+Your `az login` user needs a Cosmos data-plane role on the account. Developers
+listed in `DEVELOPER_PRINCIPAL_IDS` already have **Built-in Data Contributor**
+from `core.bicep`, which reads and also writes — useful for clearing out
+load-test documents before a demo, and deliberately not what the dashboard's own
+identity holds.
+
+Cosmos data-plane RBAC is not an Azure role and is not granted with
+`az role assignment create`; it has its own command, should you need to add
+someone outside that list:
 
 ```bash
 COSMOS_ACCOUNT="$(az cosmosdb list -g rg-incident-platform \

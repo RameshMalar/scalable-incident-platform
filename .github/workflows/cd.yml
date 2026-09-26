@@ -64,6 +64,8 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/core.bicep \
             --name "core-${GITHUB_SHA::7}" \
+            --parameters \
+              developerPrincipalIds='${{ vars.DEVELOPER_PRINCIPAL_IDS }}' \
             --query properties.outputs \
             -o json)
 
