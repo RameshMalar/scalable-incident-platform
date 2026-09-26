@@ -17,12 +17,16 @@ Authorization: Bearer <token>
 ```
 
 The token must be signed by the platform's Entra directory, name this API as its
-audience, be unexpired, and carry **`Incidents.Write`** — as an application role
-for a producer service, or as a delegated scope for an operator or test client.
+audience, be unexpired, and carry **`Incidents.Write`** in either its `roles` or
+its `scp` claim.
 
-Producers authenticate with the client credentials flow against their own app
-registration. Anything else is refused with **401**; a valid token lacking the
-role is refused with **403**.
+Producers are services and authenticate with the client credentials flow against
+their own app registration, which puts the role in `roles`. A person calling the
+API by hand also arrives with it in `roles`, because the same application role is
+assigned to them individually; the delegated `user_impersonation` scope their
+client holds is only what allows the call to be made, and grants nothing on its
+own. Anything else is refused with **401**; a valid token lacking the role is
+refused with **403**.
 
 ### Tenant isolation
 

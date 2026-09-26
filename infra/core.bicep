@@ -64,6 +64,10 @@ var cosmosDataReaderRoleId = '00000000-0000-0000-0000-000000000001'
 // Notification Service may read secret values but cannot manage them.
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
+// Key Vault Secrets Officer, for whoever has to put a secret in rather than
+// only read one -- the Telegram bot token is inserted by hand, not by CD.
+var keyVaultSecretsOfficerRoleId = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
+
 // Storage Blob Data Reader.
 // Notification Service downloads evidence images but never writes them.
 var storageBlobDataReaderRoleId = '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
@@ -447,6 +451,11 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
 
     enableFreeTier: true
 
+    // Inert at a single region, since failover needs somewhere to fail over to.
+    // Declared because Azure enables it on creation, and a property the template
+    // leaves out is one every deployment preview reports as being turned off.
+    enableAutomaticFailover: true
+
     capacity: {
       totalThroughputLimit: 1000
     }
@@ -762,6 +771,26 @@ resource developerCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRo
       roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
       principalId: id
       scope: cosmos.id
+    }
+  }
+]
+
+// The Telegram bot token is put into the vault by hand rather than by CD, which
+// only references it by URI, so someone has to be able to write a secret and
+// not merely read one.
+resource developerSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
+  for id in developerIds: {
+    name: guid(keyVault.id, id, keyVaultSecretsOfficerRoleId)
+    scope: keyVault
+
+    properties: {
+      roleDefinitionId: subscriptionResourceId(
+        'Microsoft.Authorization/roleDefinitions',
+        keyVaultSecretsOfficerRoleId
+      )
+
+      principalId: id
+      principalType: 'User'
     }
   }
 ]

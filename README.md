@@ -210,10 +210,19 @@ document, or a blob.
 
 The data-plane roles people need are declared in `core.bicep` and applied by CD,
 from the comma-separated object ids in the `DEVELOPER_PRINCIPAL_IDS` repository
-variable. Granting them by hand works too, but the declared form is reviewable
+variable: **Cosmos DB Built-in Data Contributor** to read and write incidents,
+**Key Vault Secrets Officer** because the Telegram bot token is put in by hand
+rather than by CD, and **Storage Blob Data Contributor** on the evidence
+container. Granting them by hand works too, but the declared form is reviewable
 in a diff, needs nobody to hold `Role Based Access Control Administrator`
 personally, and survives `teardown.sh` -- which removes resources by name
 prefix, taking hand-made assignments with them.
+
+Two things are not Azure roles and so are not in that list. Calling the incident
+API needs an `Incidents.Write` app role in Entra, which
+[the operator setup](#letting-a-person-call-the-api) grants from the same
+variable. And the storage role, though assigned, cannot currently be used at all
+— see [uploading evidence images](#uploading-evidence-images).
 
 Withholding these roles would not be a safety boundary in any case, since
 `Contributor` already allows deleting the accounts they apply to. The boundary
@@ -491,6 +500,34 @@ The deploy identity needs `Incidents.Write` and an entry in `TENANT_MAP` too:
 CD's queue-drain check posts a real incident, and it now goes through the
 authenticated path like any other producer rather than round a back door.
 
+#### Letting a person call the API
+
+`Incidents.Write` was defined for applications, so for a while no human could
+obtain a token carrying it — no amount of Azure RBAC helps, because Azure roles
+govern resources rather than this API. `scripts/grant-operator-access.sh` sets up
+the four things that change that, and is safe to re-run:
+
+```bash
+./scripts/grant-operator-access.sh
+```
+
+It exposes a `user_impersonation` delegated scope and pre-authorizes the Azure
+CLI, which is only what lets a token be issued at all; makes `Incidents.Write`
+assignable to users and assigns it to everyone in `DEVELOPER_PRINCIPAL_IDS`,
+which is what the API actually checks; and turns on `appRoleAssignmentRequired`
+so Entra issues tokens only to assigned principals.
+
+That last part matters. `TENANT_MAP` normally refuses any client it does not
+know, but this works by registering the Azure CLI — a client every account in
+the directory shares — so that particular refusal no longer applies. Two things
+replace it: a token needs the app role, and Entra will not issue one to an
+unassigned account at all.
+
+Because operators share the CLI's client id they also share one tenant,
+`TENANT-DEV`, which keeps hand-posted incidents out of the tenants the isolation
+demonstration uses. Submitting any other `tenant_id` is refused with 403, which
+is the isolation rule working rather than a fault.
+
 ## The incident store
 
 Incidents are persisted in Cosmos DB, NoSQL API, partitioned on `tenant_id` --
@@ -642,8 +679,14 @@ export TARGET_URL="https://<the ingestion service URL>"
 export STATIC_TOKEN="$(az account get-access-token \
   --resource "$AUTH_AUDIENCE" --query accessToken -o tsv)"
 
-python -m app.main --stage 5:30 --stage 20:60 --producer alpha:TENANT-01
+python -m app.main --stage 5:30 --stage 20:60 --producer local:TENANT-DEV
 ```
+
+The tenant has to be `TENANT-DEV`, because that is what `TENANT_MAP` maps the
+Azure CLI to and the API refuses a producer writing for anyone else. This needs
+[the operator setup](#letting-a-person-call-the-api) to have been run once; until
+it has, the token request itself fails with `AADSTS65001`, and a token obtained
+some other way is refused with 403 for carrying no `Incidents.Write`.
 
 Every option has an environment variable, because the same image runs as a job
 in the cloud where there is no command line to type. Client secrets are read
@@ -736,7 +779,7 @@ for enough.
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Every push and pull request | Checks the Common Event Model is identical between the two Cosmos-facing services; runs every test suite; builds all four images and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit) |
+| `ci.yml` | Every push and pull request | Checks the Common Event Model is identical between the two Cosmos-facing services; runs every test suite; builds all four images and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit); on pull requests, previews the infrastructure change against the live subscription |
 | `cd.yml` | Push to `main` | Deploys infrastructure (registry, logging, Container Apps environment, Service Bus namespace and queue, identities), builds and pushes SHA-tagged images for all four components, rolls out the ingestion, worker and dashboard revisions, verifies `/health` reports the ingestion service healthy **and** publishing to Service Bus and that the dashboard is serving, publishes a real incident and waits for the worker to drain the queue, then deploys the load simulator's job definition without starting it |
 
 Dependabot raises weekly pull requests for Python, Docker and Actions
@@ -759,6 +802,22 @@ The model-drift check exists because both services carry their own copy of the
 Common Event Model, so that each can build from its own directory. Drift between
 the copies is a protocol break that neither service's unit tests can see: each
 would still agree with itself.
+
+The infrastructure preview runs `what-if` against the live subscription, which
+catches what `az bicep build` cannot — a stale API version, an `existing`
+reference to something absent, a change to a property that cannot be changed. It
+runs as the deploy identity, using a federated credential for `pull_request` that
+already existed and went unused, and that is the point of it: previewing role
+assignments needs Role Based Access Control Administrator, which the pipeline
+holds and no person does, so this is what puts a preview within everyone's reach.
+
+Its output is filtered, which is unusual for a check and deliberate here. Raw
+`what-if` reports around forty property changes against this template, of which
+one is real: every value taken from another resource is reported as changing,
+because a `reference()` cannot be evaluated before deployment and the expression
+itself is printed as the new value. Each known class of false positive is counted
+instead of listed, so that a genuine change is not the fortieth line of a summary
+nobody reads.
 
 Image builds are retried three times with increasing backoff. Both pipelines
 pull the base image from Docker Hub and push to a registry, neither of which
