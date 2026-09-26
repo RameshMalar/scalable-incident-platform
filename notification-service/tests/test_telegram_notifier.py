@@ -2,8 +2,9 @@ import json
 
 import pytest
 
+from app.evidence import Evidence, EvidenceUnavailable
 from app.models import IncidentEvent
-from app.telegram_notifier import TelegramNotifier
+from app.telegram_notifier import CAPTION_LIMIT, TelegramNotifier
 
 
 class FakeResponse:
@@ -49,6 +50,37 @@ class FakeClock:
     async def sleep(self, seconds):
         self.sleeps.append(seconds)
         self.now += seconds
+
+
+class FakeEvidenceStore:
+    """Stands in for blob storage. Returns evidence, or raises to force text."""
+
+    def __init__(self, evidence=None, error=None):
+        self.evidence = evidence
+        self.error = error
+        self.requested = []
+        self.closed = False
+
+    async def fetch(self, evidence_uri):
+        self.requested.append(evidence_uri)
+
+        if self.error is not None:
+            raise self.error
+
+        return self.evidence
+
+    async def close(self):
+        self.closed = True
+
+
+def make_evidence(data=b"jpeg-bytes"):
+    return Evidence(data=data, filename="EVT-001.jpg", content_type="image/jpeg")
+
+
+def form_fields(form):
+    return {
+        options["name"]: value for options, _, value in form._fields
+    }
 
 
 def make_event(event_id="EVT-001", event_purpose="incident"):
@@ -190,3 +222,153 @@ async def test_successive_notifications_respect_minimum_interval():
 
     assert clock.sleeps == [pytest.approx(3.1)]
     assert len(session.requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_evidence_is_delivered_as_a_captioned_photo():
+    store = FakeEvidenceStore(evidence=make_evidence())
+    notifier, session, _ = make_notifier(
+        [FakeResponse(200, '{"ok":true}')],
+        evidence_store=store,
+    )
+
+    await notifier.notify(make_event())
+
+    assert store.requested == [
+        "https://evidence.example.test/incidents/EVT-001.jpg"
+    ]
+
+    assert len(session.requests) == 1
+    url, request = session.requests[0]
+    assert url.endswith("/bottest-token/sendPhoto")
+
+    fields = form_fields(request["data"])
+    assert fields["chat_id"] == "-100123"
+    assert fields["photo"] == b"jpeg-bytes"
+    assert "Event ID: EVT-001" in fields["caption"]
+
+
+@pytest.mark.asyncio
+async def test_unavailable_evidence_degrades_to_a_text_alert():
+    store = FakeEvidenceStore(error=EvidenceUnavailable("blob does not exist"))
+    notifier, session, _ = make_notifier(
+        [FakeResponse(200, '{"ok":true}')],
+        evidence_store=store,
+    )
+
+    await notifier.notify(make_event())
+
+    assert len(session.requests) == 1
+    url, request = session.requests[0]
+    assert url.endswith("/sendMessage")
+    assert "Event ID: EVT-001" in request["json"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_rejected_photo_still_pages_through_text():
+    store = FakeEvidenceStore(evidence=make_evidence())
+    notifier, session, _ = make_notifier(
+        [
+            FakeResponse(400, '{"ok":false,"description":"bad photo"}'),
+            FakeResponse(200, '{"ok":true}'),
+        ],
+        evidence_store=store,
+        min_send_interval_seconds=0,
+    )
+
+    await notifier.notify(make_event())
+
+    assert [url for url, _ in session.requests] == [
+        "https://api.telegram.org/bottest-token/sendPhoto",
+        "https://api.telegram.org/bottest-token/sendMessage",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_event_without_evidence_uri_never_touches_storage():
+    store = FakeEvidenceStore(evidence=make_evidence())
+    notifier, session, _ = make_notifier(
+        [FakeResponse(200, '{"ok":true}')],
+        evidence_store=store,
+    )
+
+    event = make_event()
+    event.evidence_uri = None
+
+    await notifier.notify(event)
+
+    assert store.requested == []
+    url, _ = session.requests[0]
+    assert url.endswith("/sendMessage")
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_photo_is_retried_with_a_rebuilt_body():
+    body = json.dumps(
+        {
+            "ok": False,
+            "error_code": 429,
+            "parameters": {"retry_after": 4},
+        }
+    )
+    store = FakeEvidenceStore(evidence=make_evidence())
+    notifier, session, clock = make_notifier(
+        [
+            FakeResponse(429, body),
+            FakeResponse(200, '{"ok":true}'),
+        ],
+        evidence_store=store,
+        min_send_interval_seconds=0,
+        max_rate_limit_retries=1,
+    )
+
+    await notifier.notify(make_event())
+
+    assert clock.sleeps == [4.0]
+    assert len(session.requests) == 2
+
+    # A multipart body can only be consumed once, so the retry has to send a
+    # freshly built form rather than the exhausted one.
+    first, second = (request["data"] for _, request in session.requests)
+    assert first is not second
+    assert form_fields(second)["photo"] == b"jpeg-bytes"
+
+
+@pytest.mark.asyncio
+async def test_caption_is_truncated_to_the_telegram_limit():
+    store = FakeEvidenceStore(evidence=make_evidence())
+    notifier, session, _ = make_notifier(
+        [FakeResponse(200, '{"ok":true}')],
+        evidence_store=store,
+    )
+
+    event = make_event()
+    event.description = "x" * 2000
+
+    await notifier.notify(event)
+
+    caption = form_fields(session.requests[0][1]["data"])["caption"]
+    assert len(caption) == CAPTION_LIMIT
+    assert caption.endswith("...")
+
+
+@pytest.mark.asyncio
+async def test_text_alert_keeps_the_full_description():
+    notifier, session, _ = make_notifier([FakeResponse(200, '{"ok":true}')])
+
+    event = make_event()
+    event.description = "x" * 2000
+
+    await notifier.notify(event)
+
+    assert len(session.requests[0][1]["json"]["text"]) > CAPTION_LIMIT
+
+
+@pytest.mark.asyncio
+async def test_close_releases_the_evidence_store():
+    store = FakeEvidenceStore(evidence=make_evidence())
+    notifier, _, _ = make_notifier([], evidence_store=store)
+
+    await notifier.close()
+
+    assert store.closed is True

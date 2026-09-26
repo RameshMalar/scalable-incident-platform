@@ -88,7 +88,9 @@ jobs:
             notificationQueueName \
             keyVaultName \
             dashboardIdentityId \
-            dashboardIdentityClientId
+            dashboardIdentityClientId \
+            evidenceBlobEndpoint \
+            evidenceContainerName
           do
             value=$(echo "$outputs" | jq -r ".${key}.value")
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
@@ -213,6 +215,8 @@ jobs:
               image='${{ steps.image.outputs.notification }}' \
               telegramChatId='${{ vars.TELEGRAM_CHAT_ID }}' \
               telegramBotTokenSecretUri='${{ vars.TELEGRAM_BOT_TOKEN_SECRET_URI }}' \
+              evidenceBlobEndpoint='${{ steps.core.outputs.evidenceBlobEndpoint }}' \
+              evidenceContainer='${{ steps.core.outputs.evidenceContainerName }}' \
             --query properties.outputs.appName.value \
             -o tsv
 
