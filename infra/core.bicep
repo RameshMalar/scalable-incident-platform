@@ -11,12 +11,24 @@ param namePrefix string = 'incident'
 @description('Deploy identity from scripts/setup-github-oidc.sh. It is also what uploads evidence images, because a tenant Conditional Access policy can refuse a person a storage data-plane token while leaving managed identities unaffected.')
 param deployIdentityName string = '${namePrefix}-github-deploy'
 
+@description('Comma-separated Entra object ids of the developers who work on this platform. They receive the data-plane roles their own components need. Empty grants nobody.')
+param developerPrincipalIds string = ''
+
 
 // -----------------------------------------------------------------------------
 // Shared names and role definitions
 // -----------------------------------------------------------------------------
 
 var suffix = uniqueString(resourceGroup().id)
+
+// Tolerate spaces and a trailing comma, so the value stays easy to edit by hand
+// in a GitHub repository variable.
+var developerIds = empty(trim(developerPrincipalIds))
+  ? []
+  : filter(
+      split(replace(trim(developerPrincipalIds), ' ', ''), ','),
+      id => !empty(id)
+    )
 
 var acrName = '${namePrefix}acr${suffix}'
 
@@ -719,6 +731,63 @@ resource deployEvidenceContributor 'Microsoft.Authorization/roleAssignments@2022
     principalType: 'ServicePrincipal'
   }
 }
+
+
+// -----------------------------------------------------------------------------
+// Developer access
+// -----------------------------------------------------------------------------
+
+// Declared here rather than granted by hand for three reasons: it is reviewable
+// in a diff, CD applies it so nobody needs Role Based Access Control
+// Administrator of their own, and scripts/teardown.sh removes resources by name
+// prefix -- hand-made assignments do not survive a rebuild and nobody remembers
+// to recreate them.
+//
+// These are data-plane roles, which Contributor does not carry: its permissions
+// list no dataActions, and Cosmos runs its own RBAC system entirely. Withholding
+// them is not a safety boundary, because Contributor on the resource group
+// already allows deleting these accounts outright. The boundary that does mean
+// something is Role Based Access Control Administrator, which Contributor
+// explicitly excludes and which nothing here grants: CD holds it, so no person
+// needs to.
+
+// Clearing out load-test documents before a demo needs write access; the
+// dashboard's read-only identity is deliberately separate from this.
+resource developerCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = [
+  for id in developerIds: {
+    parent: cosmos
+    name: guid(cosmos.id, id, cosmosDataContributorRoleId)
+
+    properties: {
+      roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
+      principalId: id
+      scope: cosmos.id
+    }
+  }
+]
+
+// Granted for when a developer can reach the storage data plane at all. A
+// tenant Conditional Access policy currently refuses user accounts a token for
+// `storage.azure.com`, so this role alone does not make an upload work -- use
+// the Evidence workflow, which runs as a managed identity. The assignment is
+// here so that the day the policy is relaxed, or someone works from a managed
+// device, nothing else has to change.
+resource developerEvidenceContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
+  for id in developerIds: {
+    name: guid(evidenceContainer.id, id, storageBlobDataContributorRoleId)
+    scope: evidenceContainer
+
+    properties: {
+      roleDefinitionId: subscriptionResourceId(
+        'Microsoft.Authorization/roleDefinitions',
+        storageBlobDataContributorRoleId
+      )
+
+      principalId: id
+      principalType: 'User'
+    }
+  }
+]
 
 
 // -----------------------------------------------------------------------------
