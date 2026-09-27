@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -130,10 +131,21 @@ class BatchTests(unittest.TestCase):
             if args[:2] == ("containerapp", "show"):
                 return [{"name": "EVIDENCE_BLOB_ENDPOINT", "value": self.manifest["storage"]["blob_endpoint"]},
                         {"name": "EVIDENCE_CONTAINER", "value": "evidence"}]
+            self.assertEqual(args[:3], ("storage", "container", "show"))
+            self.assertNotIn("--container-name", args)
+            self.assertEqual(args[args.index("--name") + 1], "evidence")
             return {"properties": {"publicAccess": None}}
 
         with patch.dict(os.environ, env, clear=True):
-            self.assertIn("login", batch.resolve_target(self.manifest, cli))
+            target = batch.resolve_target(self.manifest, cli)
+            self.assertIn("login", target)
+            self.assertNotIn("--name", target)
+            self.assertEqual(target[target.index("--container-name") + 1], "evidence")
+            blob_cli = self.existing()
+            batch.run_batch({"images": [self.manifest["images"][0]]},
+                            self.payloads, "check", target, blob_cli)
+            for call in blob_cli.calls:
+                self.assertEqual(call[call.index("--container-name") + 1], "evidence")
             for field in ("blob_endpoint", "container"):
                 bad = copy.deepcopy(self.manifest)
                 bad["storage"][field] += "wrong"
@@ -150,6 +162,42 @@ class BatchTests(unittest.TestCase):
                 return {"properties": {"publicAccess": "blob"}} if args[:2] == ("storage", "container") else cli(*args)
             with self.assertRaisesRegex(ValueError, "not private"):
                 batch.resolve_target(self.manifest, public_cli)
+
+    def test_parser_error_reports_command_exit_and_missing_name(self):
+        result = subprocess.CompletedProcess([], 2, "secret stdout",
+                    "ERROR: the following arguments are required: --name/-n\n")
+        with patch.object(batch.subprocess, "run", return_value=result):
+            with self.assertRaises(RuntimeError) as caught:
+                batch.az("storage", "container", "show", "--container-name", "evidence")
+        self.assertEqual(str(caught.exception),
+                         "az storage container show failed (exit 2): missing required argument --name/-n")
+
+    def test_cli_diagnostics_do_not_echo_secrets(self):
+        secret = "https://example.invalid/blob?sig=SECRET_TOKEN"
+        for stderr, expected in (
+            ("ERROR: unrecognized arguments: " + secret, "unrecognized CLI arguments"),
+            ("ERROR: the following arguments are required: " + secret, "missing required CLI arguments"),
+            ("ERROR: (AuthenticationFailed) Bearer " + secret, "AuthenticationFailed"),
+            ("ErrorCode: SECRET_TOKEN\n" + secret, "CLI details suppressed"),
+        ):
+            with self.subTest(stderr=stderr):
+                result = subprocess.CompletedProcess([], 2, secret, stderr)
+                with patch.object(batch.subprocess, "run", return_value=result):
+                    with self.assertRaises(RuntimeError) as caught:
+                        batch.az("storage", "blob", "show", "--sas-token", secret)
+                self.assertEqual(str(caught.exception),
+                                 "az storage blob show failed (exit 2): " + expected)
+
+    def test_unknown_command_and_timeout_do_not_echo_arguments(self):
+        result = subprocess.CompletedProcess([], 2, "", "secret")
+        with patch.object(batch.subprocess, "run", return_value=result):
+            with self.assertRaisesRegex(RuntimeError, r"az \[unrecognized command\] failed \(exit 2\): CLI details suppressed"):
+                batch.az("SECRET_TOKEN")
+        error = subprocess.TimeoutExpired(["az", "SECRET_TOKEN"], 120, stderr="secret")
+        with patch.object(batch.subprocess, "run", side_effect=error):
+            with self.assertRaises(RuntimeError) as caught:
+                batch.az("account", "show")
+        self.assertEqual(str(caught.exception), "az account show timed out after 120s (exit unavailable)")
 
     def test_bad_hash_duplicate_missing_file_and_uri_fail_preflight(self):
         for mutation in ("hash", "duplicate", "missing", "uri"):

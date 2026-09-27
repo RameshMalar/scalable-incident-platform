@@ -20,15 +20,44 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "evidence_images/manifest.proposed.json"
 STATUSES = ("successful", "already_existing", "conflicting", "failed", "would_upload", "planned")
+SAFE_COMMANDS = (
+    ("account", "show"), ("containerapp", "show"),
+    ("storage", "container", "show"),
+    *(("storage", "blob", verb) for verb in ("exists", "show", "download", "upload")),
+)
+SAFE_ERROR_CODES = {"AuthorizationPermissionMismatch", "AuthenticationFailed",
+                    "BlobAlreadyExists", "BlobNotFound", "ContainerNotFound",
+                    "ConditionNotMet"}
+
+
+def safe_cli_error(stderr):
+    # Emit fixed allowlisted text only, never values copied from CLI output.
+    for line in stderr.splitlines():
+        if line == "ERROR: the following arguments are required: --name/-n":
+            return "missing required argument --name/-n"
+        for prefix, label in (
+            ("ERROR: the following arguments are required:", "missing required CLI arguments"),
+            ("ERROR: unrecognized arguments:", "unrecognized CLI arguments"),
+        ):
+            if line.startswith(prefix):
+                return label
+    code = re.search(r"(?:ErrorCode:|ERROR: \()\s*([A-Za-z0-9_]+)", stderr)
+    if code and code.group(1) in SAFE_ERROR_CODES:
+        return code.group(1)
+    return "CLI details suppressed"
 
 
 def az(*args):
-    result = subprocess.run(["az", *args, "--only-show-errors", "--output", "json"],
-                            capture_output=True, text=True, timeout=120, check=False)
+    command = next(("az " + " ".join(c) for c in SAFE_COMMANDS
+                    if args[:len(c)] == c), "az [unrecognized command]")
+    try:
+        result = subprocess.run(["az", *args, "--only-show-errors", "--output", "json"],
+                                capture_output=True, text=True, timeout=120, check=False)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"{command} timed out after 120s (exit unavailable)") from None
     if result.returncode:
-        # Do not dump CLI diagnostics that could contain tokens or signed URLs.
-        code = re.search(r"(?:ErrorCode:|ERROR: \()\s*([A-Za-z0-9_]+)", result.stderr)
-        raise RuntimeError("Azure CLI failed: " + (code.group(1) if code else f"exit {result.returncode}"))
+        raise RuntimeError(f"{command} failed (exit {result.returncode}): "
+                           + safe_cli_error(result.stderr))
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
@@ -73,12 +102,12 @@ def resolve_target(manifest, cli=az):
     storage = manifest["storage"]
     if endpoint != storage["blob_endpoint"].rstrip("/") or container != storage["container"]:
         raise ValueError("Deployed evidence endpoint/container differs from the manifest; refusing all writes")
-    target = ["--auth-mode", "login", "--account-name", storage["account_name"],
-              "--blob-endpoint", endpoint, "--container-name", container]
-    properties = cli("storage", "container", "show", *target)
+    common = ["--auth-mode", "login", "--account-name", storage["account_name"],
+              "--blob-endpoint", endpoint]
+    properties = cli("storage", "container", "show", *common, "--name", container)
     if properties["properties"].get("publicAccess") not in (None, "None"):
         raise ValueError("Evidence container is not private; refusing all writes")
-    return target
+    return [*common, "--container-name", container]
 
 
 def compare_existing(entry, data, target, directory, cli=az):
