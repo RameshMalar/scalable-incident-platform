@@ -1,0 +1,2 @@
+# Phase 1 validates this existing file by byte-exact SHA-256, including CRLF.
+/evidence_images/manifest.json -text

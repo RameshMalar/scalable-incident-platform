@@ -1,0 +1,2556 @@
+{
+  "manifest_version": 2,
+  "status": "proposed_not_uploaded",
+  "generated_at_utc": "2026-09-27T12:58:36Z",
+  "storage": {
+    "account_name": "incidentevi4pqaac2c4e4hs",
+    "container": "evidence",
+    "blob_endpoint": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net"
+  },
+  "notes": [
+    "Phase 1 local proposal only. All 43 synthetic images visually inspected. No uploads or incident submissions.",
+    "Only images[].event is a Common Event Model payload. Wrapper fields document evidence and manual review.",
+    "Existing event IDs, Blob paths, evidence URIs and storage configuration are preserved by exact local_path mapping.",
+    "Visible camera IDs take precedence over demo assignments. All 43 images display readable camera IDs.",
+    "Visible timestamp strings are transcribed without timezone inference. Actual capture times cannot be established.",
+    "Event timestamps are separately simulated UTC times starting 2026-09-27T00:00:00Z, one minute apart in manifest order.",
+    "Site IDs and severity are demo assignments. Confidence is a simulated incident-level test value of 0.95, not a measured model output.",
+    "Visible object detection scores, where recorded, remain image annotations; they are not incident-level confidence.",
+    "People Count headlines are transcribed synthetic labels, not independently measured or verified headcounts.",
+    "All intrusion images display CAM-01, but location labels vary. This source/location ambiguity remains unresolved.",
+    "Validation verifies structure, file hashes and metadata consistency; it does not independently perform OCR or establish capture authenticity."
+  ],
+  "images": [
+    {
+      "filename": "Evidence_images_Intrusion.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-489984C9AAFB53DF8602A4A3E5FE1A28.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-489984C9AAFB53DF8602A4A3E5FE1A28",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter Gate",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:00:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-489984C9AAFB53DF8602A4A3E5FE1A28.jpg"
+      },
+      "image_sha256": "f32a9dc499fde1ffd1986769db0eb4140bfe5ecb5ec09d80420072b7b3bb4602",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter Gate",
+          "object_detection_label": "Person 95.4%"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_intrusion1.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_intrusion1.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-C4C1C464EE995ACDA289711E7FC840A3.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-C4C1C464EE995ACDA289711E7FC840A3",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter Gate",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:01:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-C4C1C464EE995ACDA289711E7FC840A3.jpg"
+      },
+      "image_sha256": "037222284f0220f3d9d152a60f9ba66f7443558444f11520a11b9236e4e67314",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter Gate",
+          "object_detection_label": "Person 95.4%"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion2.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion2.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-140C5AEA27F15B5AB254A04C11F26AB7.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-140C5AEA27F15B5AB254A04C11F26AB7",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter - North Gate",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:02:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-140C5AEA27F15B5AB254A04C11F26AB7.jpg"
+      },
+      "image_sha256": "2d04fbb6f06c6b06bd232825cd892b1f69811b596801abfe2afafa4b21b65dd9",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter - North Gate",
+          "object_detection_label": "Person 95.4%"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion3.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion3.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-E9D7032AE057565C83DA8BCD1B1744B4.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-E9D7032AE057565C83DA8BCD1B1744B4",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter Gate",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:03:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-E9D7032AE057565C83DA8BCD1B1744B4.jpg"
+      },
+      "image_sha256": "483f119af5a494481c54b95961a1fb82d4637df1f04385869cc62bbf133effa9",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter Gate",
+          "object_detection_label": "Person 95.4%"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion4.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion4.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-FD982C55215E575D9094D1336067A8CA.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-FD982C55215E575D9094D1336067A8CA",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter Gate",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:04:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-FD982C55215E575D9094D1336067A8CA.jpg"
+      },
+      "image_sha256": "7297f09fc398f1a4a93139e272561427c298c57169567d9e507f55057a4c9fb1",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter Gate",
+          "object_detection_label": "Person 95.4%"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion5.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion5.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-BD10EFD33D155E5AB221BAE6C0760459.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-BD10EFD33D155E5AB221BAE6C0760459",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter Entrance",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:05:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-BD10EFD33D155E5AB221BAE6C0760459.jpg"
+      },
+      "image_sha256": "36489546b4654559fcb31f223537fed0d4c92f538f4c2f38d0ddb1b9ea4ce96d",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter Entrance",
+          "object_detection_label": "Person 95.4%"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion6.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion6.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-5AD552A50D4D5C6A9FAEA49E802D9239.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-5AD552A50D4D5C6A9FAEA49E802D9239",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter - North Gate",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:06:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-5AD552A50D4D5C6A9FAEA49E802D9239.jpg"
+      },
+      "image_sha256": "62179b9dba56e10a6667e30c04aa0a398929896fda533a4ad8fbf5c36ab1aa99",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter - North Gate",
+          "object_detection_label": "Person 0.95"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion7.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion7.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-A227666A63FB5A5CB964FFD67EF7DFE2.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-A227666A63FB5A5CB964FFD67EF7DFE2",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter - North Gate",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:07:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-A227666A63FB5A5CB964FFD67EF7DFE2.jpg"
+      },
+      "image_sha256": "4139412756e39952aa735aa802e4030a69d55d1da7427dff2c31c697fcecad37",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter - North Gate",
+          "object_detection_label": "Person 95.4%"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion8.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion8.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-EFA30512C4DB5462995D4DD6C69213E4.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-EFA30512C4DB5462995D4DD6C69213E4",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter Gate",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:08:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-EFA30512C4DB5462995D4DD6C69213E4.jpg"
+      },
+      "image_sha256": "174cf8b79bced3e2f7004f0b9ae2f7c419c5fa4ed229a2be1027bfac61476c37",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter Gate",
+          "object_detection_label": "Person 95.4%"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion9.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion9.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-10CD0439CF0E5DEE8AD33A360F0CE02E.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-10CD0439CF0E5DEE8AD33A360F0CE02E",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter Gate",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:09:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-10CD0439CF0E5DEE8AD33A360F0CE02E.jpg"
+      },
+      "image_sha256": "dcd5922df1ef6fcec8097a2b46b9549bde71150d9ef0a31927c654e92977e92e",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter Gate",
+          "object_detection_label": "Person 95.4%"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion10.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion10.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-837BBC8152495E18B918DE65DA4594CA.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-837BBC8152495E18B918DE65DA4594CA",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter Entrance",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:10:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-837BBC8152495E18B918DE65DA4594CA.jpg"
+      },
+      "image_sha256": "9737c66cc8109c6f0dd136370b7861a3a14c707ed32db3c67acdac680229ef86",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter Entrance",
+          "object_detection_label": "Person 95.4%"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion11.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion11.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-A855333437A15387BBC431E24B49A7F9.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-A855333437A15387BBC431E24B49A7F9",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter - North Gate",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:11:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-A855333437A15387BBC431E24B49A7F9.jpg"
+      },
+      "image_sha256": "5459cd4f90a4a8f5e07250d0d224282d98746fdd0b78cc711a5cfcf4b35776d5",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter - North Gate",
+          "object_detection_label": "Person 0.95"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion12.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion12.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-D2D921DD1B3453E190BE045A6B0E01B5.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-D2D921DD1B3453E190BE045A6B0E01B5",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - PERIMETER",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:12:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: INTRUSION DETECTED. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-D2D921DD1B3453E190BE045A6B0E01B5.jpg"
+      },
+      "image_sha256": "99b853a5ab07160ac6da43847a6a580ae60d978b16871fe9bb0b6078334d5026",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "INTRUSION DETECTED",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "PERIMETER",
+          "object_detection_label": "Person 95.4%"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion13.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion13.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-F826089F7ABB5E83AD75BA34444EE7C5.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-F826089F7ABB5E83AD75BA34444EE7C5",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-01",
+        "source_name": "Synthetic intrusion camera CAM-01 - Perimeter - North Gate",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:13:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: Intrusion Detected. Visible camera CAM-01. Visible timestamp 2025-09-25 02:14:32 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-F826089F7ABB5E83AD75BA34444EE7C5.jpg"
+      },
+      "image_sha256": "b4685d12e756894d9bd62f593f8b44894a30cb1ad9d2e34e2a021115151b37a0",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-01",
+          "incident_label": "Intrusion Detected",
+          "timestamp": "2025-09-25 02:14:32",
+          "timestamp_timezone": null,
+          "location_label": "Perimeter - North Gate",
+          "object_detection_label": "Person 95.4%"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          },
+          {
+            "code": "shared_camera_location_ambiguity",
+            "status": "unresolved",
+            "detail": "CAM-01 is embedded throughout the intrusion set with differing location labels: Perimeter Gate; Perimeter Entrance; Perimeter - North Gate; PERIMETER. Labels are preserved; no distinct physical cameras or site mapping are inferred."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-101.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-101.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-01F40A119FE85136A5752C5B41DE97FA.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-01F40A119FE85136A5752C5B41DE97FA",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-101",
+        "source_name": "Synthetic people counting demo camera CAM-101",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:14:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 6. Visible camera CAM-101. Visible timestamp 2026-09-25 08:12:15 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-01F40A119FE85136A5752C5B41DE97FA.jpg"
+      },
+      "image_sha256": "44285d64650e59410e1e59d5d488221f03be454e91acb7302a6de42f059386c4",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-101",
+          "incident_label": "People Count: 6",
+          "timestamp": "2026-09-25 08:12:15",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 6
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-102.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-102.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-112C5BC0CB7A568AA123BC84764BAD93.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-112C5BC0CB7A568AA123BC84764BAD93",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-102",
+        "source_name": "Synthetic people counting demo camera CAM-102",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:15:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 4. Visible camera CAM-102. Visible timestamp 2026-09-25 09:20:33 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-112C5BC0CB7A568AA123BC84764BAD93.jpg"
+      },
+      "image_sha256": "de4e41c06e37f149f7e6f49f0c5a843e124bdf6626d2d476d9afa400444ebd7b",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-102",
+          "incident_label": "People Count: 4",
+          "timestamp": "2026-09-25 09:20:33",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 4
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-103.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-103.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-32053D4934F555BCBDD75633B629EE3F.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-32053D4934F555BCBDD75633B629EE3F",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-103",
+        "source_name": "Synthetic people counting demo camera CAM-103",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:16:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 8. Visible camera CAM-103. Visible timestamp 2026-09-25 10:05:41 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-32053D4934F555BCBDD75633B629EE3F.jpg"
+      },
+      "image_sha256": "57e0850c73db2d14035947244469e1329a9449c11c140a76d0343c6fe832e2cd",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-103",
+          "incident_label": "People Count: 8",
+          "timestamp": "2026-09-25 10:05:41",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 8
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-104.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-104.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-DFB16DE3DCA85005B8C7E72FC86A93FF.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-DFB16DE3DCA85005B8C7E72FC86A93FF",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-104",
+        "source_name": "Synthetic people counting demo camera CAM-104",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:17:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 3. Visible camera CAM-104. Visible timestamp 2026-09-25 11:30:18 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-DFB16DE3DCA85005B8C7E72FC86A93FF.jpg"
+      },
+      "image_sha256": "b1f6991d2dd8d9d3fa69546d33c7119e11b6812a250dd658fa7c667c7099b262",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-104",
+          "incident_label": "People Count: 3",
+          "timestamp": "2026-09-25 11:30:18",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 3
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-105.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-105.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-CE989907B7EA5A95973CA516A6E4D22F.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-CE989907B7EA5A95973CA516A6E4D22F",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-105",
+        "source_name": "Synthetic people counting demo camera CAM-105",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:18:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 7. Visible camera CAM-105. Visible timestamp 2026-09-25 12:45:27 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-CE989907B7EA5A95973CA516A6E4D22F.jpg"
+      },
+      "image_sha256": "d52fde7832c27033dcab947e45f1edf6dfb8ab70eaf8e21d1a45c430d4434339",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-105",
+          "incident_label": "People Count: 7",
+          "timestamp": "2026-09-25 12:45:27",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 7
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-106.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-106.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-8A72E9ACEBB75F35AF4DCA99F413BC07.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-8A72E9ACEBB75F35AF4DCA99F413BC07",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-106",
+        "source_name": "Synthetic people counting demo camera CAM-106",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:19:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 5. Visible camera CAM-106. Visible timestamp 2026-09-25 13:18:05 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-8A72E9ACEBB75F35AF4DCA99F413BC07.jpg"
+      },
+      "image_sha256": "cfc530b54b0ebcbb046964fe83b98d87430913d64bfa301f23bbc31c855a08a8",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-106",
+          "incident_label": "People Count: 5",
+          "timestamp": "2026-09-25 13:18:05",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 5
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-107.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-107.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-76B2E77FD33B50499B4265448545E46E.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-76B2E77FD33B50499B4265448545E46E",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-107",
+        "source_name": "Synthetic people counting demo camera CAM-107",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:20:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 9. Visible camera CAM-107. Visible timestamp 2026-09-25 14:10:33 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-76B2E77FD33B50499B4265448545E46E.jpg"
+      },
+      "image_sha256": "f281b7cfe44a9c0f9222109de4bb5ace550e4d123507805d3d8e7215af29650a",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-107",
+          "incident_label": "People Count: 9",
+          "timestamp": "2026-09-25 14:10:33",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 9
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-108.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-108.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-9298C814D7CC55CA9451387E3160E523.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-9298C814D7CC55CA9451387E3160E523",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-108",
+        "source_name": "Synthetic people counting demo camera CAM-108",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:21:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 4. Visible camera CAM-108. Visible timestamp 2026-09-25 15:04:12 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-9298C814D7CC55CA9451387E3160E523.jpg"
+      },
+      "image_sha256": "731b255906044a0779de0a7c9e87f934847f8e14b00c0bf0535698a3e6faf30b",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-108",
+          "incident_label": "People Count: 4",
+          "timestamp": "2026-09-25 15:04:12",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 4
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-109.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-109.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-D53822039CEB5F48ACEEA91B22556B0A.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-D53822039CEB5F48ACEEA91B22556B0A",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-109",
+        "source_name": "Synthetic people counting demo camera CAM-109",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:22:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 5. Visible camera CAM-109. Visible timestamp 2026-09-25 16:27:44 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-D53822039CEB5F48ACEEA91B22556B0A.jpg"
+      },
+      "image_sha256": "8cd34ed77384586ab4e899d3aabb6bff0c9e520d29a23829921b6b7717f9963f",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-109",
+          "incident_label": "People Count: 5",
+          "timestamp": "2026-09-25 16:27:44",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 5
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-110.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-110.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-05C751CA7C47553A9BB750D5A23B4EB8.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-05C751CA7C47553A9BB750D5A23B4EB8",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-110",
+        "source_name": "Synthetic people counting demo camera CAM-110",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:23:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 6. Visible camera CAM-110. Visible timestamp 2026-09-25 17:05:26 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-05C751CA7C47553A9BB750D5A23B4EB8.jpg"
+      },
+      "image_sha256": "be98936e481d4583e14fafcd0acad316831af4c5cd87faeb15a820f90f85e767",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-110",
+          "incident_label": "People Count: 6",
+          "timestamp": "2026-09-25 17:05:26",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 6
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-111.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-111.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-B5CEF4C28D1D5C5AB70EA140DD887FC0.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-B5CEF4C28D1D5C5AB70EA140DD887FC0",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-111",
+        "source_name": "Synthetic people counting demo camera CAM-111",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:24:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 7. Visible camera CAM-111. Visible timestamp 2026-09-25 18:20:11 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-B5CEF4C28D1D5C5AB70EA140DD887FC0.jpg"
+      },
+      "image_sha256": "f5b4852424f0526d344860b23ee96ae224218f16e6fc34a5bdbe4d20fca036d1",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-111",
+          "incident_label": "People Count: 7",
+          "timestamp": "2026-09-25 18:20:11",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 7
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-112.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-112.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-AC020397047355DC8039FAAE848BBA31.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-AC020397047355DC8039FAAE848BBA31",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-112",
+        "source_name": "Synthetic people counting demo camera CAM-112",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:25:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 4. Visible camera CAM-112. Visible timestamp 2026-09-25 19:14:37 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-AC020397047355DC8039FAAE848BBA31.jpg"
+      },
+      "image_sha256": "9954d4b8294c4f175dcf58e3ae994728564e252ce903b3a3cafb04962bab43f5",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-112",
+          "incident_label": "People Count: 4",
+          "timestamp": "2026-09-25 19:14:37",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 4
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-113.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-113.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-D143AEC0BD4A50B482EC3802065DCACF.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-D143AEC0BD4A50B482EC3802065DCACF",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-113",
+        "source_name": "Synthetic people counting demo camera CAM-113",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:26:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 3. Visible camera CAM-113. Visible timestamp 2026-09-25 20:08:51 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-D143AEC0BD4A50B482EC3802065DCACF.jpg"
+      },
+      "image_sha256": "7b4ce255500cc62db98f8777c4c994aec9491b769b814d95cab8453f323694dd",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-113",
+          "incident_label": "People Count: 3",
+          "timestamp": "2026-09-25 20:08:51",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 3
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "counting_CAM-114.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-114.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-BD35024EA26D5831A65DB2A72BC9A7DF.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-BD35024EA26D5831A65DB2A72BC9A7DF",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-114",
+        "source_name": "Synthetic people counting demo camera CAM-114",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-27T00:27:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: People Count: 5. Visible camera CAM-114. Visible timestamp 2026-09-25 21:32:09 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-BD35024EA26D5831A65DB2A72BC9A7DF.jpg"
+      },
+      "image_sha256": "576ec5e0649ca040f7906f87321e5bdeeecdbd5b52ec52f368483b4ebc9480c5",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-114",
+          "incident_label": "People Count: 5",
+          "timestamp": "2026-09-25 21:32:09",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "people_count_label_value": 5
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-201.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-201.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-57D7400C995F50D5BBF2FE928A5C3223.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-57D7400C995F50D5BBF2FE928A5C3223",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-201",
+        "source_name": "Synthetic fire smoke demo camera CAM-201",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:28:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: FIRE DETECTED. Visible camera CAM-201. Visible timestamp 2026-09-25 08:12:10 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-57D7400C995F50D5BBF2FE928A5C3223.jpg"
+      },
+      "image_sha256": "a0867e6002d2957cf9ecae7419e278a32cea5acfbef8b0c9ecac511454d1138e",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-201",
+          "incident_label": "FIRE DETECTED",
+          "timestamp": "2026-09-25 08:12:10",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "fire 0.95"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-202.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-202.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-9839B1936E435C1181BBF0E042604045.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-9839B1936E435C1181BBF0E042604045",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-202",
+        "source_name": "Synthetic fire smoke demo camera CAM-202",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:29:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: SMOKE DETECTED. Visible camera CAM-202. Visible timestamp 2026-09-25 08:45:33 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-9839B1936E435C1181BBF0E042604045.jpg"
+      },
+      "image_sha256": "f8834a0009458b7537a8ebaa8474f1128469c25c15bbdbe8c176d4a4415515aa",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-202",
+          "incident_label": "SMOKE DETECTED",
+          "timestamp": "2026-09-25 08:45:33",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "smoke 0.87"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-203.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-203.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-9BE78F6E921A5072AA27C71C76A2CE59.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-9BE78F6E921A5072AA27C71C76A2CE59",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-203",
+        "source_name": "Synthetic fire smoke demo camera CAM-203",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:30:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: FIRE DETECTED. Visible camera CAM-203. Visible timestamp 2026-09-25 09:18:27 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-9BE78F6E921A5072AA27C71C76A2CE59.jpg"
+      },
+      "image_sha256": "b77c468487c71a0c06f0ce8a2b3ea6cf6a47c7f321fea9532a598c5b57b807fa",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-203",
+          "incident_label": "FIRE DETECTED",
+          "timestamp": "2026-09-25 09:18:27",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "fire 0.93"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-204.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-204.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-3687C0B7BD015A7197CC187561881300.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-3687C0B7BD015A7197CC187561881300",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-204",
+        "source_name": "Synthetic fire smoke demo camera CAM-204",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:31:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: SMOKE DETECTED. Visible camera CAM-204. Visible timestamp 2026-09-25 10:05:14 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-3687C0B7BD015A7197CC187561881300.jpg"
+      },
+      "image_sha256": "883162d54dd4d53dbabc87fad6b869788671b786e0614e4970dd9e73e00d200c",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-204",
+          "incident_label": "SMOKE DETECTED",
+          "timestamp": "2026-09-25 10:05:14",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "smoke 0.90"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-205.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-205.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-D78D32E60D5F5A4CBCBFCD8F5B44B83D.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-D78D32E60D5F5A4CBCBFCD8F5B44B83D",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-205",
+        "source_name": "Synthetic fire smoke demo camera CAM-205",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:32:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: FIRE DETECTED. Visible camera CAM-205. Visible timestamp 2026-09-25 11:22:41 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-D78D32E60D5F5A4CBCBFCD8F5B44B83D.jpg"
+      },
+      "image_sha256": "165f127ff87eaf9d800599fe49d8ab34dcdef71e111419972858b57da31416bf",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-205",
+          "incident_label": "FIRE DETECTED",
+          "timestamp": "2026-09-25 11:22:41",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "fire 0.92"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-206.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-206.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-A251ACEF65CE53F08D98C70CCB9C56A3.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-A251ACEF65CE53F08D98C70CCB9C56A3",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-206",
+        "source_name": "Synthetic fire smoke demo camera CAM-206",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:33:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: SMOKE DETECTED. Visible camera CAM-206. Visible timestamp 2026-09-25 12:10:56 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-A251ACEF65CE53F08D98C70CCB9C56A3.jpg"
+      },
+      "image_sha256": "0228d13a42edc3add0555100ee616483ff8120ef8b91b9b1a7414973b852efcb",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-206",
+          "incident_label": "SMOKE DETECTED",
+          "timestamp": "2026-09-25 12:10:56",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "smoke 0.88"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-207.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-207.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-79018C283A2C5B4FB37B079ED81154C9.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-79018C283A2C5B4FB37B079ED81154C9",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-207",
+        "source_name": "Synthetic fire smoke demo camera CAM-207",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:34:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: FIRE DETECTED. Visible camera CAM-207. Visible timestamp 2026-09-25 13:37:20 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-79018C283A2C5B4FB37B079ED81154C9.jpg"
+      },
+      "image_sha256": "1c545f45de5c0e8d9c418d0ba3b62d840e64321db3b59953c50604e856cbdc99",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-207",
+          "incident_label": "FIRE DETECTED",
+          "timestamp": "2026-09-25 13:37:20",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "fire 0.91"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-208.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-208.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-46917259AB315FD2971DD641C0248FEB.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-46917259AB315FD2971DD641C0248FEB",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-208",
+        "source_name": "Synthetic fire smoke demo camera CAM-208",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:35:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: SMOKE DETECTED. Visible camera CAM-208. Visible timestamp 2026-09-25 14:16:05 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-46917259AB315FD2971DD641C0248FEB.jpg"
+      },
+      "image_sha256": "e7134a2285318d6130449a28134895c03be114aec63046382f3f02ba346d19c7",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-208",
+          "incident_label": "SMOKE DETECTED",
+          "timestamp": "2026-09-25 14:16:05",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "smoke 0.86"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-209.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-209.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-D68CD096CA0F5900B6B37CFB78247BD9.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-D68CD096CA0F5900B6B37CFB78247BD9",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-209",
+        "source_name": "Synthetic fire smoke demo camera CAM-209",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:36:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: FIRE DETECTED. Visible camera CAM-209. Visible timestamp 2026-09-25 15:48:31 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-D68CD096CA0F5900B6B37CFB78247BD9.jpg"
+      },
+      "image_sha256": "9fa4256ec8c1257af546c72f331b13d6060c083b1751a18e2535cdd8e517ae5f",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-209",
+          "incident_label": "FIRE DETECTED",
+          "timestamp": "2026-09-25 15:48:31",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "fire 0.94"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-210.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-210.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-748A3D30F5E152DBAFE89768D9F0AEF7.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-748A3D30F5E152DBAFE89768D9F0AEF7",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-210",
+        "source_name": "Synthetic fire smoke demo camera CAM-210",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:37:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: SMOKE DETECTED. Visible camera CAM-210. Visible timestamp 2026-09-25 16:03:17 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-748A3D30F5E152DBAFE89768D9F0AEF7.jpg"
+      },
+      "image_sha256": "420d683a8f051edca524f033bf7ebc80b325b9d64c41df85170b4da2f88473cb",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-210",
+          "incident_label": "SMOKE DETECTED",
+          "timestamp": "2026-09-25 16:03:17",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "smoke 0.89"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-211.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-211.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-1B6FD963C5115FEBBC2921E96B783AFB.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-1B6FD963C5115FEBBC2921E96B783AFB",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-211",
+        "source_name": "Synthetic fire smoke demo camera CAM-211",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:38:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: FIRE DETECTED. Visible camera CAM-211. Visible timestamp 2026-09-25 17:29:45 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-1B6FD963C5115FEBBC2921E96B783AFB.jpg"
+      },
+      "image_sha256": "24c598a2215be0bea91d9c5a5f7b996e4b39d660dde4208683d3cbd229beea12",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-211",
+          "incident_label": "FIRE DETECTED",
+          "timestamp": "2026-09-25 17:29:45",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "fire 0.90"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-212.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-212.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-F3A02D2C47D4529FB2023269454908C7.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-F3A02D2C47D4529FB2023269454908C7",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-212",
+        "source_name": "Synthetic fire smoke demo camera CAM-212",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:39:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: SMOKE DETECTED. Visible camera CAM-212. Visible timestamp 2026-09-25 18:14:22 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-F3A02D2C47D4529FB2023269454908C7.jpg"
+      },
+      "image_sha256": "59c19fdc6cad4c9ae898e79c730d673dcc4a3e063e9724684a40dc5730e437a7",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-212",
+          "incident_label": "SMOKE DETECTED",
+          "timestamp": "2026-09-25 18:14:22",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "smoke 0.91"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-213.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-213.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-D0B4188565FF53EBAB87E7B3D3F74ED9.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-D0B4188565FF53EBAB87E7B3D3F74ED9",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-213",
+        "source_name": "Synthetic fire smoke demo camera CAM-213",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:40:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: FIRE DETECTED. Visible camera CAM-213. Visible timestamp 2026-09-25 19:07:38 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-D0B4188565FF53EBAB87E7B3D3F74ED9.jpg"
+      },
+      "image_sha256": "8924abf1f662b447b7dad9f6728afbf82848ede580d80b61bb6756506557d0ae",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-213",
+          "incident_label": "FIRE DETECTED",
+          "timestamp": "2026-09-25 19:07:38",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "fire 0.92"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-214.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-214.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-7D3696EBF17450C19211A3F03F2D0D1B.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-7D3696EBF17450C19211A3F03F2D0D1B",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-214",
+        "source_name": "Synthetic fire smoke demo camera CAM-214",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:41:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: SMOKE DETECTED. Visible camera CAM-214. Visible timestamp 2026-09-25 20:21:09 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-7D3696EBF17450C19211A3F03F2D0D1B.jpg"
+      },
+      "image_sha256": "cd32fda1f64b3b54e3d1e7f7119ecdaf34f61e1b255411b5b9091191f7683edf",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-214",
+          "incident_label": "SMOKE DETECTED",
+          "timestamp": "2026-09-25 20:21:09",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "smoke 0.87"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-215.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-215.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-19CB53AEFE75510CB63272D7FCBE2DB1.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename_confirmed_by_visible_image_label",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "visible_incident_label",
+        "severity_origin": "demo_assignment",
+        "confidence_origin": "simulated_test_value"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-19CB53AEFE75510CB63272D7FCBE2DB1",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-215",
+        "source_name": "Synthetic fire smoke demo camera CAM-215",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_detected",
+        "severity": "high",
+        "timestamp": "2026-09-27T00:42:00Z",
+        "event_purpose": "e2e_test",
+        "confidence": 0.95,
+        "description": "Synthetic controlled demonstration: FIRE DETECTED. Visible camera CAM-215. Visible timestamp 2026-09-25 21:40:33 has no timezone and is unverified; event timestamp is separately simulated UTC. Incident confidence 0.95 and severity are demo values, not measured outputs.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-19CB53AEFE75510CB63272D7FCBE2DB1.jpg"
+      },
+      "image_sha256": "cfb88f3c6f8517ddb77d7cc9bd3d72e16bebac3312797979be598d8455cc5bd3",
+      "label_review": {
+        "status": "reviewed_with_documented_uncertainties",
+        "method": "manual_visual_inspection",
+        "visible_labels": {
+          "camera_id": "CAM-215",
+          "incident_label": "FIRE DETECTED",
+          "timestamp": "2026-09-25 21:40:33",
+          "timestamp_timezone": null,
+          "location_label": null,
+          "object_detection_label": "fire 0.93"
+        },
+        "camera_matches_event": true,
+        "incident_label_matches_event": true,
+        "timestamp_matches_event": false,
+        "visible_timestamp_verification": "unverified_timezone_not_present",
+        "issues": [
+          {
+            "code": "capture_time_unverified",
+            "status": "unresolved",
+            "detail": "Visible timestamp has no timezone. Simulated event timestamp differs from the visible timestamp; actual capture time and offset cannot be established."
+          }
+        ],
+        "notes": [
+          "Visible object/person scores are annotation-level values and are not copied as incident-level confidence."
+        ]
+      }
+    }
+  ],
+  "baseline": {
+    "local_path": "evidence_images/manifest.json",
+    "sha256": "16ec163c31f090cb40b5d668cd13e226f9f9b6c17ffd7da4b2d49bc184fa895a"
+  },
+  "storage_verification": {
+    "source": "existing manifest.json; workflow configuration contract inspected",
+    "live_configuration_verified": false,
+    "blob_existence_verified": false,
+    "access": "private; infrastructure configures publicAccess=None; no SAS"
+  }
+}
