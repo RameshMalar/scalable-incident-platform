@@ -1,0 +1,63 @@
+name: Evidence batch
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check reads Azure only; upload creates missing blobs without overwriting"
+        type: choice
+        options:
+          - check
+          - upload
+        default: check
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+# Share the single-image workflow's lock; never cancel an in-progress upload.
+concurrency:
+  group: evidence-upload
+  cancel-in-progress: false
+
+jobs:
+  batch:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      BATCH_MODE: ${{ inputs.mode }}
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install validation dependency
+        # Same version as notification-service/requirements.txt.
+        run: python -m pip install pydantic==2.13.5
+      - name: Validate all local evidence before Azure login
+        run: python scripts/upload-evidence-batch.py --mode dry-run
+      - name: Sign in using the existing Azure OIDC identity
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Check or upload evidence (no incident publishing)
+        run: python scripts/upload-evidence-batch.py --mode "$BATCH_MODE" --report evidence-upload-summary.json
+      - name: Retain per-image results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-batch-summary
+          path: evidence-upload-summary.json
+          if-no-files-found: warn
+          retention-days: 14

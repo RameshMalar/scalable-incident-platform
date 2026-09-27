@@ -1,0 +1,1267 @@
+{
+  "manifest_version": 1,
+  "status": "proposed_not_uploaded",
+  "generated_at_utc": "2026-09-26T14:12:46Z",
+  "storage": {
+    "account_name": "incidentevi4pqaac2c4e4hs",
+    "container": "evidence",
+    "blob_endpoint": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net"
+  },
+  "notes": [
+    "All images are synthetic; event timestamps are simulated at manifest creation, not capture timestamps.",
+    "Only each entry.event is a Common Event Model payload; wrapper fields are manifest metadata.",
+    "Camera IDs in counting/fire-smoke filenames are preserved. Intrusion camera IDs and all site IDs are demo assignments.",
+    "Analytics labels and severity are proposed demo classifications based on folders, not image analysis. No measured people count or model confidence is asserted.",
+    "Event IDs are deterministic UUID5 values derived from tenant and exact repository-relative filename. Blob URIs are planned references; existence is not asserted.",
+    "TENANT-DEV is a demo tenant label, not proof that ingestion authorizes this tenant. No events have been submitted."
+  ],
+  "images": [
+    {
+      "filename": "Evidence_images_Intrusion.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-489984C9AAFB53DF8602A4A3E5FE1A28.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-489984C9AAFB53DF8602A4A3E5FE1A28",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-001",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-001",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-489984C9AAFB53DF8602A4A3E5FE1A28.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_intrusion1.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_intrusion1.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-C4C1C464EE995ACDA289711E7FC840A3.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-C4C1C464EE995ACDA289711E7FC840A3",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-002",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-002",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_intrusion1.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-C4C1C464EE995ACDA289711E7FC840A3.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion2.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion2.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-140C5AEA27F15B5AB254A04C11F26AB7.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-140C5AEA27F15B5AB254A04C11F26AB7",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-003",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-003",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion2.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-140C5AEA27F15B5AB254A04C11F26AB7.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion3.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion3.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-E9D7032AE057565C83DA8BCD1B1744B4.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-E9D7032AE057565C83DA8BCD1B1744B4",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-004",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-004",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion3.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-E9D7032AE057565C83DA8BCD1B1744B4.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion4.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion4.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-FD982C55215E575D9094D1336067A8CA.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-FD982C55215E575D9094D1336067A8CA",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-005",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-005",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion4.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-FD982C55215E575D9094D1336067A8CA.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion5.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion5.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-BD10EFD33D155E5AB221BAE6C0760459.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-BD10EFD33D155E5AB221BAE6C0760459",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-006",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-006",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion5.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-BD10EFD33D155E5AB221BAE6C0760459.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion6.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion6.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-5AD552A50D4D5C6A9FAEA49E802D9239.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-5AD552A50D4D5C6A9FAEA49E802D9239",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-007",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-007",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion6.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-5AD552A50D4D5C6A9FAEA49E802D9239.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion7.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion7.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-A227666A63FB5A5CB964FFD67EF7DFE2.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-A227666A63FB5A5CB964FFD67EF7DFE2",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-008",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-008",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion7.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-A227666A63FB5A5CB964FFD67EF7DFE2.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion8.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion8.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-EFA30512C4DB5462995D4DD6C69213E4.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-EFA30512C4DB5462995D4DD6C69213E4",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-009",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-009",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion8.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-EFA30512C4DB5462995D4DD6C69213E4.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion9.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion9.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-10CD0439CF0E5DEE8AD33A360F0CE02E.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-10CD0439CF0E5DEE8AD33A360F0CE02E",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-010",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-010",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion9.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-10CD0439CF0E5DEE8AD33A360F0CE02E.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion10.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion10.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-837BBC8152495E18B918DE65DA4594CA.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-837BBC8152495E18B918DE65DA4594CA",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-011",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-011",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion10.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-837BBC8152495E18B918DE65DA4594CA.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion11.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion11.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-A855333437A15387BBC431E24B49A7F9.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-A855333437A15387BBC431E24B49A7F9",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-012",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-012",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion11.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-A855333437A15387BBC431E24B49A7F9.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion12.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion12.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-D2D921DD1B3453E190BE045A6B0E01B5.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-D2D921DD1B3453E190BE045A6B0E01B5",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-013",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-013",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion12.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-D2D921DD1B3453E190BE045A6B0E01B5.jpg"
+      }
+    },
+    {
+      "filename": "Evidence_images_Intrusion13.jpg",
+      "local_path": "evidence_images/intrusion/Evidence_images_Intrusion13.jpg",
+      "blob_path": "TENANT-DEV/intrusion/EVT-SYNTH-F826089F7ABB5E83AD75BA34444EE7C5.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "assigned_demo",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-F826089F7ABB5E83AD75BA34444EE7C5",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-INTRUSION",
+        "source_id": "CAM-DEMO-INTRUSION-014",
+        "source_name": "Synthetic intrusion demo camera CAM-DEMO-INTRUSION-014",
+        "source_type": "video_analytics",
+        "analytics_type": "intrusion_detection",
+        "event_type": "intrusion_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic intrusion demonstration using Evidence_images_Intrusion13.jpg. Simulated event timestamp, not a historical capture time. Camera ID is an assigned demo value; filename does not identify a camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/intrusion/EVT-SYNTH-F826089F7ABB5E83AD75BA34444EE7C5.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-101.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-101.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-01F40A119FE85136A5752C5B41DE97FA.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-01F40A119FE85136A5752C5B41DE97FA",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-101",
+        "source_name": "Synthetic people counting demo camera CAM-101",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-101.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-01F40A119FE85136A5752C5B41DE97FA.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-102.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-102.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-112C5BC0CB7A568AA123BC84764BAD93.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-112C5BC0CB7A568AA123BC84764BAD93",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-102",
+        "source_name": "Synthetic people counting demo camera CAM-102",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-102.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-112C5BC0CB7A568AA123BC84764BAD93.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-103.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-103.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-32053D4934F555BCBDD75633B629EE3F.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-32053D4934F555BCBDD75633B629EE3F",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-103",
+        "source_name": "Synthetic people counting demo camera CAM-103",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-103.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-32053D4934F555BCBDD75633B629EE3F.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-104.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-104.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-DFB16DE3DCA85005B8C7E72FC86A93FF.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-DFB16DE3DCA85005B8C7E72FC86A93FF",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-104",
+        "source_name": "Synthetic people counting demo camera CAM-104",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-104.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-DFB16DE3DCA85005B8C7E72FC86A93FF.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-105.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-105.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-CE989907B7EA5A95973CA516A6E4D22F.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-CE989907B7EA5A95973CA516A6E4D22F",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-105",
+        "source_name": "Synthetic people counting demo camera CAM-105",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-105.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-CE989907B7EA5A95973CA516A6E4D22F.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-106.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-106.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-8A72E9ACEBB75F35AF4DCA99F413BC07.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-8A72E9ACEBB75F35AF4DCA99F413BC07",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-106",
+        "source_name": "Synthetic people counting demo camera CAM-106",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-106.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-8A72E9ACEBB75F35AF4DCA99F413BC07.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-107.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-107.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-76B2E77FD33B50499B4265448545E46E.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-76B2E77FD33B50499B4265448545E46E",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-107",
+        "source_name": "Synthetic people counting demo camera CAM-107",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-107.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-76B2E77FD33B50499B4265448545E46E.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-108.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-108.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-9298C814D7CC55CA9451387E3160E523.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-9298C814D7CC55CA9451387E3160E523",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-108",
+        "source_name": "Synthetic people counting demo camera CAM-108",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-108.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-9298C814D7CC55CA9451387E3160E523.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-109.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-109.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-D53822039CEB5F48ACEEA91B22556B0A.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-D53822039CEB5F48ACEEA91B22556B0A",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-109",
+        "source_name": "Synthetic people counting demo camera CAM-109",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-109.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-D53822039CEB5F48ACEEA91B22556B0A.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-110.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-110.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-05C751CA7C47553A9BB750D5A23B4EB8.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-05C751CA7C47553A9BB750D5A23B4EB8",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-110",
+        "source_name": "Synthetic people counting demo camera CAM-110",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-110.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-05C751CA7C47553A9BB750D5A23B4EB8.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-111.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-111.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-B5CEF4C28D1D5C5AB70EA140DD887FC0.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-B5CEF4C28D1D5C5AB70EA140DD887FC0",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-111",
+        "source_name": "Synthetic people counting demo camera CAM-111",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-111.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-B5CEF4C28D1D5C5AB70EA140DD887FC0.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-112.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-112.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-AC020397047355DC8039FAAE848BBA31.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-AC020397047355DC8039FAAE848BBA31",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-112",
+        "source_name": "Synthetic people counting demo camera CAM-112",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-112.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-AC020397047355DC8039FAAE848BBA31.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-113.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-113.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-D143AEC0BD4A50B482EC3802065DCACF.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-D143AEC0BD4A50B482EC3802065DCACF",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-113",
+        "source_name": "Synthetic people counting demo camera CAM-113",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-113.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-D143AEC0BD4A50B482EC3802065DCACF.jpg"
+      }
+    },
+    {
+      "filename": "counting_CAM-114.jpg",
+      "local_path": "evidence_images/people_counting/counting_CAM-114.jpg",
+      "blob_path": "TENANT-DEV/people_counting/EVT-SYNTH-BD35024EA26D5831A65DB2A72BC9A7DF.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-BD35024EA26D5831A65DB2A72BC9A7DF",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-COUNTING",
+        "source_id": "CAM-114",
+        "source_name": "Synthetic people counting demo camera CAM-114",
+        "source_type": "video_analytics",
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "severity": "low",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic people counting demonstration using counting_CAM-114.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/people_counting/EVT-SYNTH-BD35024EA26D5831A65DB2A72BC9A7DF.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-201.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-201.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-57D7400C995F50D5BBF2FE928A5C3223.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-57D7400C995F50D5BBF2FE928A5C3223",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-201",
+        "source_name": "Synthetic fire smoke demo camera CAM-201",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-201.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-57D7400C995F50D5BBF2FE928A5C3223.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-202.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-202.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-9839B1936E435C1181BBF0E042604045.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-9839B1936E435C1181BBF0E042604045",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-202",
+        "source_name": "Synthetic fire smoke demo camera CAM-202",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-202.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-9839B1936E435C1181BBF0E042604045.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-203.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-203.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-9BE78F6E921A5072AA27C71C76A2CE59.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-9BE78F6E921A5072AA27C71C76A2CE59",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-203",
+        "source_name": "Synthetic fire smoke demo camera CAM-203",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-203.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-9BE78F6E921A5072AA27C71C76A2CE59.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-204.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-204.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-3687C0B7BD015A7197CC187561881300.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-3687C0B7BD015A7197CC187561881300",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-204",
+        "source_name": "Synthetic fire smoke demo camera CAM-204",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-204.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-3687C0B7BD015A7197CC187561881300.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-205.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-205.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-D78D32E60D5F5A4CBCBFCD8F5B44B83D.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-D78D32E60D5F5A4CBCBFCD8F5B44B83D",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-205",
+        "source_name": "Synthetic fire smoke demo camera CAM-205",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-205.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-D78D32E60D5F5A4CBCBFCD8F5B44B83D.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-206.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-206.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-A251ACEF65CE53F08D98C70CCB9C56A3.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-A251ACEF65CE53F08D98C70CCB9C56A3",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-206",
+        "source_name": "Synthetic fire smoke demo camera CAM-206",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-206.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-A251ACEF65CE53F08D98C70CCB9C56A3.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-207.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-207.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-79018C283A2C5B4FB37B079ED81154C9.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-79018C283A2C5B4FB37B079ED81154C9",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-207",
+        "source_name": "Synthetic fire smoke demo camera CAM-207",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-207.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-79018C283A2C5B4FB37B079ED81154C9.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-208.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-208.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-46917259AB315FD2971DD641C0248FEB.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-46917259AB315FD2971DD641C0248FEB",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-208",
+        "source_name": "Synthetic fire smoke demo camera CAM-208",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-208.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-46917259AB315FD2971DD641C0248FEB.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-209.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-209.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-D68CD096CA0F5900B6B37CFB78247BD9.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-D68CD096CA0F5900B6B37CFB78247BD9",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-209",
+        "source_name": "Synthetic fire smoke demo camera CAM-209",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-209.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-D68CD096CA0F5900B6B37CFB78247BD9.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-210.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-210.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-748A3D30F5E152DBAFE89768D9F0AEF7.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-748A3D30F5E152DBAFE89768D9F0AEF7",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-210",
+        "source_name": "Synthetic fire smoke demo camera CAM-210",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-210.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-748A3D30F5E152DBAFE89768D9F0AEF7.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-211.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-211.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-1B6FD963C5115FEBBC2921E96B783AFB.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-1B6FD963C5115FEBBC2921E96B783AFB",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-211",
+        "source_name": "Synthetic fire smoke demo camera CAM-211",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-211.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-1B6FD963C5115FEBBC2921E96B783AFB.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-212.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-212.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-F3A02D2C47D4529FB2023269454908C7.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-F3A02D2C47D4529FB2023269454908C7",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-212",
+        "source_name": "Synthetic fire smoke demo camera CAM-212",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-212.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-F3A02D2C47D4529FB2023269454908C7.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-213.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-213.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-D0B4188565FF53EBAB87E7B3D3F74ED9.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-D0B4188565FF53EBAB87E7B3D3F74ED9",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-213",
+        "source_name": "Synthetic fire smoke demo camera CAM-213",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-213.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-D0B4188565FF53EBAB87E7B3D3F74ED9.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-214.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-214.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-7D3696EBF17450C19211A3F03F2D0D1B.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-7D3696EBF17450C19211A3F03F2D0D1B",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-214",
+        "source_name": "Synthetic fire smoke demo camera CAM-214",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-214.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-7D3696EBF17450C19211A3F03F2D0D1B.jpg"
+      }
+    },
+    {
+      "filename": "fire_smoke_CAM-215.jpg",
+      "local_path": "evidence_images/fire_smoke/fire_smoke_CAM-215.jpg",
+      "blob_path": "TENANT-DEV/fire_smoke/EVT-SYNTH-19CB53AEFE75510CB63272D7FCBE2DB1.jpg",
+      "provenance": {
+        "synthetic": true,
+        "timestamp_kind": "simulated_event_time",
+        "source_id_origin": "filename",
+        "site_id_origin": "assigned_demo",
+        "classification_origin": "folder_based_demo_assignment",
+        "severity_origin": "demo_assignment"
+      },
+      "event": {
+        "event_id": "EVT-SYNTH-19CB53AEFE75510CB63272D7FCBE2DB1",
+        "tenant_id": "TENANT-DEV",
+        "site_id": "SITE-DEV-FIRE-SMOKE",
+        "source_id": "CAM-215",
+        "source_name": "Synthetic fire smoke demo camera CAM-215",
+        "source_type": "video_analytics",
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_smoke_detected",
+        "severity": "high",
+        "timestamp": "2026-09-26T14:12:46Z",
+        "event_purpose": "e2e_test",
+        "confidence": null,
+        "description": "Synthetic fire smoke demonstration using fire_smoke_CAM-215.jpg. Simulated event timestamp, not a historical capture time. Camera ID copied from synthetic filename; not proof of a real camera.",
+        "evidence_uri": "https://incidentevi4pqaac2c4e4hs.blob.core.windows.net/evidence/TENANT-DEV/fire_smoke/EVT-SYNTH-19CB53AEFE75510CB63272D7FCBE2DB1.jpg"
+      }
+    }
+  ]
+}
