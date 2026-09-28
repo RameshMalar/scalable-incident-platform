@@ -342,6 +342,39 @@ The resulting `evidence_uri` is
 other host or container is refused by the checks above, so evidence has to live
 in this container to be delivered.
 
+#### Announcing uploaded evidence to the platform
+
+An image in the container is invisible until an incident references it. Nothing
+scans the container: an incident reaches Cosmos — and therefore the dashboard's
+Evidence page and the Telegram alerts — only by being posted to the ingestion
+API. `scripts/upload-evidence-batch.py` does the first half, and
+`scripts/publish-evidence-events.py` does the second, from the same manifest, so
+the events and the blobs they name come from one description rather than two.
+
+It refuses to publish anything unless every `evidence_uri` in the manifest
+matches the blob endpoint and container the deployment is actually serving,
+because an incident whose evidence fails that check is stored and alerted with an
+image that can never load and nothing downstream says why. It reports rather than
+sends unless `--publish` is given:
+
+```bash
+python scripts/publish-evidence-events.py                       # report only
+python scripts/publish-evidence-events.py --limit 3 --publish   # send three
+```
+
+`--limit` is worth using, because **the store is idempotent and notifications are
+not**. The worker keys each document on the producer's `event_id`, so
+re-publishing creates no duplicate incident — but `should_notify` only holds back
+`load_test`, and `PersistAndNotifyHandler` deliberately notifies on a duplicate
+as well as a new incident so that a failed delivery gets another chance. Every
+event carrying an `evidence_uri` therefore becomes a `sendPhoto`, and a second
+run sends a second round of them. Publishing forty events means forty
+photographs in the bot's chat, and nothing takes them back.
+
+Authentication is the operator path below: the Azure CLI is pre-authorized on
+the API and the caller holds `Incidents.Write` individually. `AADSTS65001` means
+`scripts/grant-operator-access.sh` has not been run for that account.
+
 Telegram delivery is intentionally limited to one Notification Service replica
 and one message every 3.1 seconds. If Telegram returns HTTP 429, the notifier
 honours the response's `retry_after` value and retries once before handing the
