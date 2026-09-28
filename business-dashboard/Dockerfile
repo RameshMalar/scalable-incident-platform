@@ -13,7 +13,7 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+COPY app.py evidence.py ./
 
 # Nothing in this dashboard needs root at runtime.
 RUN useradd --create-home --uid 10001 appuser

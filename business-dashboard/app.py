@@ -10,6 +10,7 @@ Data Contributor role -- a dashboard never needs to write). Locally that's
 identity with the same role.
 """
 
+import logging
 import os
 from datetime import date, datetime, timedelta, timezone
 
@@ -19,6 +20,10 @@ import plotly.graph_objects as go
 import streamlit as st
 from azure.cosmos import CosmosClient
 from azure.identity import DefaultAzureCredential
+
+from evidence import EvidenceStore, EvidenceUnavailable
+
+logger = logging.getLogger("dashboard")
 
 # Categorical slots from the platform's validated dark-mode palette, in fixed
 # hue order (blue, orange, aqua, yellow, violet) -- never cycled. Green/red are
@@ -83,6 +88,30 @@ def load_incidents() -> pd.DataFrame:
     df = pd.DataFrame(items)
     df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601", utc=True)
     return df
+
+
+@st.cache_resource
+def get_evidence_store() -> EvidenceStore | None:
+    return EvidenceStore.from_env()
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def load_evidence(evidence_uri: str) -> bytes | None:
+    """Fetch one evidence image, or None when it cannot be shown.
+
+    Cached per URI because Streamlit re-runs this script on every widget
+    interaction, and an image that is already on the page has not changed.
+    """
+    store = get_evidence_store()
+
+    if store is None:
+        return None
+
+    try:
+        return store.fetch(evidence_uri).data
+    except EvidenceUnavailable as exc:
+        logger.warning("evidence not shown: %s", exc)
+        return None
 
 
 def inject_css() -> None:
@@ -342,6 +371,60 @@ def render_all_incidents(filtered: pd.DataFrame) -> None:
     )
 
 
+def render_evidence(filtered: pd.DataFrame, limit: int = 24) -> None:
+    st.subheader("Evidence")
+
+    store = get_evidence_store()
+
+    if store is None:
+        st.info(
+            "Evidence is not configured for this deployment. Set "
+            "`EVIDENCE_BLOB_ENDPOINT` to the storage account's blob endpoint."
+        )
+        return
+
+    if "evidence_uri" not in filtered.columns:
+        st.info("No incident in the store carries an evidence reference.")
+        return
+
+    with_evidence = filtered[filtered["evidence_uri"].apply(store.describes_evidence)]
+
+    if with_evidence.empty:
+        st.info(
+            "No incident in the current filters references an image in "
+            f"`{store.container}`. Incidents created through "
+            "`/api/v1/simulate` carry placeholder paths rather than real blob "
+            "references, so they appear here without an image."
+        )
+        return
+
+    newest = with_evidence.sort_values("timestamp", ascending=False).head(limit)
+    st.caption(
+        f"{len(with_evidence)} of {len(filtered)} incidents in range reference "
+        f"an image." + (f" Showing the {limit} most recent." if len(with_evidence) > limit else "")
+    )
+
+    # Three across keeps a camera still legible without making the page a scroll
+    # of full-width photographs.
+    columns = st.columns(3)
+    for position, (_, row) in enumerate(newest.iterrows()):
+        image = load_evidence(row["evidence_uri"])
+
+        with columns[position % 3]:
+            if image is None:
+                st.warning(f"{row['event_id']} — evidence could not be read.")
+                continue
+
+            st.image(
+                image,
+                caption=(
+                    f"{row['event_id']} · {row['analytics_type']} · "
+                    f"{row['severity']} · {relative_time(row['timestamp'])}"
+                ),
+                width="stretch",
+            )
+
+
 def checkbox_filter(label: str, options: list, key: str) -> list:
     opt_keys = {opt: f"{key}_opt_{opt}" for opt in options}
     for opt, opt_key in opt_keys.items():
@@ -437,7 +520,11 @@ def main() -> None:
         lambda: render_all_incidents(filtered),
         title="All incidents", icon="📄", url_path="all-incidents",
     )
-    pg = st.navigation([overview_page, incidents_page])
+    evidence_page = st.Page(
+        lambda: render_evidence(filtered),
+        title="Evidence", icon="🖼️", url_path="evidence",
+    )
+    pg = st.navigation([overview_page, incidents_page, evidence_page])
 
     st.title("Scalable Incident Platform — Business Dashboard")
     pg.run()
