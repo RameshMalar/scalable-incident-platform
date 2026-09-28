@@ -628,6 +628,35 @@ az cosmosdb sql role assignment create \
   --role-definition-id 00000000-0000-0000-0000-000000000001
 ```
 
+#### Evidence on the dashboard
+
+The **Evidence** page shows the image an incident's `evidence_uri` points at.
+The container is private and the account has `allowSharedKeyAccess: false`, so
+there is no URL a browser can fetch: `business-dashboard/evidence.py` reads the
+bytes with the dashboard's managed identity — **Storage Blob Data Reader** on
+the container, from `core.bicep` — and serves them inline.
+
+The identity holds `blobs/read` and nothing more. Handing the browser a
+user-delegation SAS instead would need `Storage Blob Delegator`, which is
+deliberately not granted: a SAS is a bearer token in a URL, passed on by whoever
+receives it and revocable only by rotating the key behind every SAS at once.
+
+`evidence_uri` arrives from a producer, so it is untrusted. Only references whose
+host and container match the configured account are fetched, and only the
+remaining path is used — the same rules `notification-service/app/evidence.py`
+applies, for the same reason. Two consequences worth knowing:
+
+- Incidents created through `/api/v1/simulate` carry placeholder paths such as
+  `/evidence/ppe_sample.jpg`, which name no real blob. They are listed as
+  incidents and skipped on the Evidence page rather than shown as broken images.
+- **Running locally, the page stays empty**, and that is not a
+  misconfiguration. `DefaultAzureCredential` falls back to your `az login` user
+  outside Azure, and a tenant Conditional Access policy refuses user accounts a
+  token for `storage.azure.com` whatever Azure roles they hold. Deployed, the
+  managed identity is not subject to that policy. Build against the 43 images
+  committed under `evidence_images/` and let the container app fetch the real
+  ones.
+
 ## Measuring scalability
 
 `load-simulator/` drives synthetic incidents at the deployed ingestion service

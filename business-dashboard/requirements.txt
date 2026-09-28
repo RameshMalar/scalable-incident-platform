@@ -1,6 +1,9 @@
 streamlit==1.63.0
 azure-cosmos==4.16.4
 azure-identity==1.25.3
+# Same pin as notification-service, which reads the same private container with
+# the same kind of identity -- one storage SDK version to reason about.
+azure-storage-blob==12.30.3
 pandas==2.3.3
 plotly==5.24.1
 # Transitive dep of streamlit/pandas; pinned directly to pull in the fix for

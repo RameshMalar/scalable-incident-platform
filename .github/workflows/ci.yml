@@ -271,6 +271,25 @@ jobs:
 
           echo "$output" | grep -q 'SERVICE_BUS_FQDN is required'
 
+      # Streamlit answers its own health endpoint whether or not the script it
+      # serves can be imported, so a missing module or an un-copied file passes
+      # the check below and only shows up as a blank page in production. Import
+      # every module the app imports, inside the image, first.
+      - name: Check the dashboard's modules are in the image
+        if: matrix.service == 'business-dashboard'
+        run: |
+          docker run --rm ${{ matrix.image }}:ci \
+            python -c "import app, evidence" 2>&1 | tee import.log || true
+
+          # Importing `app` also runs the page, which then fails trying to reach
+          # Cosmos with no COSMOS_ENDPOINT set. Reaching that failure is the
+          # proof we want: it means every import above it resolved. So only the
+          # import errors are fatal here.
+          if grep -qE 'ModuleNotFoundError|ImportError|SyntaxError' import.log; then
+            echo "::error::the dashboard image cannot import its own modules" >&2
+            exit 1
+          fi
+
       # No COSMOS_ENDPOINT here, same as the ingestion smoke test running with
       # no Service Bus: the server must still come up and answer its own
       # health check, even though every session that connects will show an
