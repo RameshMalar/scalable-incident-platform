@@ -44,6 +44,12 @@ docker compose up --build
 Either way the service is at http://localhost:8000 — dashboard at `/`, Swagger
 at `/docs`, liveness at `/health`, readiness at `/ready`.
 
+If your machine needs Compose settings nobody else does — a pinned subnet,
+because the default bridge pool collides with an existing route, is the one that
+has come up — put them in `docker-compose.override.yml`. Compose merges that file
+automatically, so no command changes, and it is gitignored, so a host-specific
+workaround cannot break a teammate whose network differs.
+
 The two probes answer different questions on purpose. `/health` asks whether the
 process is serving and never touches Service Bus, because failing it restarts
 the container and a broker blip should not do that. `/ready` asks whether this

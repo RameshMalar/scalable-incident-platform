@@ -16,5 +16,10 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Compose reads this automatically and merges it over docker-compose.yml. Host
+# specifics such as a pinned subnet belong here, where they cannot break a
+# teammate whose network differs.
+docker-compose.override.yml
+
 # 本地参考文档，不纳入版本控制
 docs/
