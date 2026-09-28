@@ -32,6 +32,12 @@ param cosmosDatabase string = 'incidents'
 @description('Cosmos container incidents are read from, partitioned on /tenant_id.')
 param cosmosContainer string = 'incidents'
 
+@description('Blob endpoint holding incident evidence. Empty hides evidence, and incidents are shown without it.')
+param evidenceBlobEndpoint string = ''
+
+@description('Blob container holding incident evidence.')
+param evidenceContainer string = 'evidence'
+
 @description('Fully qualified image reference, tagged with the commit it was built from.')
 param image string
 
@@ -94,6 +100,14 @@ resource dashboard 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'COSMOS_CONTAINER'
               value: cosmosContainer
+            }
+            {
+              name: 'EVIDENCE_BLOB_ENDPOINT'
+              value: evidenceBlobEndpoint
+            }
+            {
+              name: 'EVIDENCE_CONTAINER'
+              value: evidenceContainer
             }
           ]
           probes: [
