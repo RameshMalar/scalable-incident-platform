@@ -240,6 +240,8 @@ jobs:
               cosmosEndpoint='${{ steps.core.outputs.cosmosEndpoint }}' \
               cosmosDatabase='${{ steps.core.outputs.cosmosDatabaseName }}' \
               cosmosContainer='${{ steps.core.outputs.cosmosContainerName }}' \
+              evidenceBlobEndpoint='${{ steps.core.outputs.evidenceBlobEndpoint }}' \
+              evidenceContainer='${{ steps.core.outputs.evidenceContainerName }}' \
               image='${{ steps.image.outputs.dashboard }}' \
             --query properties.outputs.url.value \
             -o tsv)

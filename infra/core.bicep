@@ -709,6 +709,37 @@ resource notificationEvidenceReader 'Microsoft.Authorization/roleAssignments@202
   }
 }
 
+// The dashboard shows evidence alongside the incident that referenced it, and
+// has to fetch the bytes itself: the container is private, so a blob URL handed
+// to a browser is refused.
+//
+// This is also what makes the feature buildable at all. A tenant Conditional
+// Access policy refuses user accounts a token for `storage.azure.com` whatever
+// Azure roles they hold, so nobody can develop against the container from their
+// own machine, whereas the policy does not apply to managed identities.
+//
+// Read-only, and scoped to the container: the dashboard displays evidence and
+// has no reason to be able to replace it.
+resource dashboardEvidenceReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    evidenceContainer.id,
+    dashboardIdentity.id,
+    storageBlobDataReaderRoleId
+  )
+
+  scope: evidenceContainer
+
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      storageBlobDataReaderRoleId
+    )
+
+    principalId: dashboardIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 
 // The deploy identity already exists: scripts/setup-github-oidc.sh creates it
 // before anything here can be deployed, since it is what CD authenticates as.
