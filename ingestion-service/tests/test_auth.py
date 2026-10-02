@@ -5,6 +5,7 @@ whole validation path -- signature, issuer, audience, expiry, role, tenant
 binding -- is exercised without an Entra tenant or a network call.
 """
 
+import json
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -125,6 +126,36 @@ def test_a_token_signed_by_the_wrong_key_is_rejected():
         build_verifier(jwk_client=FakeJWKClient(impostor.public_key())).verify(
             make_token()
         )
+
+
+def test_a_deeply_nested_payload_is_rejected_rather_than_crashing():
+    # CVE-2026-101918. `verify` resolves the signing key before it can check the
+    # signature, and resolving it parses the payload -- the one part of a forged
+    # token an unauthenticated caller fully controls. Up to pyjwt 2.14.0 a
+    # payload nested thousands of levels deep raised RecursionError, which is not
+    # a PyJWTError, so it escaped `verify` and answered 500 on a public endpoint.
+    #
+    # A real PyJWKClient, because FakeJWKClient does not perform that parse and
+    # so cannot show the behaviour. No network: the parse fails first, which is
+    # the whole point, and an unroutable url makes a regression obvious.
+    deep = (
+        jwt.utils.base64url_encode(
+            json.dumps({"alg": "RS256", "typ": "JWT", "kid": "x"}).encode()
+        )
+        + b"."
+        + jwt.utils.base64url_encode(b"[" * 20_000 + b"]" * 20_000)
+        + b"."
+        + jwt.utils.base64url_encode(b"forged")
+    ).decode()
+
+    verifier = build_verifier(
+        jwk_client=jwt.PyJWKClient("https://127.0.0.1:1/jwks", cache_keys=True)
+    )
+
+    with pytest.raises(AuthError) as exc:
+        verifier.verify(deep)
+
+    assert exc.value.status_code == 401
 
 
 def test_a_token_without_the_role_is_forbidden():

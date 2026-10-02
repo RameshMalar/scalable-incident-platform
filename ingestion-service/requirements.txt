@@ -8,4 +8,8 @@ azure-identity==1.25.3
 # dies at startup with "aiohttp package is not installed" -- azure-servicebus
 # alone does not pull it in, because AMQP does not go through the HTTP pipeline.
 azure-core[aio]==1.41.0
-pyjwt[crypto]==2.14.0
+# 2.15.0 is the first release in which a deeply nested JWT payload raises
+# DecodeError instead of letting a raw RecursionError escape. `verify` calls
+# get_signing_key_from_jwt, which parses the payload before any signature check,
+# so on 2.14.0 an unauthenticated 53KB request answered 500. CVE-2026-101918.
+pyjwt[crypto]==2.15.0
