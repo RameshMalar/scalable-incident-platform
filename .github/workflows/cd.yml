@@ -16,6 +16,15 @@ on:
       - 'infra/**'
       - '.github/workflows/cd.yml'
 
+      # Three services install the Common Event Model into their images, so a
+      # change to the contract changes what runs in production even though no
+      # service directory was touched. Without this, the deployed services would
+      # keep serving the previous contract.
+      - 'packages/**'
+
+      # Decides what reaches the build context for those same three images.
+      - '.dockerignore'
+
   workflow_dispatch:
 
 permissions:
