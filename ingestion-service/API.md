@@ -65,8 +65,9 @@ storage, alerting, and processing are downstream consumers' job.
 
 ### Request body
 
-An `IncidentEvent` (Common Event Model) -- see [`app/models.py`](app/models.py)
-or `/docs` for the full field list and constraints. Example:
+An `IncidentEvent` (Common Event Model) -- see
+[`packages/common-event-model`](../packages/common-event-model) or `/docs` for
+the full field list and constraints. Example:
 
 ```json
 {

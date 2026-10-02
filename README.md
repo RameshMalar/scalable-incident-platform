@@ -14,6 +14,7 @@ simulator the scalability claims are measured with.
 
 | Path | Contents |
 | --- | --- |
+| `packages/common-event-model/` | The Common Event Model as an installable library, and its tests. Every service that reads or writes an incident installs it |
 | `ingestion-service/` | Incident Ingestion Service (FastAPI) and its tests |
 | `worker-service/` | Processing Worker: consumes `incident-events`, and its tests |
 | `business-dashboard/` | Streamlit dashboard reading incidents straight out of Cosmos DB |
@@ -27,11 +28,15 @@ simulator the scalability claims are measured with.
 Docker Compose is for local development only. The cloud runtime is Azure
 Container Apps — see [Deploying to Azure](#deploying-to-azure).
 
-Run the service directly:
+Run the service directly. **Install from the repository root**, because
+`requirements.txt` installs the Common Event Model by path and pip resolves a
+path requirement against the working directory, not against the file it was read
+from:
 
 ```bash
+pip install -r ingestion-service/requirements-dev.txt
+
 cd ingestion-service
-pip install -r requirements-dev.txt
 uvicorn app.main:app --reload
 ```
 
@@ -236,6 +241,47 @@ that does mean something is `Role Based Access Control Administrator`, the one
 permission `Contributor` explicitly excludes and the only one that lets a
 principal grant itself anything further. The deploy identity holds it so that no
 person has to.
+
+## The Common Event Model
+
+One incident shape for every analytics type, in
+[`packages/common-event-model/`](packages/common-event-model). Each service that
+reads or writes an incident installs it:
+
+```
+./packages/common-event-model
+```
+
+It was three byte-identical copies of `app/models.py` until the pipeline could
+install a library, kept in step by a CI job that diffed them. The copies were not
+an oversight — a Docker build can only copy from inside its own context, and each
+service built from its own directory, so a shared package meant changing the
+build before the model. That trade is now made the other way: the three services
+that speak the model build from the **repository root**, with
+`-f <service>/Dockerfile`, and the CI job that policed drift runs the library's
+own tests instead.
+
+`business-dashboard/` and `load-simulator/` keep the smaller context, because
+neither installs the model. The dashboard reads stored incidents as documents.
+The load simulator is the interesting one: `app/contract.py` implements the
+contract **independently, on purpose**. It stands in for a third-party producer,
+and a producer that built payloads with the same module the API validates them
+with could never produce the mistakes a real external producer makes.
+
+Two consequences worth knowing before working on this:
+
+- **Install from the repository root.** `pip install -r <service>/requirements.txt`
+  works; `cd <service> && pip install -r requirements.txt` fails, because pip
+  resolves a path requirement against the working directory rather than against
+  the file it was read from. CI installs from the root for the same reason, and
+  so does `pip-audit`.
+- **`.dockerignore` is load-bearing now, not tidiness.** With the root as context
+  the whole tree is sent to the Docker daemon, and Docker does not read
+  `.gitignore` — a local `.venv` alone is around 96 MB of the repository's 109 MB.
+
+The library declares `pydantic` as a **range**; the services keep their exact
+pins. A library that pins an exact version makes itself unresolvable against a
+service that needs a different one.
 
 ## Messaging
 

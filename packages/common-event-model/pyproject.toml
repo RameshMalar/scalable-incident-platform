@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "common-event-model"
+version = "1.0.0"
+description = "The contract between analytics producers and incident consumers."
+readme = "README.md"
+requires-python = ">=3.12"
+
+# A range, not a pin. This is a library, and a library that pins an exact
+# version makes itself unresolvable against any service that needs a different
+# one. The services keep their own `pydantic==2.13.5`: the application decides
+# the version, the library states what it can work with.
+dependencies = ["pydantic>=2.11,<3"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

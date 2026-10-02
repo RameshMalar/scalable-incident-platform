@@ -1,8 +1,8 @@
 import pytest
+from common_event_model import IncidentEvent
 from fastapi.testclient import TestClient
 
 from app.main import _build_default_publisher, app, get_publisher
-from app.models import IncidentEvent
 from app.publisher import MockEventPublisher, ServiceBusEventPublisher
 
 

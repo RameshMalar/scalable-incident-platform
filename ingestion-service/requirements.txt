@@ -1,3 +1,7 @@
+# The Common Event Model, as a library rather than a copy of models.py. The path
+# is relative to the working directory pip runs in, which is the repository root
+# both in the image (the package is copied in beside this file) and in CI.
+./packages/common-event-model
 fastapi==0.141.1
 uvicorn[standard]
 jinja2

@@ -1,9 +1,9 @@
 import json
 
 import pytest
+from common_event_model import IncidentEvent
 
 from app.evidence import Evidence, EvidenceUnavailable
-from app.models import IncidentEvent
 from app.telegram_notifier import CAPTION_LIMIT, TelegramNotifier
 
 

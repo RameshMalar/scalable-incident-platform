@@ -16,6 +16,15 @@ on:
       - 'infra/**'
       - '.github/workflows/cd.yml'
 
+      # Three services install the Common Event Model into their images, so a
+      # change to the contract changes what runs in production even though no
+      # service directory was touched. Without this, the deployed services would
+      # keep serving the previous contract.
+      - 'packages/**'
+
+      # Decides what reaches the build context for those same three images.
+      - '.dockerignore'
+
   workflow_dispatch:
 
 permissions:
@@ -107,23 +116,27 @@ jobs:
         run: |
           registry='${{ steps.core.outputs.registryLoginServer }}'
 
+          # $1 image, $2 service directory, $3 build context. The context is the
+          # repository root for the services that install the Common Event Model,
+          # because a Dockerfile can only copy from inside its own context.
           build_and_push() {
             docker buildx build \
               --platform linux/amd64 \
               --tag "${registry}/$1:${GITHUB_SHA}" \
               --tag "${registry}/$1:latest" \
+              --file "$2/Dockerfile" \
               --push \
-              "./$2"
+              "$3"
           }
 
           for attempt in 1 2 3; do
             if az acr login \
               --name '${{ steps.core.outputs.registryName }}' \
-              && build_and_push incident-ingestion ingestion-service \
-              && build_and_push incident-worker worker-service \
-              && build_and_push incident-notification notification-service \
-              && build_and_push incident-dashboard business-dashboard \
-              && build_and_push incident-load-simulator load-simulator; then
+              && build_and_push incident-ingestion ingestion-service . \
+              && build_and_push incident-worker worker-service . \
+              && build_and_push incident-notification notification-service . \
+              && build_and_push incident-dashboard business-dashboard ./business-dashboard \
+              && build_and_push incident-load-simulator load-simulator ./load-simulator; then
 
               echo "ingestion=${registry}/incident-ingestion:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
               echo "worker=${registry}/incident-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"

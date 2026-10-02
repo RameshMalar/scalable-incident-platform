@@ -1,20 +1,22 @@
 """Read-only Phase 1 validation. Run: python scripts/validate-evidence-manifest.py
 
-Requires the existing ingestion-service Pydantic dependency. No Azure access,
-uploads, or writes. Manual label transcriptions are checked for consistency,
-not independently OCR-verified. An optional manifest path supports local review.
+Requires the Common Event Model: pip install -r scripts/requirements.txt. No
+Azure access, uploads, or writes. Manual label transcriptions are checked for
+consistency, not independently OCR-verified. An optional manifest path supports
+local review.
 """
 
 import argparse
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 import hashlib
-import importlib.util
 import json
 from pathlib import Path, PurePosixPath
 import re
 import sys
 from urllib.parse import urlsplit
+
+from common_event_model import IncidentEvent
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,11 +48,7 @@ def validate(manifest_path):
           "Storage account and endpoint differ")
     check(storage["container"] == "evidence", "Unexpected evidence container")
 
-    spec = importlib.util.spec_from_file_location(
-        "phase1_common_event_model", ROOT / "ingestion-service/app/models.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    model = module.IncidentEvent
+    model = IncidentEvent
     entries = manifest["images"]
     check(len(entries) == 43, "Expected exactly 43 records")
     base_by_path = {e["local_path"]: e for e in original["images"]}

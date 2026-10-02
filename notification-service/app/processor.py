@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import logging
 
+from common_event_model import IncidentEvent
 from pydantic import ValidationError
 
-from .models import IncidentEvent
 from .notifier import Notifier
 
 

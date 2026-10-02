@@ -8,8 +8,7 @@ from azure.identity.aio import DefaultAzureCredential
 from azure.servicebus import ServiceBusMessage, TransportType
 from azure.servicebus.aio import ServiceBusClient
 from azure.servicebus.exceptions import ServiceBusError
-
-from app.models import IncidentEvent
+from common_event_model import IncidentEvent
 
 logger = logging.getLogger("app.publisher")
 

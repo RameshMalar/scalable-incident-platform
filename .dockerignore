@@ -1,0 +1,48 @@
+# Three services build from the repository root, so without this the whole tree
+# is sent to the Docker daemon on every build. A local `.venv` alone is around
+# 96 MB of the repository's 109 MB, and Docker does not read `.gitignore`.
+#
+# Everything a build needs is copied explicitly by the Dockerfile, so this list
+# only has to be good enough to keep the context small -- an entry too many
+# costs nothing, an entry missing costs build time.
+
+.git
+.github
+.gitattributes
+.gitignore
+
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+**/.pytest_cache
+
+# setuptools leaves these in packages/ after a local install. Copying them in
+# would have the build inside the image read another machine's metadata.
+**/build
+**/*.egg-info
+
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Images and local reference material. Evidence reaches the platform through the
+# upload workflow and the blob container, never through an image.
+evidence_images
+demo-evidence
+docs
+
+# Only this one. The Common Event Model's pyproject.toml declares its README, so
+# a `**/README.md` rule here would make `pip install ./packages/...` fail inside
+# the image on a file that is not even shipped.
+/README.md
+docker-compose.yml
+docker-compose.override.yml
+infra
+scripts
+
+# Tests run in CI before the image is built, and the services do not need them
+# at runtime.
+**/tests
+**/requirements-dev.txt
+**/pytest.ini
