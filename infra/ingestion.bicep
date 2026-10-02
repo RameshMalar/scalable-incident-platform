@@ -12,6 +12,9 @@ param environmentId string
 @description('Resource id of the identity that pulls from the registry.')
 param identityId string
 
+@description('Resource id of the Log Analytics workspace from core.bicep, for platform metrics.')
+param logAnalyticsWorkspaceId string
+
 @description('Client id of that identity. The SDK needs it to pick the right user-assigned identity when more than one is attached.')
 param identityClientId string
 
@@ -173,6 +176,23 @@ resource ingestion 'Microsoft.App/containerApps@2024-03-01' = {
         ]
       }
     }
+  }
+}
+
+// Feeds the resource-health workbook's Replicas/CPU/memory queries against
+// the AzureMetrics table -- nothing forwards these platform metrics to Log
+// Analytics otherwise.
+resource ingestionDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'send-to-log-analytics'
+  scope: ingestion
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
   }
 }
 

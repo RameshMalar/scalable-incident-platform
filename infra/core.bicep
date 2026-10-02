@@ -544,6 +544,30 @@ resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
 }
 
 
+// Sends Cosmos DB's platform metrics (RU consumption, latency, throttling,
+// storage) to the workspace so the resource-health workbook's AzureMetrics
+// queries have data to read instead of relying on the portal's auto-detected
+// workspace, which the resource group itself has none of.
+resource cosmosDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'send-to-${namePrefix}-logs'
+  scope: cosmos
+  properties: {
+    workspaceId: logAnalytics.id
+    // Cosmos DB only exposes 'SLI' and 'Requests' -- there is no 'AllMetrics'
+    // category for this resource type (unlike Container Apps below).
+    metrics: [
+      {
+        category: 'SLI'
+        enabled: true
+      }
+      {
+        category: 'Requests'
+        enabled: true
+      }
+    ]
+  }
+}
+
 // Worker writes incident documents.
 resource workerCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
   parent: cosmos
@@ -854,6 +878,7 @@ resource developerEvidenceContributor 'Microsoft.Authorization/roleAssignments@2
 // Outputs
 // -----------------------------------------------------------------------------
 
+output logAnalyticsWorkspaceId string = logAnalytics.id
 output registryLoginServer string = registry.properties.loginServer
 output registryName string = registry.name
 

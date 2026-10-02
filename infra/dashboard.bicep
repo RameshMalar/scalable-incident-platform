@@ -23,6 +23,9 @@ param identityId string
 @description('Client id of that identity, for DefaultAzureCredential.')
 param identityClientId string
 
+@description('Resource id of the Log Analytics workspace from core.bicep, for platform metrics.')
+param logAnalyticsWorkspaceId string
+
 @description('Cosmos DB account endpoint the dashboard reads incidents from.')
 param cosmosEndpoint string
 
@@ -142,6 +145,23 @@ resource dashboard 'Microsoft.App/containerApps@2024-03-01' = {
         ]
       }
     }
+  }
+}
+
+// Feeds the resource-health workbook's Replicas/CPU/memory queries against
+// the AzureMetrics table -- nothing forwards these platform metrics to Log
+// Analytics otherwise.
+resource dashboardDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'send-to-log-analytics'
+  scope: dashboard
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
   }
 }
 

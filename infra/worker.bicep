@@ -27,6 +27,9 @@ param identityClientId string
 @description('Resource id of the identity the autoscaler uses to read queue depth.')
 param scalerIdentityId string
 
+@description('Resource id of the Log Analytics workspace from core.bicep, for platform metrics.')
+param logAnalyticsWorkspaceId string
+
 @description('Fully qualified Service Bus host, e.g. incident-bus-xxx.servicebus.windows.net.')
 param serviceBusFqdn string
 
@@ -193,6 +196,23 @@ resource worker 'Microsoft.App/containerApps@2025-01-01' = {
         ]
       }
     }
+  }
+}
+
+// Feeds the resource-health workbook's Replicas/CPU/memory queries against
+// the AzureMetrics table -- nothing forwards these platform metrics to Log
+// Analytics otherwise.
+resource workerDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'send-to-log-analytics'
+  scope: worker
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
   }
 }
 

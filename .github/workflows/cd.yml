@@ -82,6 +82,7 @@ jobs:
             registryName \
             registryLoginServer \
             environmentId \
+            logAnalyticsWorkspaceId \
             ingestionIdentityId \
             ingestionIdentityClientId \
             workerIdentityId \
@@ -171,6 +172,7 @@ jobs:
               environmentId='${{ steps.core.outputs.environmentId }}' \
               identityId='${{ steps.core.outputs.ingestionIdentityId }}' \
               identityClientId='${{ steps.core.outputs.ingestionIdentityClientId }}' \
+              logAnalyticsWorkspaceId='${{ steps.core.outputs.logAnalyticsWorkspaceId }}' \
               serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
               serviceBusQueue='${{ steps.core.outputs.incidentQueueName }}' \
               authAudience='${{ vars.AUTH_AUDIENCE }}' \
@@ -196,6 +198,7 @@ jobs:
               identityId='${{ steps.core.outputs.workerIdentityId }}' \
               identityClientId='${{ steps.core.outputs.workerIdentityClientId }}' \
               scalerIdentityId='${{ steps.core.outputs.scalerIdentityId }}' \
+              logAnalyticsWorkspaceId='${{ steps.core.outputs.logAnalyticsWorkspaceId }}' \
               serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
               serviceBusNamespace='${{ steps.core.outputs.serviceBusName }}' \
               serviceBusQueue='${{ steps.core.outputs.incidentQueueName }}' \
@@ -250,6 +253,7 @@ jobs:
               environmentId='${{ steps.core.outputs.environmentId }}' \
               identityId='${{ steps.core.outputs.dashboardIdentityId }}' \
               identityClientId='${{ steps.core.outputs.dashboardIdentityClientId }}' \
+              logAnalyticsWorkspaceId='${{ steps.core.outputs.logAnalyticsWorkspaceId }}' \
               cosmosEndpoint='${{ steps.core.outputs.cosmosEndpoint }}' \
               cosmosDatabase='${{ steps.core.outputs.cosmosDatabaseName }}' \
               cosmosContainer='${{ steps.core.outputs.cosmosContainerName }}' \
@@ -514,4 +518,6 @@ jobs:
           az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/workbook.bicep \
-            --name "workbook-${GITHUB_SHA::7}"
+            --name "workbook-${GITHUB_SHA::7}" \
+            --parameters \
+              logAnalyticsWorkspaceId='${{ steps.core.outputs.logAnalyticsWorkspaceId }}'
