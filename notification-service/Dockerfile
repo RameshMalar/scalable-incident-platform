@@ -6,11 +6,15 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Built from the repository root, so paths are prefixed. The Common Event Model
+# is copied in first and placed where requirements.txt expects to find it, which
+# is the reason the context is the root rather than this directory.
+COPY packages/common-event-model ./packages/common-event-model
+COPY notification-service/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app ./app
+COPY notification-service/app ./app
 
 RUN useradd --create-home --uid 10001 appuser
 USER appuser

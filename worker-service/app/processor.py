@@ -13,9 +13,8 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict
 from enum import Enum
 
+from common_event_model import IncidentEvent
 from pydantic import ValidationError
-
-from app.models import IncidentEvent
 
 logger = logging.getLogger("app.processor")
 

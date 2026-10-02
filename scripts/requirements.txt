@@ -1,5 +1,12 @@
-# Dependencies for the scripts in this directory that talk to Azure. The
-# services themselves pin their own runtime deps under ingestion-service/.
+# Dependencies for the scripts in this directory. The services themselves pin
+# their own runtime deps under ingestion-service/.
+#
+# Install from the repository root, so the path below resolves:
+#   pip install -r scripts/requirements.txt
+#
+# validate-evidence-manifest.py checks the manifest against the real contract
+# rather than against a description of it.
+./packages/common-event-model
 azure-servicebus==7.12.3
 azure-identity==1.19.0
 # demo-new-analytics-type.py reads the incident store to show that a type it has

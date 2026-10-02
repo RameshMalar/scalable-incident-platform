@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from azure.core.exceptions import ClientAuthenticationError
 from azure.cosmos.exceptions import CosmosResourceExistsError
+from common_event_model import IncidentEvent
 
-from app.models import IncidentEvent
 from app.processor import Outcome
 from app.store import CosmosIncidentStore
 

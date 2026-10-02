@@ -2,8 +2,8 @@ import json
 from datetime import datetime
 
 import pytest
+from common_event_model import IncidentEvent
 
-from app.models import IncidentEvent
 from app.processor import (
     InMemoryDeduplicator,
     LoggingIncidentHandler,

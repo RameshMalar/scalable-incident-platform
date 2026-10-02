@@ -15,8 +15,8 @@ from azure.core.exceptions import ClientAuthenticationError, ServiceRequestError
 from azure.cosmos.aio import CosmosClient
 from azure.cosmos.exceptions import CosmosResourceExistsError
 from azure.identity.aio import DefaultAzureCredential
+from common_event_model import IncidentEvent
 
-from app.models import IncidentEvent
 from app.processor import IncidentHandler, Outcome
 
 logger = logging.getLogger("app.store")

@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from azure.servicebus import TransportType
 from azure.servicebus.exceptions import ServiceBusError
+from common_event_model import IncidentEvent
 
-from app.models import IncidentEvent
 from app.publisher import MockEventPublisher, PublishError, ServiceBusEventPublisher
 
 pytestmark = pytest.mark.asyncio

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from .models import IncidentEvent
+from common_event_model import IncidentEvent
 
 
 class Notifier(ABC):

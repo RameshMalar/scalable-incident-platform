@@ -1,15 +1,15 @@
 """The Common Event Model.
 
-This module is the platform's contract between analytics producers and
-downstream consumers, so every service that speaks it carries the same file:
-`ingestion-service/app/models.py` and `worker-service/app/models.py` are
-byte-identical copies, and CI fails the build if the two ever drift. Edit one,
-copy it over the other.
+One incident shape for every analytics type the platform carries. Most fields
+are deliberately open strings: `analytics_type`, `event_type`, `source_type` and
+`severity` take any value, because constraining them would mean editing and
+redeploying this library -- and every service that installs it -- to accept a
+kind of analytics that changes nothing about how an incident is handled.
 
-They are copies rather than a shared package because each service builds from
-its own directory as its Docker context; sharing the model as a real package
-means moving both builds to a repository-root context, which is a change to the
-deployment pipeline rather than to the model.
+`event_purpose` is the exception, and it is a `Literal` because the pipeline
+genuinely branches on it: load-test events are persisted without paging anyone.
+A value nothing acts on should not be enumerated; a value something acts on
+should not be free.
 """
 
 from datetime import datetime

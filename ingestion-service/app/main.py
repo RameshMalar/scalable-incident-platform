@@ -9,6 +9,8 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 
+from common_event_model import IncidentEvent
+
 from app.auth import (
     Producer,
     auth_mode,
@@ -16,7 +18,6 @@ from app.auth import (
     enforce_tenant,
     get_producer,
 )
-from app.models import IncidentEvent
 from app.publisher import (
     EventPublisher,
     MockEventPublisher,

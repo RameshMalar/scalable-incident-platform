@@ -4,7 +4,13 @@
 services:
 
   incident-ingestion:
-    build: ./ingestion-service
+    # Context is the repository root, matching CI and CD: the Dockerfile installs
+    # the Common Event Model from packages/, and it can only copy from inside its
+    # own context.
+    build:
+      context: .
+      dockerfile: ingestion-service/Dockerfile
+
     container_name: incident-ingestion
 
     ports:

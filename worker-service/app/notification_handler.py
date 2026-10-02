@@ -1,6 +1,7 @@
 import logging
 
-from app.models import IncidentEvent
+from common_event_model import IncidentEvent
+
 from app.notification_publisher import NotificationEventPublisher
 from app.processor import IncidentHandler, Outcome
 

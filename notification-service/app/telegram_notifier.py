@@ -7,9 +7,9 @@ import os
 import time
 
 import aiohttp
+from common_event_model import IncidentEvent
 
 from .evidence import EvidenceStore, EvidenceUnavailable
-from .models import IncidentEvent
 from .notifier import Notifier
 
 

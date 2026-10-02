@@ -1,11 +1,12 @@
 """Synthesises incidents that satisfy the Common Event Model.
 
-The model is written out here rather than imported from `ingestion-service`.
-The simulator stands in for a third-party analytics producer, and such a
-producer has the published contract, not our source tree -- building payloads
-from the same module the API validates them with would hide exactly the
-mistakes an external producer makes. It also keeps CI's model-drift check
-policing two copies of `models.py` instead of three.
+The model is written out here rather than installed from
+`packages/common-event-model`, which every service does use. The simulator stands
+in for a third-party analytics producer, and such a producer has the published
+contract, not our source tree -- building payloads from the same module the API
+validates them with would hide exactly the mistakes an external producer makes.
+That is why this file survived the model becoming a library: an independent
+implementation of the contract is the point, not an accident.
 
 Generation is seeded, so a load profile re-run with the same seed sends the
 same incidents. A throughput figure that cannot be reproduced is an anecdote.

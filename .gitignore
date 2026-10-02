@@ -13,6 +13,11 @@ __pycache__/
 
 .pytest_cache/
 
+# setuptools leaves these behind whenever anything installs packages/, including
+# a plain `pip install -r <service>/requirements.txt`.
+build/
+*.egg-info/
+
 .DS_Store
 Thumbs.db
 

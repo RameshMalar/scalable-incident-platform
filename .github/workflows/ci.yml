@@ -23,10 +23,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: The model must be identical in every service that speaks it
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # There is one copy of the model now, so there is nothing left to diff
+      # between services. What is worth checking instead is that the contract
+      # still promises what they rely on -- including that an unknown
+      # analytics_type is accepted, which is the platform's extensibility claim.
+      - name: Test the contract
         run: |
-          diff ingestion-service/app/models.py worker-service/app/models.py
-          diff worker-service/app/models.py notification-service/app/models.py
+          pip install ./packages/common-event-model pytest==9.1.1
+          python -m pytest packages/common-event-model/tests -v
 
   infra:
     name: Infrastructure preview
@@ -171,8 +179,13 @@ jobs:
           cache: pip
           cache-dependency-path: ${{ matrix.service }}/requirements-dev.txt
 
+      # From the repository root, not the service directory: requirements.txt
+      # installs the Common Event Model by path, and pip resolves a path
+      # requirement against the working directory rather than against the file it
+      # was read from.
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        working-directory: .
+        run: pip install -r ${{ matrix.service }}/requirements-dev.txt
 
       - name: Run tests
         run: python -m pytest tests -v
@@ -185,21 +198,31 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # `context` is the repository root for the services that install the
+        # Common Event Model, because a Dockerfile can only copy from inside its
+        # own context. The other two do not speak the model and keep the smaller
+        # context -- the load simulator deliberately so, since it stands in for a
+        # third-party producer that has the published contract and not our source.
         include:
           - service: ingestion-service
             image: incident-ingestion
+            context: .
 
           - service: worker-service
             image: incident-worker
+            context: .
 
           - service: notification-service
             image: incident-notification
+            context: .
 
           - service: business-dashboard
             image: incident-dashboard
+            context: ./business-dashboard
 
           - service: load-simulator
             image: incident-load-simulator
+            context: ./load-simulator
 
     steps:
       - uses: actions/checkout@v7
@@ -207,7 +230,8 @@ jobs:
       - name: Build image
         run: |
           for attempt in 1 2 3; do
-            if docker build -t ${{ matrix.image }}:ci ./${{ matrix.service }}; then
+            if docker build -t ${{ matrix.image }}:ci \
+                 -f ${{ matrix.service }}/Dockerfile ${{ matrix.context }}; then
               exit 0
             fi
 
@@ -400,5 +424,9 @@ jobs:
       - name: Scan source for insecure patterns
         run: bandit -r ${{ matrix.bandit_target }} -ll
 
+      # From the repository root, for the same reason the test job installs from
+      # there: pip-audit resolves the requirements with pip, and the path to the
+      # Common Event Model is relative to the working directory.
       - name: Scan dependencies for known vulnerabilities
-        run: pip-audit -r requirements.txt
+        working-directory: .
+        run: pip-audit -r ${{ matrix.service }}/requirements.txt
