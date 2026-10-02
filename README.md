@@ -696,6 +696,71 @@ applies, for the same reason. Two consequences worth knowing:
   committed under `evidence_images/` and let the container app fetch the real
   ones.
 
+## Adding a new analytics type
+
+A new kind of AI analytics needs no change to this platform, and
+`scripts/demo-new-analytics-type.py` proves it rather than asserting it: it
+ingests a type the platform has never seen and follows it through every layer,
+with nothing rebuilt, redeployed or reconfigured in between.
+
+```bash
+pip install -r scripts/requirements.txt
+az login
+
+# Confirm the type really is unknown, and ingest nothing.
+python scripts/demo-new-analytics-type.py --check
+
+# Ingest one event of it and trace it through.
+python scripts/demo-new-analytics-type.py --analytics-type loitering_detection \
+                                          --event-type person_loitering
+```
+
+Pick a type nobody has used yet — step 1 reports if the source already mentions
+it, and step 2 reports if the store already holds one, either of which makes the
+demonstration weaker. The run prints seven numbered steps, ending with the log
+lines each of the four services wrote about the event. A verified run:
+
+```
+4. Ingesting EVT-NEWTYPE-1790906479 through the real API
+   202 Accepted. The API applied no validation specific to the type, because there is none to apply.
+5. Waiting for the worker to persist it
+   Stored after 6s or less.
+     analytics_type = loitering_detection
+6. Types the store knows now (6):
+     loitering_detection  <- new
+7. What each service logged about this event
+     incident-ingestion     02:01:20,153 app.publisher publishing event_id=EVT-NEWTYPE-1790906479 to queue=incident-events
+     incident-worker        02:01:20,507 app.store stored incident ... analytics_type=loitering_detection
+     incident-notification  02:01:21,430 app.telegram_notifier Telegram notification delivered ... method=sendMessage
+```
+
+**Why it works.** `analytics_type` is a plain `str` in the Common Event Model —
+no `Literal`, no `Enum`, no pattern — and so are `event_type`, `source_type` and
+`severity`. Only `event_purpose` is constrained, because the pipeline genuinely
+branches on it. Downstream nothing maps the value to behaviour: the worker logs
+it, the notifier interpolates it into message text, and the dashboard derives its
+filter options from whatever the store contains. Service Bus carries queues
+rather than filtered topic subscriptions, so there is no routing rule to add, and
+Cosmos partitions on `/tenant_id` and enforces no schema, so there is no
+migration and no new partition.
+
+Two things the demo is careful about, both worth knowing:
+
+- `/api/v1/simulate/{analytics_type}` **does** hold a hardcoded list of three
+  canned samples and rejects anything else. It is a demo shortcut, not the
+  ingestion path, and the script deliberately posts to `/api/v1/incidents` so
+  the difference is not glossed over.
+- The event is labelled `event_purpose: "e2e_test"`, so the Telegram alert it
+  produces is headed `Incident Alert [E2E TEST]`. Each run sends one real
+  message to the shared chat. That is the point — the alert naming a type nobody
+  configured is the last link in the chain — but it is not free, so run it
+  deliberately.
+
+The freedom has a cost the store already shows: `PPE_detection` and
+`ppe_detection` both exist as distinct types, because nothing normalises the
+string. Open types mean no spelling is wrong. If that matters later it belongs in
+the producer, where the value originates, not in a check each consumer repeats.
+
 ## Measuring scalability
 
 `load-simulator/` drives synthetic incidents at the deployed ingestion service
