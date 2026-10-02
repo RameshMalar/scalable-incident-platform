@@ -34,23 +34,23 @@ import re
 import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
-from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
+
+from incident_producer import (
+    AzureCliToken,
+    DeliveryFailed,
+    Deployment,
+    IncidentProducer,
+    build,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 
 RESOURCE_GROUP = "rg-incident-platform"
-INGESTION_APP = "incident-ingestion"
 
 DEFAULT_TYPE = "abandoned_object_detection"
 DEFAULT_EVENT_TYPE = "object_left_unattended"
-
-REQUEST_TIMEOUT_SECONDS = 60
-WARMUP_ATTEMPTS = 10
-WARMUP_INTERVAL_SECONDS = 6
 
 # The worker consumes from Service Bus, so the document arrives after the API has
 # already answered. Long enough for a cold worker replica to start.
@@ -80,40 +80,28 @@ def az(*args: str) -> str:
 
 
 @lru_cache(maxsize=1)
-def deployed_config() -> dict[str, str]:
-    env = json.loads(
-        az(
-            "containerapp", "show", "-g", RESOURCE_GROUP, "-n", INGESTION_APP,
-            "--query", "properties.template.containers[0].env", "-o", "json",
-        )
-        or "[]"
-    )
-    audience = next(
-        (e.get("value") for e in env if e.get("name") == "AUTH_AUDIENCE"), None
-    )
+def producer() -> IncidentProducer:
+    """A producer pointed at the deployed ingestion service.
 
-    fqdn = az(
-        "containerapp", "show", "-g", RESOURCE_GROUP, "-n", INGESTION_APP,
-        "--query", "properties.configuration.ingress.fqdn", "-o", "tsv",
+    Endpoint discovery, the bare-hostname check on it, token acquisition and
+    caching, warm-up and retry all come from the Producer SDK -- this script used
+    to carry its own copy of each, as did publish-evidence-events.py.
+    """
+    deployment = Deployment.discover(RESOURCE_GROUP)
+
+    return IncidentProducer(
+        deployment.endpoint, token_source=AzureCliToken(deployment.audience)
     )
 
-    if not audience or not fqdn:
-        raise Failed("the ingestion deployment is missing AUTH_AUDIENCE or ingress")
 
-    if "/" in fqdn or ":" in fqdn:
-        raise Failed(f"the ingress fqdn is not a bare hostname: {fqdn!r}")
-
-    cosmos = az(
+@lru_cache(maxsize=1)
+def cosmos_endpoint() -> str:
+    """Where the incident store is. Not the SDK's business: a producer writes
+    incidents through the API and never reads them back."""
+    return az(
         "cosmosdb", "list", "-g", RESOURCE_GROUP,
         "--query", "[0].documentEndpoint", "-o", "tsv",
     )
-
-    return {
-        "audience": audience,
-        "url": f"https://{fqdn}/api/v1/incidents",
-        "health": f"https://{fqdn}/health",
-        "cosmos": cosmos,
-    }
 
 
 @lru_cache(maxsize=1)
@@ -133,8 +121,7 @@ def container():
             "pip install -r scripts/requirements.txt"
         ) from exc
 
-    endpoint = deployed_config()["cosmos"]
-    client = CosmosClient(endpoint, credential=DefaultAzureCredential())
+    client = CosmosClient(cosmos_endpoint(), credential=DefaultAzureCredential())
 
     return client.get_database_client("incidents").get_container_client("incidents")
 
@@ -216,65 +203,28 @@ def existing_types() -> list[str]:
     )
 
 
-def wake(health_url: str) -> None:
-    for _ in range(WARMUP_ATTEMPTS):
-        try:
-            with urllib.request.urlopen(health_url, timeout=WARMUP_INTERVAL_SECONDS) as r:
-                if r.status == 200:
-                    return
-        except (urllib.error.URLError, OSError):
-            pass
-
-        time.sleep(WARMUP_INTERVAL_SECONDS)
-
-
-def post(url: str, token: str, event: dict) -> tuple[int, str]:
-    if not url.startswith("https://"):
-        raise Failed(f"refusing to send a bearer token over {url!r}")
-
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(event).encode(),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}",
-        },
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as r:
-            return r.status, r.read().decode()[:300]
-    except urllib.error.HTTPError as exc:
-        return exc.code, exc.read().decode()[:300]
-    except (urllib.error.URLError, OSError) as exc:
-        return 0, f"{type(exc).__name__}: {exc}"
-
-
-def build_event(analytics_type: str, event_type: str) -> dict:
-    return {
-        "event_id": f"EVT-NEWTYPE-{int(time.time())}",
-        "tenant_id": "TENANT-DEV",
-        "site_id": "SITE-DEV-CONCOURSE",
-        "source_id": "CAM-99",
-        "source_name": "Concourse camera CAM-99 - West Atrium",
-        "source_type": "video_analytics",
-        "analytics_type": analytics_type,
-        "event_type": event_type,
-        "severity": "medium",
-        "timestamp": datetime.now(timezone.utc)
-        .isoformat()
-        .replace("+00:00", "Z"),
+def build_event(analytics_type: str, event_type: str):
+    return build(
+        # Named for the demonstration rather than left to the SDK's UUID, so the
+        # event is recognisable in the store and in a log search afterwards.
+        event_id=f"EVT-NEWTYPE-{int(time.time())}",
+        tenant_id="TENANT-DEV",
+        site_id="SITE-DEV-CONCOURSE",
+        source_id="CAM-99",
+        source_name="Concourse camera CAM-99 - West Atrium",
+        analytics_type=analytics_type,
+        event_type=event_type,
+        severity="medium",
         # Labelled for what it is. The purpose field is the one field the
         # pipeline does branch on, and mislabelling test traffic as a real
         # incident in a shared alert channel is not worth a tidier screenshot.
-        "event_purpose": "e2e_test",
-        "confidence": 0.88,
-        "description": (
+        event_purpose="e2e_test",
+        confidence=0.88,
+        description=(
             "Analytics type the platform has never seen, ingested with no code "
             "change, rebuild or redeployment."
         ),
-    }
+    )
 
 
 def main() -> int:
@@ -325,26 +275,22 @@ def main() -> int:
             )
             return 0
 
-        config = deployed_config()
         event = build_event(new_type, args.event_type)
+        sender = producer()
 
-        print(f"\n4. Ingesting {event['event_id']} through the real API")
-        print(f"   POST {config['url']}")
+        print(f"\n4. Ingesting {event.event_id} through the real API")
+        print(f"   POST {sender.incidents_url}")
 
-        token = az(
-            "account", "get-access-token",
-            "--resource", config["audience"], "--query", "accessToken", "-o", "tsv",
-        )
+        sender.wake()
 
-        wake(config["health"])
-        status, body = post(config["url"], token, event)
-
-        if status != 202:
-            raise Failed(f"the API answered {status or 'no response'}: {body}")
+        try:
+            receipt = sender.send(event)
+        except DeliveryFailed as exc:
+            raise Failed(f"the API did not accept the event: {exc}") from exc
 
         print(
-            "   202 Accepted. The API applied no validation specific to the "
-            "type, because there is none to apply."
+            f"   {receipt.status} Accepted. The API applied no validation "
+            "specific to the type, because there is none to apply."
         )
 
         print("\n5. Waiting for the worker to persist it")
@@ -354,7 +300,7 @@ def main() -> int:
             rows = list(
                 container().query_items(
                     query="SELECT * FROM c WHERE c.id = @id",
-                    parameters=[{"name": "@id", "value": event["event_id"]}],
+                    parameters=[{"name": "@id", "value": event.event_id}],
                     enable_cross_partition_query=True,
                 )
             )
@@ -397,7 +343,7 @@ def main() -> int:
         trace = []
 
         for attempt in range(1, LOG_ATTEMPTS + 1):
-            trace = trace_in_logs(event["event_id"])
+            trace = trace_in_logs(event.event_id)
 
             # The notifier is the last service to speak, so its line is how we
             # know the whole chain has been ingested and not just the start.
