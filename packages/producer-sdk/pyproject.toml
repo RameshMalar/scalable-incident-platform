@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "incident-producer-sdk"
+version = "1.0.0"
+description = "Builds, validates, authenticates and delivers incidents to the platform."
+readme = "README.md"
+requires-python = ">=3.12"
+
+# Only the contract. Delivery is `urllib` from the standard library, because a
+# producer runs on someone else's machine -- often a camera gateway -- and every
+# dependency is something they have to accept, audit and keep patched.
+#
+# `common-event-model` is not on an index. Install it from this repository
+# first, or in the same pip command, so the requirement is already satisfied:
+#   pip install ./packages/common-event-model ./packages/producer-sdk
+dependencies = ["common-event-model"]
+
+[project.optional-dependencies]
+# Evidence upload talks to Blob Storage, which the delivery path does not. Kept
+# out of the default install so a producer that sends no images carries no Azure
+# SDK: pip install ./packages/producer-sdk[evidence]
+evidence = ["azure-storage-blob>=12.19,<13"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

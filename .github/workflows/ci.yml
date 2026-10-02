@@ -36,6 +36,28 @@ jobs:
           pip install ./packages/common-event-model pytest==9.1.1
           python -m pytest packages/common-event-model/tests -v
 
+  producer-sdk:
+    name: Producer SDK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # The evidence extra is installed so the upload tests can import
+      # azure.core.exceptions. They never talk to Azure: the blob service is
+      # faked, because a tenant Conditional Access policy would refuse any
+      # user credential we could give CI anyway.
+      - name: Test the producer SDK
+        run: |
+          pip install ./packages/common-event-model \
+                      './packages/producer-sdk[evidence]' \
+                      pytest==9.1.1
+          python -m pytest packages/producer-sdk/tests -v
+
   infra:
     name: Infrastructure preview
     runs-on: ubuntu-latest

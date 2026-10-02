@@ -67,7 +67,9 @@ storage, alerting, and processing are downstream consumers' job.
 
 An `IncidentEvent` (Common Event Model) -- see
 [`packages/common-event-model`](../packages/common-event-model) or `/docs` for
-the full field list and constraints. Example:
+the full field list and constraints. A producer should build and send this
+through [`packages/producer-sdk`](../packages/producer-sdk) rather than
+assembling the JSON by hand. Example:
 
 ```json
 {

@@ -15,6 +15,7 @@ simulator the scalability claims are measured with.
 | Path | Contents |
 | --- | --- |
 | `packages/common-event-model/` | The Common Event Model as an installable library, and its tests. Every service that reads or writes an incident installs it |
+| `packages/producer-sdk/` | The Producer SDK: builds, validates, authenticates and delivers incidents. What a new analytics pipeline installs |
 | `ingestion-service/` | Incident Ingestion Service (FastAPI) and its tests |
 | `worker-service/` | Processing Worker: consumes `incident-events`, and its tests |
 | `business-dashboard/` | Streamlit dashboard reading incidents straight out of Cosmos DB |
@@ -267,6 +268,28 @@ The load simulator is the interesting one: `app/contract.py` implements the
 contract **independently, on purpose**. It stands in for a third-party producer,
 and a producer that built payloads with the same module the API validates them
 with could never produce the mistakes a real external producer makes.
+
+## The Producer SDK
+
+[`packages/producer-sdk/`](packages/producer-sdk) is what a new analytics
+pipeline installs. It builds a validated incident, obtains a token, delivers it
+to `/api/v1/incidents` with a retry policy that is safe because the store keys
+on the producer's `event_id`, and — with the optional `evidence` extra —
+uploads an image and returns the `evidence_uri` to put on the incident.
+
+```bash
+pip install ./packages/common-event-model ./packages/producer-sdk
+```
+
+A third-party producer is given a URL and an audience. `Deployment.discover()`
+is for our own scripts and is how
+`scripts/demo-new-analytics-type.py` finds the deployed API rather than
+hard-coding it. The SDK does not talk to Cosmos, Service Bus or Telegram: a
+producer writes incidents through the API and never reads them back.
+
+`analytics_type` is not enumerated here either. A new pipeline must not need a
+release of this library any more than it needs a release of the Common Event
+Model.
 
 Two consequences worth knowing before working on this:
 
@@ -746,8 +769,9 @@ applies, for the same reason. Two consequences worth knowing:
 
 A new kind of AI analytics needs no change to this platform, and
 `scripts/demo-new-analytics-type.py` proves it rather than asserting it: it
-ingests a type the platform has never seen and follows it through every layer,
-with nothing rebuilt, redeployed or reconfigured in between.
+builds the incident with the Producer SDK, ingests a type the platform has
+never seen, and follows it through every layer, with nothing rebuilt,
+redeployed or reconfigured in between.
 
 ```bash
 pip install -r scripts/requirements.txt
@@ -958,7 +982,7 @@ for enough.
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Every push and pull request | Checks the Common Event Model is identical between the two Cosmos-facing services; runs every test suite; builds all four images and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit); on pull requests, previews the infrastructure change against the live subscription |
+| `ci.yml` | Every push and pull request | Tests the Common Event Model and the Producer SDK; runs every service test suite; builds all four images and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit); on pull requests, previews the infrastructure change against the live subscription |
 | `cd.yml` | Push to `main` | Deploys infrastructure (registry, logging, Container Apps environment, Service Bus namespace and queue, identities), builds and pushes SHA-tagged images for all four components, rolls out the ingestion, worker and dashboard revisions, verifies `/health` reports the ingestion service healthy **and** publishing to Service Bus and that the dashboard is serving, publishes a real incident and waits for the worker to drain the queue, then deploys the load simulator's job definition without starting it |
 
 Dependabot raises weekly pull requests for Python, Docker and Actions

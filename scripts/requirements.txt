@@ -7,6 +7,9 @@
 # validate-evidence-manifest.py checks the manifest against the real contract
 # rather than against a description of it.
 ./packages/common-event-model
+# demo-new-analytics-type.py is a producer, so it uses the Producer SDK rather
+# than carrying its own endpoint discovery, token handling, warm-up and retry.
+./packages/producer-sdk
 azure-servicebus==7.12.3
 azure-identity==1.19.0
 # demo-new-analytics-type.py reads the incident store to show that a type it has
