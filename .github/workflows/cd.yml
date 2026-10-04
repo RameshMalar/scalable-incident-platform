@@ -91,6 +91,7 @@ jobs:
             serviceBusName \
             serviceBusFqdn \
             incidentQueueName \
+            cosmosAccountName \
             cosmosEndpoint \
             cosmosDatabaseName \
             cosmosContainerName \
@@ -521,3 +522,20 @@ jobs:
             --name "workbook-${GITHUB_SHA::7}" \
             --parameters \
               logAnalyticsWorkspaceId='${{ steps.core.outputs.logAnalyticsWorkspaceId }}'
+
+      # -----------------------------------------------------------------------
+      # Baseline alerting on the resource-health workbook's data
+      # -----------------------------------------------------------------------
+
+      - name: Deploy infrastructure alerts
+        continue-on-error: true
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/alerts.bicep \
+            --name "alerts-${GITHUB_SHA::7}" \
+            --parameters \
+              serviceBusNamespaceName='${{ steps.core.outputs.serviceBusName }}' \
+              incidentQueueName='${{ steps.core.outputs.incidentQueueName }}' \
+              cosmosAccountName='${{ steps.core.outputs.cosmosAccountName }}' \
+              alertEmails='${{ vars.ALERT_EMAILS }}'

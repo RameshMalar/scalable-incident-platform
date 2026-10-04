@@ -911,6 +911,7 @@ output serviceBusFqdn string = replace(
 
 output incidentQueueName string = incidentQueue.name
 
+output cosmosAccountName string = cosmos.name
 output cosmosEndpoint string = cosmos.properties.documentEndpoint
 output cosmosDatabaseName string = cosmosDatabase.name
 output cosmosContainerName string = cosmosContainer.name
