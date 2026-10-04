@@ -27,11 +27,10 @@ param incidentQueueName string = 'incident-events'
 @description('Name of the Cosmos DB account from core.bicep.')
 param cosmosAccountName string
 
-@description('Email address that receives alert notifications.')
-param alertEmail string
+@description('Comma-separated email addresses that receive alert notifications.')
+param alertEmails string
 
-@description('Display name for the email receiver.')
-param alertEmailName string = 'ops'
+var trimmedAlertEmails = [for email in split(alertEmails, ','): trim(email)]
 
 resource serviceBus 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' existing = {
   name: serviceBusNamespaceName
@@ -55,13 +54,11 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   properties: {
     groupShortName: 'incidentops'
     enabled: true
-    emailReceivers: [
-      {
-        name: alertEmailName
-        emailAddress: alertEmail
-        useCommonAlertSchema: true
-      }
-    ]
+    emailReceivers: [for (email, i) in trimmedAlertEmails: {
+      name: 'ops-${i}'
+      emailAddress: email
+      useCommonAlertSchema: true
+    }]
   }
 }
 

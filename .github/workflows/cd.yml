@@ -538,4 +538,4 @@ jobs:
               serviceBusNamespaceName='${{ steps.core.outputs.serviceBusName }}' \
               incidentQueueName='${{ steps.core.outputs.incidentQueueName }}' \
               cosmosAccountName='${{ steps.core.outputs.cosmosAccountName }}' \
-              alertEmail='${{ vars.ALERT_EMAIL }}'
+              alertEmails='${{ vars.ALERT_EMAILS }}'
