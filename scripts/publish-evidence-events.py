@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -43,6 +44,12 @@ from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "evidence_images/manifest.proposed.json"
+
+# On Windows, `az` is a `.cmd` shim: subprocess.run(["az", ...]) with
+# shell=False cannot find it, since CreateProcess does not apply PATHEXT the
+# way cmd.exe does. shutil.which resolves the actual executable on every
+# platform, so the lookup only needs doing once.
+AZ_EXECUTABLE = shutil.which("az")
 
 RESOURCE_GROUP = "rg-incident-platform"
 INGESTION_APP = "incident-ingestion"
@@ -63,8 +70,11 @@ class Refused(Exception):
 
 def az(*args: str) -> str:
     """Run the Azure CLI and return stdout, or raise with its stderr."""
+    if AZ_EXECUTABLE is None:
+        raise Refused("the az CLI was not found on PATH")
+
     result = subprocess.run(
-        ["az", *args], capture_output=True, text=True, check=False
+        [AZ_EXECUTABLE, *args], capture_output=True, text=True, check=False
     )
 
     if result.returncode != 0:

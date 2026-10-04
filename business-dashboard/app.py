@@ -371,7 +371,63 @@ def render_all_incidents(filtered: pd.DataFrame) -> None:
     )
 
 
-def render_evidence(filtered: pd.DataFrame, limit: int = 24) -> None:
+@st.dialog("Evidence", width="large")
+def _evidence_detail_dialog(row: pd.Series, image: bytes) -> None:
+    st.image(image, width="stretch")
+    st.markdown(f"**{row['event_id']}**")
+    st.caption(
+        f"{row['analytics_type']} · {row['severity']} · "
+        f"{relative_time(row['timestamp'])} · tenant {row['tenant_id']} · "
+        f"site {row['site_id']}"
+    )
+
+
+def _render_evidence_grid(
+    subset: pd.DataFrame, total_in_range: int, page_size: int, state_key: str
+) -> None:
+    shown_key = f"evidence_shown_{state_key}"
+    if shown_key not in st.session_state:
+        st.session_state[shown_key] = page_size
+
+    shown = st.session_state[shown_key]
+    newest = subset.sort_values("timestamp", ascending=False).head(shown)
+
+    st.caption(
+        f"{len(subset)} of {total_in_range} incidents in range reference "
+        "an image." + (f" Showing the {shown} most recent." if len(subset) > shown else "")
+    )
+
+    # Three across keeps a camera still legible without making the page a scroll
+    # of full-width photographs.
+    columns = st.columns(3)
+    for position, (_, row) in enumerate(newest.iterrows()):
+        image = load_evidence(row["evidence_uri"])
+
+        with columns[position % 3]:
+            if image is None:
+                st.warning(f"{row['event_id']} — evidence could not be read.")
+                continue
+
+            st.image(
+                image,
+                caption=(
+                    f"{row['event_id']} · {row['analytics_type']} · "
+                    f"{row['severity']} · {relative_time(row['timestamp'])}"
+                ),
+                width="stretch",
+            )
+            if st.button(
+                "Expand", key=f"expand_{state_key}_{row['event_id']}", use_container_width=True
+            ):
+                _evidence_detail_dialog(row, image)
+
+    if len(subset) > shown:
+        if st.button("Load more", key=f"more_{state_key}"):
+            st.session_state[shown_key] += page_size
+            st.rerun()
+
+
+def render_evidence(filtered: pd.DataFrame, page_size: int = 24) -> None:
     st.subheader("Evidence")
 
     store = get_evidence_store()
@@ -398,31 +454,19 @@ def render_evidence(filtered: pd.DataFrame, limit: int = 24) -> None:
         )
         return
 
-    newest = with_evidence.sort_values("timestamp", ascending=False).head(limit)
-    st.caption(
-        f"{len(with_evidence)} of {len(filtered)} incidents in range reference "
-        f"an image." + (f" Showing the {limit} most recent." if len(with_evidence) > limit else "")
-    )
+    # Tabs facet the grid by analytics type so a growing evidence set stays
+    # browsable instead of one long mixed feed; each tab keeps its own
+    # page-size cursor via the state_key passed to _render_evidence_grid.
+    categories = sorted(with_evidence["analytics_type"].dropna().unique().tolist())
+    tabs = st.tabs(["All"] + categories)
 
-    # Three across keeps a camera still legible without making the page a scroll
-    # of full-width photographs.
-    columns = st.columns(3)
-    for position, (_, row) in enumerate(newest.iterrows()):
-        image = load_evidence(row["evidence_uri"])
+    with tabs[0]:
+        _render_evidence_grid(with_evidence, len(filtered), page_size, state_key="all")
 
-        with columns[position % 3]:
-            if image is None:
-                st.warning(f"{row['event_id']} — evidence could not be read.")
-                continue
-
-            st.image(
-                image,
-                caption=(
-                    f"{row['event_id']} · {row['analytics_type']} · "
-                    f"{row['severity']} · {relative_time(row['timestamp'])}"
-                ),
-                width="stretch",
-            )
+    for category, tab in zip(categories, tabs[1:]):
+        with tab:
+            subset = with_evidence[with_evidence["analytics_type"] == category]
+            _render_evidence_grid(subset, len(filtered), page_size, state_key=category)
 
 
 def checkbox_filter(label: str, options: list, key: str) -> list:
