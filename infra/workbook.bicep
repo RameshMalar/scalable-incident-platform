@@ -162,7 +162,7 @@ var workbookContent = {
       name: 'query - cosmos db latency'
       content: {
         version: 'KqlItem/1.0'
-        query: 'AzureMetrics\n| where TimeGenerated > ago(7d)\n| where ResourceGroup =~ \'{ResourceGroup}\'\n| where ResourceProvider == "MICROSOFT.DOCUMENTDB"\n| where MetricName in ("ServerSideLatencyDirect", "ServerSideLatencyGateway")\n| summarize AvgLatency = avg(Average), P95Latency = percentile(Maximum, 95), MaxLatency = max(Maximum) by Resource, MetricName\n| project Resource, Mode = MetricName, AvgLatency = round(AvgLatency, 2), P95Latency = round(P95Latency, 2), MaxLatency = round(MaxLatency, 2)'
+        query: 'AzureMetrics\n| where TimeGenerated > ago(7d)\n| where ResourceGroup =~ \'{ResourceGroup}\'\n| where ResourceProvider == "MICROSOFT.DOCUMENTDB"\n| where MetricName == "ServerSideLatency"\n| summarize AvgLatency = avg(Average), P95Latency = percentile(Maximum, 95), MaxLatency = max(Maximum) by Resource\n| project Resource, AvgLatency = round(AvgLatency, 2), P95Latency = round(P95Latency, 2), MaxLatency = round(MaxLatency, 2)'
         queryType: 0
         resourceType: 'microsoft.operationalinsights/workspaces'
         crossComponentResources: [
@@ -172,10 +172,10 @@ var workbookContent = {
     }
     {
       type: 3
-      name: 'query - cosmos db throttling'
+      name: 'query - cosmos db ru utilization'
       content: {
         version: 'KqlItem/1.0'
-        query: 'AzureMetrics\n| where TimeGenerated > ago(7d)\n| where ResourceGroup =~ \'{ResourceGroup}\'\n| where ResourceProvider == "MICROSOFT.DOCUMENTDB"\n| where MetricName == "TotalRequests"\n| extend StatusCode = tostring(Tags["StatusCode"])\n| summarize TotalRequests = sum(Total), ThrottledRequests = sumif(Total, StatusCode == "429") by Resource\n| project Resource, TotalRequests, ThrottledRequests, ThrottledPercent = round(100.0 * ThrottledRequests / TotalRequests, 3)'
+        query: 'AzureMetrics\n| where TimeGenerated > ago(7d)\n| where ResourceGroup =~ \'{ResourceGroup}\'\n| where ResourceProvider == "MICROSOFT.DOCUMENTDB"\n| where MetricName == "NormalizedRUConsumption"\n| summarize AvgNormalizedRUConsumption = avg(Average), MaxNormalizedRUConsumption = max(Maximum), P95NormalizedRUConsumption = percentile(Maximum, 95) by Resource\n| project Resource, AvgNormalizedRUConsumption = round(AvgNormalizedRUConsumption, 2), MaxNormalizedRUConsumption = round(MaxNormalizedRUConsumption, 2), P95NormalizedRUConsumption = round(P95NormalizedRUConsumption, 2)'
         queryType: 0
         resourceType: 'microsoft.operationalinsights/workspaces'
         crossComponentResources: [
