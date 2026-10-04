@@ -20,7 +20,7 @@ simulator the scalability claims are measured with.
 | `worker-service/` | Processing Worker: consumes `incident-events`, and its tests |
 | `business-dashboard/` | Streamlit dashboard reading incidents straight out of Cosmos DB |
 | `load-simulator/` | Load generator for the scalability run, and its tests |
-| `infra/` | Azure infrastructure as Bicep: `core.bicep` (shared), then `ingestion.bicep`, `worker.bicep`, `dashboard.bicep`, `simulator.bicep` per component, and `workbook.bicep` for resource health |
+| `infra/` | Azure infrastructure as Bicep: `core.bicep` (shared), then `ingestion.bicep`, `worker.bicep`, `dashboard.bicep`, `simulator.bicep` per component, `workbook.bicep` for resource health, and `alerts.bicep` for baseline metric alerts on top of it |
 | `scripts/` | One-off setup scripts |
 | `.github/workflows/` | CI, CD and static analysis pipelines |
 
