@@ -1,9 +1,13 @@
 import logging
+from typing import TYPE_CHECKING
 
 from common_event_model import IncidentEvent
 
 from app.notification_publisher import NotificationEventPublisher
 from app.processor import IncidentHandler, Outcome
+
+if TYPE_CHECKING:
+    from app.subscription_router import SubscriptionRouter
 
 
 logger = logging.getLogger("app.notification_handler")
@@ -26,8 +30,8 @@ def should_notify(event: IncidentEvent) -> bool:
 class PersistAndNotifyHandler(IncidentHandler):
     """Persist an incident, then hand it to the notification pipeline.
 
-    Notification publishing is attempted for both PROCESSED and DUPLICATE
-    outcomes. This is intentional.
+    Eligible subscription routing is attempted for both PROCESSED and DUPLICATE
+    outcomes. Zero matches completes without publishing. This is intentional.
 
     If persistence succeeds but notification publishing temporarily fails,
     the original Service Bus message is abandoned and later redelivered.
@@ -39,9 +43,11 @@ class PersistAndNotifyHandler(IncidentHandler):
         self,
         store: IncidentHandler,
         publisher: NotificationEventPublisher,
+        router: "SubscriptionRouter",
     ):
         self.store = store
         self.publisher = publisher
+        self.router = router
 
     async def start(self) -> None:
         start_store = getattr(self.store, "start", None)
@@ -49,6 +55,7 @@ class PersistAndNotifyHandler(IncidentHandler):
             await start_store()
 
         await self.publisher.start()
+        await self.router.reader.start()
 
     async def handle(self, event: IncidentEvent) -> Outcome:
         outcome = await self.store.handle(event)
@@ -63,19 +70,26 @@ class PersistAndNotifyHandler(IncidentHandler):
 
         # Publish even when Cosmos reports DUPLICATE. A previous delivery may
         # have persisted successfully but failed before notification handoff.
-        await self.publisher.publish(event)
+        routes = await self.router.route(event)
+        for route in routes:
+            await self.publisher.publish(route)
 
         logger.info(
-            "incident handed to notification pipeline event_id=%s outcome=%s",
+            "incident routing complete event_id=%s outcome=%s routes=%d",
             event.event_id,
             outcome.value,
+            len(routes),
         )
 
         return outcome
 
     async def close(self) -> None:
-        await self.publisher.close()
-
-        close_store = getattr(self.store, "close", None)
-        if close_store is not None:
-            await close_store()
+        try:
+            await self.publisher.close()
+        finally:
+            try:
+                await self.router.reader.close()
+            finally:
+                close_store = getattr(self.store, "close", None)
+                if close_store is not None:
+                    await close_store()

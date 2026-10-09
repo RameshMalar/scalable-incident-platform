@@ -1,0 +1,145 @@
+"""Read subscriptions directly from Cosmos; no HTTP or notification publishing."""
+
+import asyncio
+import logging
+import os
+from abc import ABC, abstractmethod
+from collections.abc import Iterable, Mapping
+from typing import Any
+
+from azure.cosmos.aio import CosmosClient
+from azure.identity.aio import DefaultAzureCredential
+from pydantic import ValidationError
+
+from app.notification_models import InvalidSubscription, SubscriptionRecord
+
+
+logger = logging.getLogger("app.subscription_store")
+
+MATCH_QUERY = (
+    "SELECT c.id, c.tenant_id, c.event_type, c.channel, "
+    "c.telegram_chat_id, c.enabled FROM c "
+    "WHERE c.tenant_id = @tenant AND c.event_type = @event_type "
+    "AND c.enabled = true AND c.channel = 'telegram'"
+)
+
+
+def validate_subscription(document: Any) -> SubscriptionRecord:
+    try:
+        return SubscriptionRecord.model_validate(document)
+    except ValidationError:
+        # Do not expose raw stored configuration in error messages/logs.
+        raise InvalidSubscription("invalid subscription routing fields") from None
+
+
+def matches(record: SubscriptionRecord, tenant_id: str, event_type: str) -> bool:
+    return (
+        record.tenant_id == tenant_id
+        and record.event_type == event_type
+        and record.enabled is True
+        and record.channel == "telegram"
+    )
+
+
+class SubscriptionReader(ABC):
+    async def start(self) -> None:
+        pass
+
+    async def close(self) -> None:
+        pass
+
+    @abstractmethod
+    async def find_matches(
+        self, tenant_id: str, event_type: str
+    ) -> list[SubscriptionRecord]:
+        """Return matches or raise; outages must never become an empty list."""
+
+
+class CosmosSubscriptionReader(SubscriptionReader):
+    def __init__(
+        self,
+        endpoint: str | None = None,
+        database_name: str | None = None,
+        container_name: str | None = None,
+        credential=None,
+        client_factory=None,
+    ):
+        self.endpoint = endpoint or os.environ.get("COSMOS_ENDPOINT")
+        self.database_name = database_name or os.environ.get(
+            "COSMOS_DATABASE", "incidents"
+        )
+        self.container_name = container_name or os.environ.get(
+            "COSMOS_SUBSCRIPTIONS_CONTAINER", "subscriptions"
+        )
+        if not self.endpoint:
+            raise ValueError("COSMOS_ENDPOINT is required for subscription reading")
+        self._credential = credential
+        self._owns_credential = credential is None
+        self._client_factory = client_factory or CosmosClient
+        self._client = None
+        self._container = None
+        self._lock = asyncio.Lock()
+
+    async def start(self) -> None:
+        async with self._lock:
+            if self._container is not None:
+                return
+            if self._credential is None:
+                self._credential = DefaultAzureCredential()
+            self._client = self._client_factory(
+                self.endpoint, credential=self._credential
+            )
+            self._container = self._client.get_database_client(
+                self.database_name
+            ).get_container_client(self.container_name)
+
+    async def find_matches(
+        self, tenant_id: str, event_type: str
+    ) -> list[SubscriptionRecord]:
+        await self.start()
+        rows = self._container.query_items(
+            query=MATCH_QUERY,
+            partition_key=tenant_id,
+            parameters=[
+                {"name": "@tenant", "value": tenant_id},
+                {"name": "@event_type", "value": event_type},
+            ],
+        )
+        records = []
+        # AsyncItemPaged iteration follows continuation tokens through every
+        # page. There is no API offset/limit and no first-page shortcut here.
+        async for document in rows:
+            record = validate_subscription(document)
+            if record.tenant_id != tenant_id:
+                logger.warning("ignoring subscription from another tenant partition")
+                continue
+            if matches(record, tenant_id, event_type):
+                records.append(record)
+        return records
+
+    async def close(self) -> None:
+        try:
+            if self._client is not None:
+                await self._client.close()
+        finally:
+            self._client = self._container = None
+            if self._owns_credential and self._credential is not None:
+                try:
+                    await self._credential.close()
+                finally:
+                    self._credential = None
+
+
+class InMemorySubscriptionReader(SubscriptionReader):
+    """Injected local/test configuration; not selected by the current worker."""
+
+    def __init__(self, documents: Iterable[Mapping[str, Any]] = ()):
+        self._records = [validate_subscription(document) for document in documents]
+
+    async def find_matches(
+        self, tenant_id: str, event_type: str
+    ) -> list[SubscriptionRecord]:
+        return [
+            record for record in self._records
+            if matches(record, tenant_id, event_type)
+        ]

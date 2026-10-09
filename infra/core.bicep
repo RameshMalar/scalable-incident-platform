@@ -39,6 +39,7 @@ var notificationQueueName = 'notification-events'
 var cosmosName = toLower('${namePrefix}-cosmos-${suffix}')
 var cosmosDatabaseName = 'incidents'
 var cosmosContainerName = 'incidents'
+var cosmosSubscriptionsContainerName = 'subscriptions'
 
 var keyVaultName = toLower('${take(namePrefix, 8)}kv${suffix}')
 
@@ -127,6 +128,11 @@ resource workerIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-0
   location: location
 }
 
+resource subscriptionIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${namePrefix}-subscription-id'
+  location: location
+}
+
 resource notificationIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${namePrefix}-notification-id'
   location: location
@@ -203,6 +209,16 @@ resource notificationAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01
     )
 
     principalId: notificationIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource subscriptionAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(registry.id, subscriptionIdentity.id, acrPullRoleId)
+  scope: registry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    principalId: subscriptionIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
@@ -569,6 +585,50 @@ resource cosmosDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-pre
 }
 
 // Worker writes incident documents.
+// Shares the existing database's 1000 RU/s; no dedicated throughput or TTL.
+resource cosmosSubscriptionsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = {
+  parent: cosmosDatabase
+  name: cosmosSubscriptionsContainerName
+  properties: {
+    resource: {
+      id: cosmosSubscriptionsContainerName
+      partitionKey: {
+        paths: [
+          '/tenant_id'
+        ]
+        kind: 'Hash'
+      }
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [
+          {
+            path: '/*'
+          }
+        ]
+        excludedPaths: []
+      }
+    }
+  }
+}
+
+// API CRUD is limited to subscriptions; no incident or management-plane access.
+// Cosmos data-plane scopes use /dbs/<database>/colls/<container>, not the ARM
+// sqlDatabases/containers resource path. Referencing the container also ensures
+// it is provisioned before the assignment.
+resource subscriptionCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
+  parent: cosmos
+  name: guid(cosmosSubscriptionsContainer.id, subscriptionIdentity.id, cosmosDataContributorRoleId)
+  properties: {
+    roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
+    principalId: subscriptionIdentity.properties.principalId
+    scope: '${cosmos.id}/dbs/${cosmosDatabase.name}/colls/${cosmosSubscriptionsContainer.name}'
+  }
+}
+
+// Worker writes incident documents. Its existing account-wide contributor
+// assignment also permits subscription reads; least-privilege migration is
+// documented separately and is not changed during this preparation phase.
 resource workerCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
   parent: cosmos
 
@@ -890,6 +950,9 @@ output ingestionIdentityClientId string = ingestionIdentity.properties.clientId
 output workerIdentityId string = workerIdentity.id
 output workerIdentityClientId string = workerIdentity.properties.clientId
 
+output subscriptionIdentityId string = subscriptionIdentity.id
+output subscriptionIdentityClientId string = subscriptionIdentity.properties.clientId
+
 output scalerIdentityId string = scalerIdentity.id
 
 output dashboardIdentityId string = dashboardIdentity.id
@@ -915,6 +978,7 @@ output cosmosAccountName string = cosmos.name
 output cosmosEndpoint string = cosmos.properties.documentEndpoint
 output cosmosDatabaseName string = cosmosDatabase.name
 output cosmosContainerName string = cosmosContainer.name
+output cosmosSubscriptionsContainerName string = cosmosSubscriptionsContainer.name
 
 output notificationIdentityId string = notificationIdentity.id
 output notificationIdentityClientId string = notificationIdentity.properties.clientId

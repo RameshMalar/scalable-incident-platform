@@ -51,6 +51,9 @@ param cosmosDatabase string = 'incidents'
 @description('Cosmos container incidents are written to, partitioned on /tenant_id.')
 param cosmosContainer string = 'incidents'
 
+@description('Cosmos subscription container read by the router, partitioned on /tenant_id.')
+param cosmosSubscriptionsContainer string = 'subscriptions'
+
 @description('Registry login server, e.g. incidentacrxxx.azurecr.io.')
 param registryServer string
 
@@ -166,6 +169,10 @@ resource worker 'Microsoft.App/containerApps@2025-01-01' = {
             {
               name: 'COSMOS_CONTAINER'
               value: cosmosContainer
+            }
+            {
+              name: 'COSMOS_SUBSCRIPTIONS_CONTAINER'
+              value: cosmosSubscriptionsContainer
             }
           ]
         }
