@@ -132,7 +132,7 @@ def main():
     assert {"ingestion-service", "worker-service", "notification-service", "load-simulator", "subscription-service"} <= set(services)
     for job in ["build", "security"]:
         assert any(entry["service"] == "subscription-service" for entry in ci["jobs"][job]["strategy"]["matrix"]["include"])
-    assert set(ci["jobs"]["gate"]["needs"]) == {"contract", "producer-sdk", "bicep", "test", "integration", "build", "security"}
+    assert set(ci["jobs"]["gate"]["needs"]) == {"contract", "producer-sdk", "bicep", "test", "integration", "build", "security", "workflow-safety"}
     assert ci["jobs"]["gate"]["if"] == "always()"
     assert 'all(.[]; .result == "success")' in str(ci["jobs"]["gate"])
     assert "test_phase3.py" in str(ci["jobs"]["integration"])
@@ -141,7 +141,14 @@ def main():
     original = yaml.load(subprocess.check_output(["git", "show", "HEAD:.github/workflows/ci.yml"], cwd=ROOT), Loader=WorkflowLoader)
     assert ci["jobs"]["contract"] == original["jobs"]["contract"]
     assert ci["jobs"]["producer-sdk"] == original["jobs"]["producer-sdk"]
-    assert ci["jobs"]["infra"] == original["jobs"]["infra"]
+    assert "infra" not in ci["jobs"]
+    assert ci["permissions"] == {"contents": "read"}
+    for job in ci["jobs"].values():
+        assert job.get("permissions", {}).get("id-token", "none") == "none"
+        for step in job.get("steps", []):
+            assert not step.get("uses", "").startswith("azure/")
+            assert "az login" not in step.get("run", "")
+            assert "az deployment" not in step.get("run", "")
     for original_step in original["jobs"]["build"]["steps"]:
         if original_step.get("name") != "Build image":
             assert original_step in ci["jobs"]["build"]["steps"], f"Existing image/smoke/scan gate changed: {original_step.get('name')}"
@@ -204,7 +211,7 @@ def main():
         return
     count = 0
     with tempfile.TemporaryDirectory(prefix="phase3b2-shell-") as directory:
-        for workflow in [ci, cd]:
+        for workflow in [ci, cd, load(ROOT / ".github/workflows/azure-preview.yml")]:
             for job in workflow["jobs"].values():
                 for step in job.get("steps", []):
                     if "run" not in step:
@@ -215,7 +222,7 @@ def main():
                     subprocess.run([bash, "-n", script.as_posix()], check=True, capture_output=True)
                     count += 1
     subprocess.run([bash, "-n", (ROOT / "scripts/verify-subscription-api.sh").as_posix()], check=True, capture_output=True)
-    print(f"PASS: Bash syntax for {count} CI/CD run blocks and Subscription API verifier; scripts were parsed, not executed")
+    print(f"PASS: Bash syntax for {count} CI/CD/manual-preview run blocks and Subscription API verifier; scripts were parsed, not executed")
 
 
 if __name__ == "__main__":
