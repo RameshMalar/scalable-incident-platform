@@ -40,6 +40,63 @@ docker build -t incident-subscription .
 The container runs Python 3.12 as non-root UID 10001 on port 8000. Build context
 is this service directory. `/docs` exposes the generated OpenAPI documentation.
 
+## Local image provenance and security limitations
+
+Verified against Docker Hub's official `library/python` registry on 2026-10-11:
+`python:3.12.15-slim-trixie` is available and the Dockerfile pins its immutable
+multi-platform index digest:
+`sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1`.
+The index selects this Linux amd64 manifest:
+`sha256:2b4f19dae3a777dfc3b76730bda1e82e1f66ab2a2686fa93ca78edbfb4f04ffe`.
+`uvicorn[standard]` is pinned to `0.54.0`. The image upgrades pip to the
+PyPI-verified `26.2` release (normalized `26.2.0`, Python >=3.10) before
+installing application dependencies, runs `pip check`, then uninstalls pip and
+removes `/usr/local/lib/python3.12/ensurepip`. Build-time assertions and
+non-root runtime checks verify pip executables, metadata and bundled components
+are absent. Application urllib3 2.8.0 and required runtime libraries remain.
+UID 10001, port 8000 and the
+existing Uvicorn startup command are preserved; no Debian packages are removed.
+
+A fresh local `linux/amd64` build completed with Python 3.12.15 and passed
+`pip check`, health/readiness, CRUD/pagination, locally signed RS256 JWT
+validation (including expiry and audience rejection), and certificate-verified
+HTTPS checks. Development-mode readiness used memory storage; it does not
+verify live Cosmos access, Entra configuration or Azure deployment readiness.
+The JWT check injected a local signing key rather than contacting Entra.
+The existing `apt-get upgrade` and unlocked transitive Python dependencies mean
+future builds can differ even with the base image digest pinned.
+
+Trivy 0.75.0 scanned the final local image on 2026-10-11 with unfixed findings
+included. Before cleanup: 0 CRITICAL, 48 HIGH, 60 MEDIUM, 61 LOW and 1 UNKNOWN.
+After cleanup: 0 CRITICAL, 44 HIGH, 58 MEDIUM, 61 LOW and 1 UNKNOWN.
+No findings were added. Removing pip's bundled components removed HIGH
+GHSA-6v7p-g79w-8964 (msgpack), CVE-2025-47273 (setuptools),
+CVE-2026-97687/CVE-2026-97689 (urllib3), and MEDIUM
+CVE-2026-59890 (setuptools)/CVE-2026-97688 (urllib3).
+The earlier six pip 25.0.1 findings also remain absent.
+
+The 44 HIGH Debian package findings remain unchanged:
+CVE-2026-76642, CVE-2026-78408, CVE-2026-78409, CVE-2026-78410
+(util-linux family); CVE-2026-54369 (libacl1); CVE-2025-69720
+(ncurses family); CVE-2026-16742 (libsystemd0/libudev1); and CVE-2026-9538
+(perl-base). No fixed version is listed for these HIGH findings; perl-base is
+marked `fix_deferred`. Lower-severity Debian findings remain in the full report.
+
+The fresh Linux amd64 build passed all 79 API, 73 integration and 79
+workflow-security tests, documentation/workflow validation including 53 shell
+blocks, and non-root runtime checks for native/application imports, TLS trust,
+JWT valid/invalid signatures, expiry/audience rejection, health/readiness,
+CRUD and pagination. Its local image index digest is
+`sha256:7423fa182809f892cc32a68e800de5b34271439646cebc7b453877c01f78170f`.
+Runtime pip installation, `pip check` and `ensurepip` bootstrapping are
+intentionally unavailable; dependency checking runs before cleanup during build.
+Tests and diagnostic tooling must use separate environments. Deleted base-image
+files can remain in lower image layers, though absent from the final filesystem.
+Retain the complete scan rather than treating the image as vulnerability-free.
+CI thresholds and CVE filtering are unchanged. No security exception is granted:
+remaining vulnerabilities require remediation or separate security review before
+production use. This local validation neither publishes nor deploys the image.
+
 ## Production configuration
 
 | Variable | Purpose |

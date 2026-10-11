@@ -1,5 +1,5 @@
 fastapi==0.141.1
-uvicorn[standard]
+uvicorn[standard]==0.54.0
 pydantic==2.13.5
 azure-cosmos==4.16.4
 azure-identity==1.25.3
