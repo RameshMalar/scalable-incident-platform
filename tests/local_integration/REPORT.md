@@ -1,5 +1,18 @@
 # Phase 3 local integration verification — 2026-10-09
 
+## Historical report and current branch
+
+The results and stopping point below describe the 2026-10-09 Phase 3 exercise.
+Since then this branch has integrated subscription-based Worker routing,
+Notification compatibility, infrastructure and CI/CD changes. Automatic PR CI
+is cloud-free; Azure preview is manual-only from main with protected-environment
+approval. CD is manual-only and gates optional Worker activation separately.
+The readiness review verified successful CI at `f68e068`, including Docker checks;
+Docker unavailability below describes the earlier local run. Historical counts
+are not results for subsequent edits, and live Azure/Telegram behavior remains
+unverified by this report.
+
+
 Verdict: **LOCAL INTEGRATION VERIFIED**
 
 PR status: **READY FOR PR PREPARATION** (local application verification only).
@@ -167,5 +180,6 @@ deployment or infrastructure readiness.
 
 **READY FOR PR PREPARATION**
 
-Stopped after local verification. Phase 3B/3C and PR preparation have not begun;
-any subsequent work awaits user approval.
+At the end of this historical exercise, Phase 3B/3C and PR preparation had not
+begun. The current branch includes those implementation stages and has undergone
+a PR readiness review; no PR creation or live rollout is claimed here.

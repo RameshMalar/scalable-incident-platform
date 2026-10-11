@@ -12,6 +12,7 @@ from app.models import Subscription, SubscriptionCreate, SubscriptionPage, Subsc
 from app.store import SubscriptionStore, build_store
 
 logger = logging.getLogger("app.main")
+MAX_SUBSCRIPTION_OFFSET = 10000
 
 
 def get_store(request: Request) -> SubscriptionStore:
@@ -59,9 +60,12 @@ def create_app(store=None, verifier=None) -> FastAPI:
         return result
 
     @app.get("/api/v1/subscriptions", response_model=SubscriptionPage)
-    async def list_subscriptions(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=10000), context: TenantContext = Depends(require_read), store: SubscriptionStore = Depends(get_store)):
+    async def list_subscriptions(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=MAX_SUBSCRIPTION_OFFSET), context: TenantContext = Depends(require_read), store: SubscriptionStore = Depends(get_store)):
         items = await store.list(context.tenant_id, limit + 1, offset)
-        return SubscriptionPage(items=items[:limit], next_offset=offset + limit if len(items) > limit else None)
+        next_offset = offset + limit
+        # Do not advertise a continuation that request validation will reject.
+        has_next_page = len(items) > limit and next_offset <= MAX_SUBSCRIPTION_OFFSET
+        return SubscriptionPage(items=items[:limit], next_offset=next_offset if has_next_page else None)
 
     @app.get("/api/v1/subscriptions/{subscription_id}", response_model=Subscription)
     async def get_subscription(subscription_id: str, context: TenantContext = Depends(require_read), store: SubscriptionStore = Depends(get_store)):

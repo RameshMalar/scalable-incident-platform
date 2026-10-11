@@ -1,5 +1,16 @@
 # Phase 3B-2 — local CI/CD preparation
 
+## Current implementation
+
+This branch includes subscription-based Worker routing, backward-compatible
+Notification envelopes, API infrastructure and automatic cloud-free CI.
+Azure preview is manual-only from main; CD is also manual-only, with production
+approval and optional separately approved Worker activation. The phase commands,
+counts and unverified results below are historical records, not current CI status.
+The readiness review verified successful CI at `f68e068`; subsequent local edits
+require their own validation. No live deployment is established by this report.
+
+
 Prepared on 2026-10-09. **PHASE 3B-2 READY FOR REVIEW**.
 
 This verdict concerns reviewable local workflow changes. It does not establish
@@ -51,8 +62,10 @@ already locally available PyYAML 6.0.3 parser, runs the existing 21 shared-state
 integration cases and 38 new rollout guard cases, and performs workflow/static
 validation. External delivery is mocked; the 21 integration tests retain their
 external-socket guard. A new Bicep job compiles every infra template without an
-Azure login. The existing PR-only live core what-if job is preserved unchanged;
-it was not run locally and is skipped when CI is called by manual CD.
+Azure login. The automatic PR core what-if job has been removed. Core preview
+is available only through `azure-preview.yml`, manually dispatched from main
+with exact same-repository PR head provenance and protected-environment approval.
+It uses a dedicated preview identity; see [AZURE_PREVIEW.md](AZURE_PREVIEW.md).
 
 CI also checks the actual Notification image using the new compatibility script
 mounted read-only in a `--network none` container. This is distinct from runtime
@@ -69,8 +82,9 @@ feature-branch push, PR and manual triggers and adds `workflow_call`.
 CD calls the same local CI workflow at the selected commit. It does not infer
 that an earlier PR run covered the selected deployment SHA. Its preparation and
 activation jobs both depend on that reusable CI completion. Ordinary CI jobs
-have contents-read permission and no Azure credentials; only the preserved PR
-preview job requests its existing OIDC permission. Repository branch protection
+have contents-read permission and no Azure credentials or OIDC permission.
+Only the approved preview job in the separate manual Azure preview workflow
+requests OIDC permission for its dedicated identity. Repository branch protection
 must separately select required CI checks if merge blocking is desired; no
 branch-protection settings were read or changed.
 

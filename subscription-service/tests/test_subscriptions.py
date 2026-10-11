@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 import pytest
 
 from tests.conftest import headers
@@ -70,6 +72,43 @@ def test_pagination(client, payload):
     assert len(second["items"]) == 1
     assert second["next_offset"] is None
     assert len({item["id"] for item in first["items"] + second["items"]}) == 3
+
+
+@pytest.mark.parametrize("offset,limit,expected_next", [
+    (9900, 100, 10000),
+    (9999, 1, 10000),
+    (9950, 100, None),
+    (10000, 1, None),
+    (10000, 100, None),
+])
+def test_pagination_continuation_stays_within_offset_boundary(client, store, payload, offset, limit, expected_next):
+    created = client.post("/api/v1/subscriptions", json=payload, headers=headers()).json()
+    item = store.items[("TENANT-A", created["id"])]
+    # Simulate a large registry with a lookahead row, without creating 10,000 records.
+    store.list = AsyncMock(return_value=[item] * (limit + 1))
+    response = client.get(f"/api/v1/subscriptions?limit={limit}&offset={offset}", headers=headers())
+    assert response.status_code == 200
+    page = response.json()
+    assert page["items"] == [created] * limit
+    assert page["next_offset"] == expected_next
+    store.list.assert_awaited_once_with("TENANT-A", limit + 1, offset)
+    if expected_next is not None:
+        final = client.get(f"/api/v1/subscriptions?limit={limit}&offset={expected_next}", headers=headers())
+        assert final.status_code == 200
+        assert final.json()["items"] == [created] * limit
+        assert final.json()["next_offset"] is None
+
+
+@pytest.mark.parametrize("offset", [0, 10000])
+@pytest.mark.parametrize("item_count", [0, 1, 2])
+def test_pagination_final_page_has_no_continuation(client, store, payload, offset, item_count):
+    created = client.post("/api/v1/subscriptions", json=payload, headers=headers()).json()
+    item = store.items[("TENANT-A", created["id"])]
+    store.list = AsyncMock(return_value=[item] * item_count)
+    response = client.get(f"/api/v1/subscriptions?limit=2&offset={offset}", headers=headers())
+    assert response.status_code == 200
+    assert response.json() == {"items": [created] * item_count, "next_offset": None}
+    store.list.assert_awaited_once_with("TENANT-A", 3, offset)
 
 
 @pytest.mark.parametrize("query", ["limit=0", "limit=101", "offset=-1", "offset=10001", "tenant_id=TENANT-B"])

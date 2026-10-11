@@ -21,6 +21,11 @@ Telegram delivery. The complete IncidentEvent, including evidence_uri, is preser
 
 Before deployment: provision /tenant_id subscriptions container and identity access,
 approve each destination for its tenant, deploy the envelope-capable consumer before
-activating this worker, and update/test infrastructure and workflows. A missing
+activating this worker. This branch includes infrastructure, tests and manual
+rollout workflows; configuration and live validation remain prerequisites. A missing
 subscription container causes errors, not zero matches. Notification Service retains
-legacy compatibility/global chat configuration. This phase performs no live operations.
+legacy compatibility/global chat configuration. Manual CD prepares Notification,
+storage and the API before separately approved Worker-last activation. Automatic
+PR CI does not authenticate to Azure; Azure preview is manual-only from main
+with protected-environment approval. This documentation does not claim that a
+live rollout or delivery verification has occurred.

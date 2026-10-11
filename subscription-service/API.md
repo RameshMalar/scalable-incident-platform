@@ -1,8 +1,18 @@
-# Subscription API — Phase 1
+# Subscription API
 
-Standalone FastAPI CRUD service. This phase does not change incident ingestion,
-worker routing, notification delivery, infrastructure or CI/CD. Creating a
-subscription does **not yet cause or suppress a Telegram notification**.
+Standalone FastAPI CRUD service with tenant-scoped subscription configuration.
+The Cosmos-backed Worker reads enabled subscriptions by tenant and exact event
+type, then publishes version-1 envelopes to the selected Telegram destinations.
+Zero matches preserves incident persistence without publishing notifications.
+Subscription changes affect matching when routing-enabled Worker code is active;
+the API itself does not publish messages or send Telegram requests.
+
+This branch includes infrastructure and CI/CD integration. Automatic PR checks
+run without Azure authentication. Azure preview is manual-only from main with
+protected-environment approval; production rollout is also manual, with optional
+Worker activation gated separately. See
+[rollout configuration](../.github/workflows/SUBSCRIPTION_ROLLOUT.md) and
+[Azure preview](../.github/workflows/AZURE_PREVIEW.md).
 
 ## Run locally
 
@@ -48,7 +58,9 @@ Provision the subscription container separately with partition key `/tenant_id`.
 The service never creates databases/containers and never accesses the incident
 container by default. Grant its identity Cosmos data access scoped to the
 subscription container. No account keys or Telegram bot tokens are used.
-Infrastructure provisioning and role grants remain outside Phase 1.
+The branch includes container and identity provisioning in `infra/core.bicep`
+and API deployment in `infra/subscription.bicep`. Entra role/scope assignments
+and consent require separately reviewed configuration.
 
 Tokens require RS256 signature validation, unexpired `exp`, matching audience,
 and a v1/v2 issuer pinned to the configured Entra directory. `azp`/`appid` resolves
@@ -98,7 +110,11 @@ and tenant/ID/timestamp changes are rejected. Example: `{"enabled": false}`.
 Foreign-tenant and nonexistent IDs return the same 404 response. Caller-supplied
 tenant query parameters never select another partition.
 
-List limit is 1–100; offset is 0–10000. Ordering is by ID. Offset pagination is
+List limit is 1–100; offset is 0–10000. Ordering is by ID. `next_offset` is null
+when there is no lookahead row or the next page would start above 10000. The
+current page is still returned in full up to the requested limit; this bounded
+interface cannot traverse a larger registry beyond its accepted offsets.
+Offset pagination is
 appropriate for a small subscription registry but is not a snapshot when
 concurrent creates/deletes occur. Concurrent PATCH requests use last-write-wins;
 ETag conditional updates can be added later if required.
@@ -106,14 +122,17 @@ ETag conditional updates can be added later if required.
 Azure storage failures return a sanitized 503. Liveness does not query storage;
 readiness verifies container metadata and a data query with a five-second timeout.
 
-## Remaining integration and assumptions
+## Delivery prerequisites and assumptions
 
-Phase 1 trusts a tenant subscription administrator to select a numeric chat ID.
+The API trusts a tenant subscription administrator to select a numeric chat ID.
 It does not verify Telegram ownership or reachability. Add an operator-approved
 tenant destination allowlist or ownership verification before enabling delivery.
 Bot credentials must remain in Notification Service / Key Vault.
 
-Later phases must provision identities/container, add deploy/test workflow
-entries, match enabled subscriptions by tenant and exact event type in the
-worker, and convey selected destinations to Notification Service. Existing
-load-test suppression and incident persistence must remain intact.
+Infrastructure, service tests, matching and routed notification delivery are
+implemented in this branch. Before production activation, verify storage/RBAC,
+Entra roles and consent, approved destinations and tenant subscription migration.
+Manual CD prepares compatible Notification code, storage and the API before its
+optional Worker-last activation. Existing load-test suppression and incident
+persistence remain intact. Live authorization and delivery require separate
+verification; local and CI tests do not establish production readiness.

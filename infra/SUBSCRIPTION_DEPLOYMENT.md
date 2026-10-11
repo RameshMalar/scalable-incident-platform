@@ -1,5 +1,20 @@
 # Phase 3B-1 — Subscription API infrastructure review
 
+## Current implementation and historical scope
+
+This branch now includes the Subscription API, subscription-based Worker routing,
+compatible Notification envelopes, infrastructure and CI/CD integration. Automatic
+PR CI compiles Bicep without Azure authentication. Azure preview is manual-only
+from main with protected-environment approval; production rollout is manual-only
+and prepares Notification, storage and the API before optional Worker activation.
+See [SUBSCRIPTION_ROLLOUT.md](../.github/workflows/SUBSCRIPTION_ROLLOUT.md) and
+[AZURE_PREVIEW.md](../.github/workflows/AZURE_PREVIEW.md) for current workflow gates.
+
+The Phase 3B-1 findings, commands and results below record the earlier
+infrastructure-only stage. Statements that workflows were unchanged describe
+that stage, not the current branch. Live Azure validation remains a prerequisite.
+
+
 Prepared locally on 2026-10-09. **PHASE 3B-1 READY FOR REVIEW**.
 This is infrastructure preparation, not Azure deployment readiness or cloud
 validation. No Azure CLI, login, cloud query, deployment, what-if, credentials,
@@ -213,9 +228,15 @@ literal container name; the validator was corrected and the final execution
 passed all groups. No infrastructure compiler error was found. Git emits its
 existing LF-to-CRLF warnings for pre-existing Python changes.
 
-## Required Phase 3B-2 workflow preparation
+## Historical Phase 3B-2 preparation plan
 
-Changes below are required future work; **ci.yml and cd.yml are unchanged**:
+The checklist below records the plan at Phase 3B-1, when workflows were unchanged.
+CI/test/build integration and manual CD ordering are now implemented. The earlier
+live PR preview was replaced by manual-only Azure preview, and CD no longer has a
+push trigger or incident POST checks. Live CRUD, tenant isolation and delivery
+verification remain separately authorized work; consult the current rollout guide.
+
+Historical checklist:
 
 1. Add Subscription Service to Python 3.12 test, build and source/dependency/image
    security checks. Add the cross-service local integration tests with all three
@@ -240,9 +261,10 @@ Changes below are required future work; **ci.yml and cd.yml are unchanged**:
    separately; queue draining does not prove per-incident persistence or delivery.
    Avoid enabling load-test human notifications or assuming exactly-once delivery.
 
-Current CD deploys Worker before Notification, so new envelopes could reach an
-old consumer. It also has no Subscription API deployment, role/mapping preparation
-or subscriber verification gate. With the routing-enabled Worker, zero matches
+At Phase 3B-1, CD deployed Worker before Notification and lacked API deployment
+and subscriber verification gates. Current manual CD deploys compatible Notification
+first, then storage and the API, and optionally activates Worker last after approval.
+With the routing-enabled Worker, zero matches
 means no notifications; pre-existing tenants need an approved subscription
 migration before cutover. Do not infer Azure readiness from the local 307 tests.
 
