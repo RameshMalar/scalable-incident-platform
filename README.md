@@ -121,8 +121,33 @@ python -m pytest tests -v
 
 ## Deploying to Azure
 
-Deployment is automatic: **every push to `main` builds, deploys and verifies
-itself.** There is nothing to run by hand and no server to log into.
+CD builds, deploys and verifies `main`, and since the Subscription API rollout
+it runs **only when dispatched**: a merge to `main` deploys nothing by itself.
+There is no server to log into.
+
+### Running CD
+
+```bash
+./scripts/run-cd.sh
+```
+
+It reads the reviewed inputs from `infra/cd-production.json` on `origin/main`,
+fails fast on the same checks as CD's preflight job, shows the inputs, and
+dispatches CD on `main` once you confirm. It needs both `az login` and
+`gh auth login`.
+
+- **Changing an input** means editing `infra/cd-production.json` in a pull
+  request; the script never reads local, unmerged changes.
+- **`core_deployment_name: "latest"`** resolves to the newest successful core
+  deployment, since every run creates a new one.
+- **Approval.** The `prepare` job (and `activate-worker`, when
+  `activate_routing` is true) waits for a `production` reviewer other than
+  whoever dispatched the run. The environment must be configured with required
+  reviewers and *Prevent self-review*, or CD's preflight fails.
+- **Routing.** Enabling subscription-based routing means setting
+  `activate_routing` and `routing_configuration_approved` to `true` and filling
+  in `routing_approval_reference` and `rollback_worker_image`; see
+  `.github/workflows/SUBSCRIPTION_ROLLOUT.md`.
 
 The pipeline authenticates with OpenID Connect against a user-assigned managed
 identity, so the repository holds no Azure credentials. Images are tagged with
@@ -208,9 +233,11 @@ To stop that entirely between milestones:
 ./scripts/teardown.sh
 ```
 
-Rebuilding is one pipeline run (`gh workflow run cd.yml`). That the whole
-environment can be destroyed and reproduced from source is the point of
-keeping it in Bicep, and is worth demonstrating rather than just claiming.
+That the whole environment can be destroyed and reproduced from source is the
+point of keeping it in Bicep, and is worth demonstrating rather than just
+claiming. CD currently only *updates* an environment, though: its first step
+reads the outputs of an existing successful core deployment. After a teardown,
+deploy `infra/core.bicep` by hand once (see *Deploying by hand*), then run CD.
 
 ### Developer access
 
