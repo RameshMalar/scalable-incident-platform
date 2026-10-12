@@ -40,6 +40,7 @@ var cosmosName = toLower('${namePrefix}-cosmos-${suffix}')
 var cosmosDatabaseName = 'incidents'
 var cosmosContainerName = 'incidents'
 var cosmosSubscriptionsContainerName = 'subscriptions'
+var cosmosDestinationsContainerName = 'approved-destinations'
 
 var keyVaultName = toLower('${take(namePrefix, 8)}kv${suffix}')
 
@@ -626,9 +627,47 @@ resource subscriptionCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sq
   }
 }
 
+// Tenant-approved Telegram destinations; see
+// subscription-service/DESTINATION_POLICY.md. Operators write the records by
+// hand (developerCosmosContributor below); the Subscription API and Worker only
+// read them, and fail closed -- every enabled subscription is refused with 503
+// -- while this container is missing. The policy adapter rejects any container
+// not partitioned on /tenant_id. A handful of small documents, so it shares
+// the database's throughput like subscriptions does.
+resource cosmosDestinationsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = {
+  parent: cosmosDatabase
+  name: cosmosDestinationsContainerName
+  properties: {
+    resource: {
+      id: cosmosDestinationsContainerName
+      partitionKey: {
+        paths: [
+          '/tenant_id'
+        ]
+        kind: 'Hash'
+      }
+    }
+  }
+}
+
+// Read-only: a client that can write subscriptions must not also be able to
+// approve its own destinations. The built-in reader carries the readMetadata
+// the policy adapter needs to validate the container before each lookup.
+resource subscriptionDestinationsReader 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
+  parent: cosmos
+  name: guid(cosmosDestinationsContainer.id, subscriptionIdentity.id, cosmosDataReaderRoleId)
+  properties: {
+    roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataReaderRoleId}'
+    principalId: subscriptionIdentity.properties.principalId
+    scope: '${cosmos.id}/dbs/${cosmosDatabase.name}/colls/${cosmosDestinationsContainer.name}'
+  }
+}
+
 // Worker writes incident documents. Its existing account-wide contributor
-// assignment also permits subscription reads; least-privilege migration is
-// documented separately and is not changed during this preparation phase.
+// assignment also covers subscription and destination reads -- and destination
+// writes, which DESTINATION_POLICY.md says it should not have. Narrowing it is
+// a separate change: CD deploys incrementally, so dropping or rescoping this
+// resource does not remove the live assignment by itself.
 resource workerCosmosContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
   parent: cosmos
 
@@ -853,6 +892,31 @@ resource deployEvidenceContributor 'Microsoft.Authorization/roleAssignments@2022
 
     principalId: deployIdentity.properties.principalId
     principalType: 'ServicePrincipal'
+  }
+}
+
+
+// The Evidence workflow's preflight (scripts/verify-evidence-routing.py) runs as
+// this identity and refuses to post a test incident unless the tenant has an
+// enabled subscription to an approved destination. Read-only, and only these
+// two containers: CD has no reason to see incident documents.
+resource deploySubscriptionsReader 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
+  parent: cosmos
+  name: guid(cosmosSubscriptionsContainer.id, deployIdentity.id, cosmosDataReaderRoleId)
+  properties: {
+    roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataReaderRoleId}'
+    principalId: deployIdentity.properties.principalId
+    scope: '${cosmos.id}/dbs/${cosmosDatabase.name}/colls/${cosmosSubscriptionsContainer.name}'
+  }
+}
+
+resource deployDestinationsReader 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
+  parent: cosmos
+  name: guid(cosmosDestinationsContainer.id, deployIdentity.id, cosmosDataReaderRoleId)
+  properties: {
+    roleDefinitionId: '${cosmos.id}/sqlRoleDefinitions/${cosmosDataReaderRoleId}'
+    principalId: deployIdentity.properties.principalId
+    scope: '${cosmos.id}/dbs/${cosmosDatabase.name}/colls/${cosmosDestinationsContainer.name}'
   }
 }
 
