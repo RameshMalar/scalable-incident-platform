@@ -140,6 +140,21 @@ dispatches CD on `main` once you confirm. It needs both `az login` and
   request; the script never reads local, unmerged changes.
 - **`core_deployment_name: "latest"`** resolves to the newest successful core
   deployment, since every run creates a new one.
+- **`subscription_tenant_map`** says which clients may call the Subscription
+  API, and as which tenant. `416bf12a-…` is the deploy identity, which holds
+  `Subscriptions.Read` only, for CD's own verification. `04b07795-…` is the
+  Azure CLI, so a person assigned `Subscriptions.Write` on
+  incident-platform-api manages `TENANT-CD`'s subscriptions with their own
+  sign-in, and no client secret exists:
+
+  ```bash
+  token=$(az account get-access-token \
+    --resource api://fbbe63e1-1f8f-4d4d-b695-0f9982842081 \
+    --query accessToken -o tsv)
+  url=https://$(az containerapp show -g rg-incident-platform \
+    -n incident-subscription --query properties.configuration.ingress.fqdn -o tsv)
+  curl -H "Authorization: Bearer $token" "$url/api/v1/subscriptions"
+  ```
 - **Approval.** The `prepare` job (and `activate-worker`, when
   `activate_routing` is true) waits for a `production` reviewer other than
   whoever dispatched the run. The environment must be configured with required
