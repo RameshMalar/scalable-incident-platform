@@ -6,6 +6,7 @@ import logging
 from common_event_model import IncidentEvent
 from pydantic import ValidationError
 
+from .notification_models import NotificationEnvelope
 from .notifier import Notifier
 
 
@@ -31,8 +32,10 @@ def should_notify(event: IncidentEvent) -> bool:
 
 
 class NotificationProcessor:
-    def __init__(self, notifier: Notifier) -> None:
+    def __init__(self, notifier: Notifier, *, accept_legacy: bool = True) -> None:
         self._notifier = notifier
+        # Temporary compatibility while the worker still sends flat incidents.
+        self.accept_legacy = accept_legacy
 
     async def process(self, body: bytes | str) -> None:
         try:
@@ -40,7 +43,21 @@ class NotificationProcessor:
                 body = body.decode("utf-8")
 
             payload = json.loads(body)
-            event = IncidentEvent.model_validate(payload)
+            route_fields = {
+                "schema_version", "subscription_id", "channel",
+                "telegram_chat_id", "incident",
+            }
+            routed = isinstance(payload, dict) and bool(route_fields & payload.keys())
+            if routed:
+                # Never retry a failed envelope as a flat/global notification.
+                if "schema_version" not in payload:
+                    raise InvalidIncident("routed message requires schema_version")
+                envelope = NotificationEnvelope.model_validate(payload)
+                event = envelope.incident
+            else:
+                if not self.accept_legacy:
+                    raise InvalidIncident("legacy notification messages are disabled")
+                event = IncidentEvent.model_validate(payload)
 
         except (UnicodeDecodeError, json.JSONDecodeError, ValidationError) as exc:
             raise InvalidIncident(str(exc)) from exc
@@ -55,4 +72,10 @@ class NotificationProcessor:
             )
             return
 
-        await self._notifier.notify(event)
+        if routed:
+            await self._notifier.notify(
+                event, telegram_chat_id=envelope.telegram_chat_id
+            )
+        else:
+            # Only this legacy branch can select the configured global chat.
+            await self._notifier.notify(event)

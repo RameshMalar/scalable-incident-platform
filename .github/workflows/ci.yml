@@ -12,10 +12,44 @@ on:
 
   workflow_dispatch:
 
+  # CD calls these same checks at its exact selected commit before deployment.
+  workflow_call:
+
 permissions:
   contents: read
 
 jobs:
+  bicep:
+    name: Compile infrastructure locally
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile Bicep without an Azure login
+        run: |
+          for template in infra/*.bicep; do
+            az bicep build --file "$template" --outfile "${RUNNER_TEMP}/$(basename "${template%.bicep}").json"
+          done
+
+  integration:
+    name: Local cross-service integration (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            worker-service/requirements-dev.txt
+            notification-service/requirements-dev.txt
+            subscription-service/requirements-dev.txt
+      - name: Install the three services' test dependencies
+        run: pip install -r worker-service/requirements-dev.txt -r notification-service/requirements-dev.txt -r subscription-service/requirements-dev.txt PyYAML==6.0.3
+      - name: Run shared-state integration tests with mocked external boundaries
+        run: python -m pytest tests/local_integration/test_phase3.py tests/local_integration/test_workflow_safety.py -v -o asyncio_mode=auto
+      - name: Validate workflow graphs, Bicep contracts and Bash syntax without cloud access
+        run: python tests/local_integration/validate_phase3b2.py
+
   contract:
     name: Common event model
     runs-on: ubuntu-latest
@@ -58,123 +92,6 @@ jobs:
                       pytest==9.1.1
           python -m pytest packages/producer-sdk/tests -v
 
-  infra:
-    name: Infrastructure preview
-    runs-on: ubuntu-latest
-
-    # Reviewing an infrastructure change otherwise means trusting the diff.
-    # `what-if` compares the template against the live subscription, which
-    # catches what `bicep build` cannot: a stale API version, an `existing`
-    # reference to something that is not there, a change to an immutable
-    # property. It also needs Role Based Access Control Administrator to preview
-    # role assignments, which no person here holds -- so running it as the
-    # deploy identity is what puts the preview in reach of everyone.
-    #
-    # Pull requests only. The deploy identity federates `pull_request` and
-    # `refs/heads/main`, not a feature-branch push, and a pull request from a
-    # fork is issued no id-token at all by design.
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Sign in to Azure
-        uses: azure/login@v3
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      # Only core.bicep. The service templates take their parameters from core's
-      # outputs, so previewing them would mean deploying core first, which is
-      # the one thing a pull request must not do.
-      #
-      # The same parameters CD passes, so the preview is of what merging does
-      # rather than of a template nobody deploys.
-      - name: Preview the change to core infrastructure
-        env:
-          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
-        run: |
-          az deployment group what-if \
-            --resource-group "$RESOURCE_GROUP" \
-            --template-file infra/core.bicep \
-            --parameters \
-              developerPrincipalIds='${{ vars.DEVELOPER_PRINCIPAL_IDS }}' \
-            --no-pretty-print \
-            -o json >what-if.json
-
-      # Raw what-if output on this template reports 40-odd property changes, of
-      # which three are real. Left unfiltered it trains everyone to skim past
-      # the summary, which defeats the point of having one, so each known class
-      # of false positive is counted rather than listed:
-      #
-      #   - a value taken from another resource, which what-if cannot evaluate at
-      #     preview time and reports as the literal `reference(...)` expression
-      #   - a property the template does not declare, which an incremental
-      #     deployment leaves alone rather than removing
-      #   - a change the API itself marks NoEffect
-      #
-      # Resource-level creates and deletes are always listed. A delete should
-      # never appear, since CD deploys incrementally.
-      - name: Summarise it
-        run: |
-          python3 - <<'PY' >>"$GITHUB_STEP_SUMMARY"
-          import collections
-          import json
-
-          changes = json.load(open("what-if.json"))["changes"]
-          counts = collections.Counter(c["changeType"] for c in changes)
-
-          def name(change):
-              return "/".join(change["resourceId"].split("/")[6:]) or change["resourceId"]
-
-          print("## Infrastructure preview\n")
-          print(" · ".join(f"**{n} {t.lower()}**"
-                           for t, n in sorted(counts.items())) or "No changes.")
-
-          for kind, heading in (("Create", "Created"), ("Delete", "Deleted")):
-              listed = [c for c in changes if c["changeType"] == kind]
-              if listed:
-                  print(f"\n### {heading}\n")
-                  for change in listed:
-                      print(f"- `{name(change)}`")
-
-          real = []
-          discounted = collections.Counter()
-          for change in changes:
-              if change["changeType"] != "Modify":
-                  continue
-              for delta in change.get("delta") or []:
-                  after = delta.get("after")
-                  if after == delta.get("before"):
-                      discounted["the same value reported as changing"] += 1
-                  elif isinstance(after, str) and after.startswith("["):
-                      discounted["a reference this preview cannot evaluate"] += 1
-                  elif delta["propertyChangeType"] == "NoEffect":
-                      discounted["reported as having no effect"] += 1
-                  elif delta["propertyChangeType"] == "Delete":
-                      discounted["a property the template does not declare"] += 1
-                  else:
-                      real.append((name(change), delta))
-
-          if real:
-              print("\n### Changed properties\n")
-              for resource, delta in real:
-                  print(f"- `{resource}` — `{delta['path']}`: "
-                        f"`{json.dumps(delta.get('before'))}` → "
-                        f"`{json.dumps(delta.get('after'))}`")
-
-          if discounted:
-              print("\nNot counted above: " + ", ".join(
-                  f"{n} {reason}" for reason, n in sorted(discounted.items())) + ".")
-          PY
-
   test:
     name: Unit tests (${{ matrix.service }})
     runs-on: ubuntu-latest
@@ -186,6 +103,7 @@ jobs:
           - ingestion-service
           - worker-service
           - notification-service
+          - subscription-service
           - load-simulator
 
     defaults:
@@ -215,7 +133,7 @@ jobs:
   build:
     name: Build image and smoke test (${{ matrix.service }})
     runs-on: ubuntu-latest
-    needs: test
+    needs: [contract, producer-sdk, bicep, test, integration]
 
     strategy:
       fail-fast: false
@@ -238,6 +156,10 @@ jobs:
             image: incident-notification
             context: .
 
+          - service: subscription-service
+            image: incident-subscription
+            context: ./subscription-service
+
           - service: business-dashboard
             image: incident-dashboard
             context: ./business-dashboard
@@ -252,7 +174,7 @@ jobs:
       - name: Build image
         run: |
           for attempt in 1 2 3; do
-            if docker build -t ${{ matrix.image }}:ci \
+            if docker build --platform linux/amd64 -t ${{ matrix.image }}:ci \
                  -f ${{ matrix.service }}/Dockerfile ${{ matrix.context }}; then
               exit 0
             fi
@@ -335,6 +257,34 @@ jobs:
             echo "::error::the dashboard image cannot import its own modules" >&2
             exit 1
           fi
+      - name: Verify legacy and routed notification compatibility in the image
+        if: matrix.service == 'notification-service'
+        run: |
+          docker run --rm --network none \
+            --mount "type=bind,source=${GITHUB_WORKSPACE}/scripts/verify-notification-compatibility.py,target=/verify.py,readonly" \
+            --entrypoint python ${{ matrix.image }}:ci /verify.py
+
+      - name: Smoke test Subscription API in local development mode
+        if: matrix.service == 'subscription-service'
+        run: |
+          test "$(docker run --rm --network none --entrypoint id ${{ matrix.image }}:ci -u)" != '0'
+          docker run --rm --network none --entrypoint python ${{ matrix.image }}:ci \
+            -c 'import sys; import app.main; assert sys.version_info[:2] == (3, 12)'
+          docker run -d --name smoke -p 127.0.0.1:8000:8000 \
+            -e AUTH_MODE=development -e DEV_TENANT_ID=TENANT-CI \
+            -e SUBSCRIPTION_STORE=memory ${{ matrix.image }}:ci
+
+          for attempt in $(seq 1 15); do
+            if curl -fsS http://localhost:8000/health; then
+              curl -fsS http://localhost:8000/ready | grep -q '"status":"ready"'
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "::error::Subscription API never became healthy" >&2
+          docker logs smoke >&2
+          exit 1
 
       # No COSMOS_ENDPOINT here, same as the ingestion smoke test running with
       # no Service Bus: the server must still come up and answer its own
@@ -381,7 +331,7 @@ jobs:
       # repository does not have. The report is kept as a build artifact and the
       # gate is enforced by failing the job instead.
       - name: Scan image for known vulnerabilities
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ matrix.image }}:ci
           format: table
@@ -391,7 +341,7 @@ jobs:
 
       - name: Record the full scan report
         if: always()
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ matrix.image }}:ci
           format: json
@@ -423,6 +373,9 @@ jobs:
           - service: notification-service
             bandit_target: app
 
+          - service: subscription-service
+            bandit_target: app
+
           - service: business-dashboard
             bandit_target: .
 
@@ -452,3 +405,26 @@ jobs:
       - name: Scan dependencies for known vulnerabilities
         working-directory: .
         run: pip-audit -r ${{ matrix.service }}/requirements.txt
+
+  workflow-safety:
+    name: Workflow security checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install PyYAML==6.0.3 pytest==9.1.1
+      - run: python -m pytest tests/workflow_security -v -p no:cacheprovider
+
+  gate:
+    name: Required CI gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [contract, producer-sdk, bicep, test, integration, build, security, workflow-safety]
+    steps:
+      - name: Require every local test, build and security check to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")' >/dev/null

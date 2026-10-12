@@ -9,8 +9,10 @@ class Notifier(ABC):
     """Sends an incident notification to an external delivery channel."""
 
     @abstractmethod
-    async def notify(self, event: IncidentEvent) -> None:
-        """Deliver one incident notification."""
+    async def notify(
+        self, event: IncidentEvent, *, telegram_chat_id: str | None = None
+    ) -> None:
+        """Deliver to an explicit chat; None is legacy configured-chat delivery."""
         raise NotImplementedError
 
     async def close(self) -> None:
@@ -22,6 +24,10 @@ class MockNotifier(Notifier):
 
     def __init__(self) -> None:
         self.sent_events: list[IncidentEvent] = []
+        self.sent_destinations: list[str | None] = []
 
-    async def notify(self, event: IncidentEvent) -> None:
+    async def notify(
+        self, event: IncidentEvent, *, telegram_chat_id: str | None = None
+    ) -> None:
         self.sent_events.append(event)
+        self.sent_destinations.append(telegram_chat_id)

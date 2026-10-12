@@ -1,31 +1,52 @@
 name: CD
 
-# Deploys main to Azure.
-# Authentication uses OpenID Connect against a managed identity,
-# so no Azure credential is stored in GitHub.
+# Manual, reviewed rollout only. An ordinary merge never deploys production.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'ingestion-service/**'
-      - 'worker-service/**'
-      - 'notification-service/**'
-      - 'business-dashboard/**'
-      - 'load-simulator/**'
-      - 'infra/**'
-      - '.github/workflows/cd.yml'
-
-      # Three services install the Common Event Model into their images, so a
-      # change to the contract changes what runs in production even though no
-      # service directory was touched. Without this, the deployed services would
-      # keep serving the previous contract.
-      - 'packages/**'
-
-      # Decides what reaches the build context for those same three images.
-      - '.dockerignore'
-
   workflow_dispatch:
+    inputs:
+      core_deployment_name:
+        description: "Approved existing successful core deployment name (existing environment only)"
+        type: string
+        required: true
+      subscription_auth_tenant_id:
+        description: "Approved Subscription API Entra issuer directory"
+        type: string
+        required: true
+      subscription_auth_audience:
+        description: "Approved Subscription API token audience"
+        type: string
+        required: true
+      subscription_tenant_map:
+        description: "Approved subscription-manager clientId:tenant mapping, including the deploy verifier"
+        type: string
+        required: true
+      subscription_configuration_approved:
+        description: "Roles/scopes, consent, issuer, audience and subscription-manager mapping were reviewed"
+        type: boolean
+        required: true
+        default: false
+      activate_routing:
+        description: "Deploy routing-enabled Worker after preparation and a second production approval"
+        type: boolean
+        required: true
+        default: false
+      routing_configuration_approved:
+        description: "Tenant migration and approved demo subscriptions are ready; Notification compatibility reviewed"
+        type: boolean
+        required: true
+        default: false
+      routing_approval_reference:
+        description: "Review evidence/reference for tenant migration, demo subscriptions and rollback approval"
+        type: string
+        required: false
+      notification_queue_review_reference:
+        description: "Review reference for the persistent notification queue selection"
+        type: string
+        required: false
+      rollback_worker_image:
+        description: "Approved pre-routing Worker image in the existing ACR, pinned as repository@sha256:digest"
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -39,22 +60,89 @@ env:
   RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
 
 jobs:
-  deploy:
-    name: Provision and deploy
+  checks:
+    name: CI at the selected deployment commit
+    uses: ./.github/workflows/ci.yml
+
+  preflight:
+    name: Fail closed on missing rollout configuration and reviewer protection
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate explicit approval and required configuration without cloud access
+        env:
+          DEPLOY_REF: ${{ github.ref }}
+          CORE_DEPLOYMENT_NAME: ${{ inputs.core_deployment_name }}
+          SUBSCRIPTION_AUTH_TENANT_ID: ${{ inputs.subscription_auth_tenant_id }}
+          SUBSCRIPTION_AUTH_AUDIENCE: ${{ inputs.subscription_auth_audience }}
+          SUBSCRIPTION_TENANT_MAP: ${{ inputs.subscription_tenant_map }}
+          SUBSCRIPTION_CONFIGURATION_APPROVED: ${{ inputs.subscription_configuration_approved }}
+          ACTIVATE_ROUTING: ${{ inputs.activate_routing }}
+          ROUTING_CONFIGURATION_APPROVED: ${{ inputs.routing_configuration_approved }}
+          ROUTING_APPROVAL_REFERENCE: ${{ inputs.routing_approval_reference }}
+          ROLLBACK_WORKER_IMAGE: ${{ inputs.rollback_worker_image }}
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AUTH_AUDIENCE: ${{ vars.AUTH_AUDIENCE }}
+          TENANT_MAP: ${{ vars.TENANT_MAP }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN_SECRET_URI: ${{ vars.TELEGRAM_BOT_TOKEN_SECRET_URI }}
+        run: python3 scripts/validate-rollout-config.py --inputs-only
+
+      # Reuse the existing environment. Never silently create an unprotected one.
+      # A denied API read also fails closed; do not bypass it with a new PAT.
+      - name: Require production reviewers and prevent self approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          gh api "repos/${REPOSITORY}/environments/production" \
+            --jq '.protection_rules' > "${RUNNER_TEMP}/production-rules.json"
+          jq -e 'any(.[]; .type == "required_reviewers" and (.reviewers | length > 0) and .prevent_self_review == true)' \
+            "${RUNNER_TEMP}/production-rules.json" >/dev/null
+
+  prepare:
+    name: Prepare Notification, storage and Subscription API
+    needs: [checks, preflight]
     runs-on: ubuntu-latest
     environment: production
-
+    outputs:
+      core: ${{ steps.core.outputs.json }}
+      worker_image: ${{ steps.image.outputs.worker }}
+      subscription_url: ${{ steps.subscription.outputs.url }}
+      notification_app: ${{ steps.notification.outputs.appName }}
+      notification_revision: ${{ steps.notification.outputs.revision }}
+      notification_image: ${{ steps.image.outputs.notification }}
+      notification_queue: ${{ steps.queue.outputs.name }}
+    env:
+      CORE_DEPLOYMENT_NAME: ${{ inputs.core_deployment_name }}
+      SUBSCRIPTION_AUTH_TENANT_ID: ${{ inputs.subscription_auth_tenant_id }}
+      SUBSCRIPTION_AUTH_AUDIENCE: ${{ inputs.subscription_auth_audience }}
+      SUBSCRIPTION_TENANT_MAP: ${{ inputs.subscription_tenant_map }}
+      ACTIVATE_ROUTING: ${{ inputs.activate_routing }}
+      ROLLBACK_WORKER_IMAGE: ${{ inputs.rollback_worker_image }}
+      DEVELOPER_PRINCIPAL_IDS: ${{ vars.DEVELOPER_PRINCIPAL_IDS }}
+      DEPLOY_REF: ${{ github.ref }}
+      SUBSCRIPTION_CONFIGURATION_APPROVED: ${{ inputs.subscription_configuration_approved }}
+      ROUTING_CONFIGURATION_APPROVED: ${{ inputs.routing_configuration_approved }}
+      ROUTING_APPROVAL_REFERENCE: ${{ inputs.routing_approval_reference }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AUTH_AUDIENCE: ${{ vars.AUTH_AUDIENCE }}
+      TENANT_MAP: ${{ vars.TENANT_MAP }}
+      TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+      TELEGRAM_BOT_TOKEN_SECRET_URI: ${{ vars.TELEGRAM_BOT_TOKEN_SECRET_URI }}
     steps:
-      # -----------------------------------------------------------------------
-      # Checkout
-      # -----------------------------------------------------------------------
-
       - uses: actions/checkout@v7
-
-      # -----------------------------------------------------------------------
-      # Azure authentication
-      # -----------------------------------------------------------------------
-
+      # Run again after entering the existing protected environment so existing
+      # environment-scoped GitHub variables remain supported.
+      - name: Validate environment configuration before Azure authentication
+        run: python3 scripts/validate-rollout-config.py
       - name: Sign in to Azure
         uses: azure/login@v3
         with:
@@ -62,89 +150,119 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      # -----------------------------------------------------------------------
-      # Core infrastructure
-      # -----------------------------------------------------------------------
-
-      - name: Deploy core infrastructure
-        id: core
+      # Notification uses already provisioned resources before additive core changes.
+      - name: Read approved existing core outputs
+        id: baseline
         run: |
-          outputs=$(az deployment group create \
-            --resource-group "$RESOURCE_GROUP" \
-            --template-file infra/core.bicep \
-            --name "core-${GITHUB_SHA::7}" \
-            --parameters \
-              developerPrincipalIds='${{ vars.DEVELOPER_PRINCIPAL_IDS }}' \
-            --query properties.outputs \
-            -o json)
+          state=$(az deployment group show \
+            --resource-group "$RESOURCE_GROUP" --name "$CORE_DEPLOYMENT_NAME" \
+            --query properties.provisioningState -o tsv)
+          test "$state" = 'Succeeded'
+          outputs=$(az deployment group show \
+            --resource-group "$RESOURCE_GROUP" --name "$CORE_DEPLOYMENT_NAME" \
+            --query properties.outputs -o json)
+          # These standalone templates currently deploy with core defaults.
+          # Reject a custom/cross-group baseline before any workload update.
+          export BASELINE_CORE_OUTPUTS="$outputs"
+          expected_location=$(python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
 
-          for key in \
-            registryName \
-            registryLoginServer \
-            environmentId \
-            logAnalyticsWorkspaceId \
-            ingestionIdentityId \
-            ingestionIdentityClientId \
-            workerIdentityId \
-            workerIdentityClientId \
-            scalerIdentityId \
-            serviceBusName \
-            serviceBusFqdn \
-            incidentQueueName \
-            cosmosAccountName \
-            cosmosEndpoint \
-            cosmosDatabaseName \
-            cosmosContainerName \
-            notificationIdentityId \
-            notificationIdentityClientId \
-            notificationScalerIdentityId \
-            notificationQueueName \
-            keyVaultName \
-            dashboardIdentityId \
-            dashboardIdentityClientId \
-            evidenceBlobEndpoint \
-            evidenceContainerName
-          do
-            value=$(echo "$outputs" | jq -r ".${key}.value")
+          source = Path('infra/core.bicep').read_text()
+          def default(name):
+              match = re.search(r"^param " + name + r" string = '([^']+)'$", source, re.M)
+              if match is None:
+                  raise SystemExit('::error::Core default requires a separately reviewed deployment design')
+              return match.group(1)
+          expected = f"/subscriptions/{os.environ['AZURE_SUBSCRIPTION_ID']}/resourceGroups/{os.environ['RESOURCE_GROUP']}/providers/Microsoft.App/managedEnvironments/{default('namePrefix')}-env"
+          actual = json.loads(os.environ['BASELINE_CORE_OUTPUTS'])['environmentId']['value']
+          if actual.lower() != expected.lower():
+              raise SystemExit('::error::Baseline environment does not match core defaults in the approved subscription/resource group')
+          print(default('location'))
+          PY
+          )
+          environment_id=$(echo "$outputs" | jq -er '.environmentId.value')
+          actual_location=$(az resource show --ids "$environment_id" --query location -o tsv)
+          test "$actual_location" = "$expected_location"
+          for key in registryName registryLoginServer environmentId \
+            notificationIdentityId notificationIdentityClientId notificationScalerIdentityId \
+            serviceBusName serviceBusFqdn notificationQueueName \
+            evidenceBlobEndpoint evidenceContainerName; do
+            value=$(echo "$outputs" | jq -er ".${key}.value // empty")
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
           done
 
-      # -----------------------------------------------------------------------
-      # Build container images
-      # -----------------------------------------------------------------------
+      # CD never switches queues. A separately approved, quiesced cutover must
+      # already be complete; this read-only gate checks durable selection.
+      - name: Verify persistent notification queue selection before workload changes
+        id: queue
+        env:
+          LEGACY_WORKER_DEFAULT_IMAGE: ${{ vars.LEGACY_WORKER_DEFAULT_IMAGE }}
+          LEGACY_NOTIFICATION_DEFAULT_IMAGE: ${{ vars.LEGACY_NOTIFICATION_DEFAULT_IMAGE }}
+          SELECTED_NOTIFICATION_QUEUE: ${{ vars.NOTIFICATION_QUEUE_NAME }}
+          QUEUE_SELECTION_APPROVED: ${{ vars.NOTIFICATION_QUEUE_SELECTION_APPROVED }}
+          QUEUE_REVIEW_REFERENCE: ${{ inputs.notification_queue_review_reference }}
+          SERVICE_BUS_NAMESPACE: ${{ steps.baseline.outputs.serviceBusName }}
+        run: python3 scripts/verify-notification-queue.py
+
+      - name: Check the approved rollback image before changing any deployed service
+        if: inputs.activate_routing
+        env:
+          REGISTRY: ${{ steps.baseline.outputs.registryLoginServer }}
+          REGISTRY_NAME: ${{ steps.baseline.outputs.registryName }}
+        run: |
+          case "$ROLLBACK_WORKER_IMAGE" in
+            "${REGISTRY}/incident-worker@sha256:"*) ;;
+            *) echo "::error::Rollback image must be a pre-routing Worker digest in the existing registry" >&2; exit 1 ;;
+          esac
+          az acr login --name "$REGISTRY_NAME"
+          current=$(az containerapp show \
+            --resource-group "$RESOURCE_GROUP" --name incident-worker \
+            --query 'properties.template.containers[0].image' -o tsv)
+          docker pull --platform linux/amd64 "$current"
+          docker image inspect "$current" --format '{{json .RepoDigests}}' \
+            | jq -e --arg expected "$ROLLBACK_WORKER_IMAGE" 'index($expected) != null' >/dev/null
+          echo "Approved pre-routing Worker digest matches the currently deployed image" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build and push images
         id: image
         run: |
-          registry='${{ steps.core.outputs.registryLoginServer }}'
+          registry='${{ steps.baseline.outputs.registryLoginServer }}'
 
-          # $1 image, $2 service directory, $3 build context. The context is the
-          # repository root for the services that install the Common Event Model,
-          # because a Dockerfile can only copy from inside its own context.
           build_and_push() {
             docker buildx build \
               --platform linux/amd64 \
               --tag "${registry}/$1:${GITHUB_SHA}" \
-              --tag "${registry}/$1:latest" \
               --file "$2/Dockerfile" \
+              --metadata-file "${RUNNER_TEMP}/$1.json" \
               --push \
               "$3"
           }
 
           for attempt in 1 2 3; do
             if az acr login \
-              --name '${{ steps.core.outputs.registryName }}' \
+              --name '${{ steps.baseline.outputs.registryName }}' \
               && build_and_push incident-ingestion ingestion-service . \
               && build_and_push incident-worker worker-service . \
               && build_and_push incident-notification notification-service . \
+              && build_and_push incident-subscription subscription-service ./subscription-service \
               && build_and_push incident-dashboard business-dashboard ./business-dashboard \
               && build_and_push incident-load-simulator load-simulator ./load-simulator; then
 
-              echo "ingestion=${registry}/incident-ingestion:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-              echo "worker=${registry}/incident-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-              echo "notification=${registry}/incident-notification:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-              echo "dashboard=${registry}/incident-dashboard:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-              echo "simulator=${registry}/incident-load-simulator:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+              digest=$(jq -er '."containerimage.digest"' "${RUNNER_TEMP}/incident-ingestion.json")
+              echo "ingestion=${registry}/incident-ingestion@${digest}" >> "$GITHUB_OUTPUT"
+              digest=$(jq -er '."containerimage.digest"' "${RUNNER_TEMP}/incident-worker.json")
+              echo "worker=${registry}/incident-worker@${digest}" >> "$GITHUB_OUTPUT"
+              digest=$(jq -er '."containerimage.digest"' "${RUNNER_TEMP}/incident-notification.json")
+              echo "notification=${registry}/incident-notification@${digest}" >> "$GITHUB_OUTPUT"
+              digest=$(jq -er '."containerimage.digest"' "${RUNNER_TEMP}/incident-subscription.json")
+              echo "subscription=${registry}/incident-subscription@${digest}" >> "$GITHUB_OUTPUT"
+              digest=$(jq -er '."containerimage.digest"' "${RUNNER_TEMP}/incident-dashboard.json")
+              echo "dashboard=${registry}/incident-dashboard@${digest}" >> "$GITHUB_OUTPUT"
+              digest=$(jq -er '."containerimage.digest"' "${RUNNER_TEMP}/incident-load-simulator.json")
+              echo "simulator=${registry}/incident-load-simulator@${digest}" >> "$GITHUB_OUTPUT"
               exit 0
             fi
 
@@ -158,9 +276,203 @@ jobs:
           echo "::error::Build failed after 3 attempts" >&2
           exit 1
 
-      # -----------------------------------------------------------------------
-      # Deploy ingestion service
-      # -----------------------------------------------------------------------
+
+      - name: Scan the exact subscription deployment image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: ${{ steps.image.outputs.subscription }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Scan the exact notification deployment image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: ${{ steps.image.outputs.notification }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-setup-trivy: true
+
+      - name: Scan the exact worker deployment image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: ${{ steps.image.outputs.worker }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-setup-trivy: true
+
+      - name: Scan the exact ingestion deployment image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: ${{ steps.image.outputs.ingestion }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-setup-trivy: true
+
+      - name: Scan the exact dashboard deployment image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: ${{ steps.image.outputs.dashboard }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-setup-trivy: true
+
+      - name: Scan the exact simulator deployment image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: ${{ steps.image.outputs.simulator }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-setup-trivy: true
+
+      - name: Check the exact Notification image without external delivery
+        env:
+          NOTIFICATION_IMAGE: ${{ steps.image.outputs.notification }}
+        run: |
+          docker pull --platform linux/amd64 "$NOTIFICATION_IMAGE"
+          docker run --rm --network none \
+            --mount "type=bind,source=${GITHUB_WORKSPACE}/scripts/verify-notification-compatibility.py,target=/verify.py,readonly" \
+            --entrypoint python "$NOTIFICATION_IMAGE" /verify.py
+
+      - name: Deploy the notification service
+        id: notification
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/notification.bicep \
+            --name "notification-${GITHUB_SHA::7}" \
+            --parameters \
+              minReplicas=1 \
+              environmentId='${{ steps.baseline.outputs.environmentId }}' \
+              identityId='${{ steps.baseline.outputs.notificationIdentityId }}' \
+              identityClientId='${{ steps.baseline.outputs.notificationIdentityClientId }}' \
+              scalerIdentityId='${{ steps.baseline.outputs.notificationScalerIdentityId }}' \
+              serviceBusFqdn='${{ steps.baseline.outputs.serviceBusFqdn }}' \
+              serviceBusNamespace='${{ steps.baseline.outputs.serviceBusName }}' \
+              serviceBusQueue='${{ steps.queue.outputs.name }}' \
+              registryServer='${{ steps.baseline.outputs.registryLoginServer }}' \
+              image='${{ steps.image.outputs.notification }}' \
+              telegramChatId="$TELEGRAM_CHAT_ID" \
+              telegramBotTokenSecretUri="$TELEGRAM_BOT_TOKEN_SECRET_URI" \
+              evidenceBlobEndpoint='${{ steps.baseline.outputs.evidenceBlobEndpoint }}' \
+              evidenceContainer='${{ steps.baseline.outputs.evidenceContainerName }}' \
+            --query properties.outputs \
+            -o json)
+
+          echo "appName=$(echo "$outputs" | jq -er '.appName.value')" >> "$GITHUB_OUTPUT"
+          echo "revision=$(echo "$outputs" | jq -er '.latestRevisionName.value')" >> "$GITHUB_OUTPUT"
+
+
+      - name: Verify notification revision runtime readiness
+        env:
+          APP_NAME: ${{ steps.notification.outputs.appName }}
+          REVISION: ${{ steps.notification.outputs.revision }}
+          EXPECTED_IMAGE: ${{ steps.image.outputs.notification }}
+        run: |
+          for attempt in $(seq 1 30); do
+            az containerapp revision show --resource-group "$RESOURCE_GROUP" \
+              --name "$APP_NAME" --revision "$REVISION" -o json > "${RUNNER_TEMP}/revision.json"
+            if python3 scripts/verify-container-revision.py "${RUNNER_TEMP}/revision.json" "$EXPECTED_IMAGE" "notification"; then
+              az containerapp logs show --resource-group "$RESOURCE_GROUP" \
+                --name "$APP_NAME" --revision "$REVISION" --type console \
+                --tail 100 --format text > "${RUNNER_TEMP}/startup.log"
+              if grep -Eq 'notification service ready notifier=TelegramNotifier' "${RUNNER_TEMP}/startup.log"; then
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo "::error::Expected notification revision did not become healthy and running" >&2
+          exit 1
+
+      - name: Deploy core infrastructure
+        id: core
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/core.bicep \
+            --name "core-${GITHUB_SHA::7}" \
+            --parameters \
+              developerPrincipalIds="$DEVELOPER_PRINCIPAL_IDS" \
+            --query properties.outputs \
+            -o json)
+
+          for key in \
+            logAnalyticsWorkspaceId \
+            cosmosAccountName \
+            registryName \
+            registryLoginServer \
+            environmentId \
+            ingestionIdentityId \
+            ingestionIdentityClientId \
+            workerIdentityId \
+            workerIdentityClientId \
+            scalerIdentityId \
+            serviceBusName \
+            serviceBusFqdn \
+            incidentQueueName \
+            cosmosEndpoint \
+            cosmosDatabaseName \
+            cosmosContainerName \
+            notificationIdentityId \
+            notificationIdentityClientId \
+            notificationScalerIdentityId \
+            notificationQueueName \
+            keyVaultName \
+            dashboardIdentityId \
+            dashboardIdentityClientId \
+            evidenceBlobEndpoint \
+            evidenceContainerName \
+            subscriptionIdentityId \
+            subscriptionIdentityClientId \
+            cosmosSubscriptionsContainerName
+          do
+            value=$(echo "$outputs" | jq -er ".${key}.value // empty")
+            echo "${key}=${value}" >> "$GITHUB_OUTPUT"
+          done
+          echo "json=$(echo "$outputs" | jq -c .)" >> "$GITHUB_OUTPUT"
+
+
+      - name: Deploy the Subscription API
+        id: subscription
+        env:
+          ENVIRONMENT_ID: ${{ steps.core.outputs.environmentId }}
+          IDENTITY_ID: ${{ steps.core.outputs.subscriptionIdentityId }}
+          IDENTITY_CLIENT_ID: ${{ steps.core.outputs.subscriptionIdentityClientId }}
+          COSMOS_ENDPOINT: ${{ steps.core.outputs.cosmosEndpoint }}
+          COSMOS_DATABASE: ${{ steps.core.outputs.cosmosDatabaseName }}
+          COSMOS_SUBSCRIPTIONS_CONTAINER: ${{ steps.core.outputs.cosmosSubscriptionsContainerName }}
+          IMAGE: ${{ steps.image.outputs.subscription }}
+        run: |
+          url=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/subscription.bicep \
+            --name "subscription-${GITHUB_SHA::7}" \
+            --parameters \
+              environmentId="$ENVIRONMENT_ID" identityId="$IDENTITY_ID" \
+              identityClientId="$IDENTITY_CLIENT_ID" cosmosEndpoint="$COSMOS_ENDPOINT" \
+              cosmosDatabase="$COSMOS_DATABASE" cosmosSubscriptionsContainer="$COSMOS_SUBSCRIPTIONS_CONTAINER" \
+              authTenantId="$SUBSCRIPTION_AUTH_TENANT_ID" authAudience="$SUBSCRIPTION_AUTH_AUDIENCE" \
+              tenantMap="$SUBSCRIPTION_TENANT_MAP" image="$IMAGE" \
+            --query properties.outputs.url.value -o tsv)
+          test -n "$url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Subscription API Cosmos readiness and bearer authorization
+        env:
+          SUBSCRIPTION_URL: ${{ steps.subscription.outputs.url }}
+        run: bash scripts/verify-subscription-api.sh
 
       - name: Deploy the ingestion service
         id: app
@@ -176,72 +488,13 @@ jobs:
               logAnalyticsWorkspaceId='${{ steps.core.outputs.logAnalyticsWorkspaceId }}' \
               serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
               serviceBusQueue='${{ steps.core.outputs.incidentQueueName }}' \
-              authAudience='${{ vars.AUTH_AUDIENCE }}' \
-              tenantMap='${{ vars.TENANT_MAP }}' \
+              authAudience="$AUTH_AUDIENCE" \
+              tenantMap="$TENANT_MAP" \
               image='${{ steps.image.outputs.ingestion }}' \
             --query properties.outputs.url.value \
             -o tsv)
 
           echo "url=${url}" >> "$GITHUB_OUTPUT"
-
-      # -----------------------------------------------------------------------
-      # Deploy processing worker
-      # -----------------------------------------------------------------------
-
-      - name: Deploy the processing worker
-        run: |
-          az deployment group create \
-            --resource-group "$RESOURCE_GROUP" \
-            --template-file infra/worker.bicep \
-            --name "worker-${GITHUB_SHA::7}" \
-            --parameters \
-              environmentId='${{ steps.core.outputs.environmentId }}' \
-              identityId='${{ steps.core.outputs.workerIdentityId }}' \
-              identityClientId='${{ steps.core.outputs.workerIdentityClientId }}' \
-              scalerIdentityId='${{ steps.core.outputs.scalerIdentityId }}' \
-              logAnalyticsWorkspaceId='${{ steps.core.outputs.logAnalyticsWorkspaceId }}' \
-              serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
-              serviceBusNamespace='${{ steps.core.outputs.serviceBusName }}' \
-              serviceBusQueue='${{ steps.core.outputs.incidentQueueName }}' \
-              notificationQueue='${{ steps.core.outputs.notificationQueueName }}' \
-              cosmosEndpoint='${{ steps.core.outputs.cosmosEndpoint }}' \
-              cosmosDatabase='${{ steps.core.outputs.cosmosDatabaseName }}' \
-              cosmosContainer='${{ steps.core.outputs.cosmosContainerName }}' \
-              registryServer='${{ steps.core.outputs.registryLoginServer }}' \
-              image='${{ steps.image.outputs.worker }}' \
-            --query properties.outputs.appName.value \
-            -o tsv
-
-      # -----------------------------------------------------------------------
-      # Deploy notification service
-      # -----------------------------------------------------------------------
-
-      - name: Deploy the notification service
-        run: |
-          az deployment group create \
-            --resource-group "$RESOURCE_GROUP" \
-            --template-file infra/notification.bicep \
-            --name "notification-${GITHUB_SHA::7}" \
-            --parameters \
-              environmentId='${{ steps.core.outputs.environmentId }}' \
-              identityId='${{ steps.core.outputs.notificationIdentityId }}' \
-              identityClientId='${{ steps.core.outputs.notificationIdentityClientId }}' \
-              scalerIdentityId='${{ steps.core.outputs.notificationScalerIdentityId }}' \
-              serviceBusFqdn='${{ steps.core.outputs.serviceBusFqdn }}' \
-              serviceBusNamespace='${{ steps.core.outputs.serviceBusName }}' \
-              serviceBusQueue='${{ steps.core.outputs.notificationQueueName }}' \
-              registryServer='${{ steps.core.outputs.registryLoginServer }}' \
-              image='${{ steps.image.outputs.notification }}' \
-              telegramChatId='${{ vars.TELEGRAM_CHAT_ID }}' \
-              telegramBotTokenSecretUri='${{ vars.TELEGRAM_BOT_TOKEN_SECRET_URI }}' \
-              evidenceBlobEndpoint='${{ steps.core.outputs.evidenceBlobEndpoint }}' \
-              evidenceContainer='${{ steps.core.outputs.evidenceContainerName }}' \
-            --query properties.outputs.appName.value \
-            -o tsv
-
-      # -----------------------------------------------------------------------
-      # Deploy business dashboard
-      # -----------------------------------------------------------------------
 
       - name: Deploy the business dashboard
         id: dashboard
@@ -282,10 +535,6 @@ jobs:
           echo "::error::${url}/_stcore/health did not respond" >&2
           exit 1
 
-      # -----------------------------------------------------------------------
-      # Verify ingestion deployment
-      # -----------------------------------------------------------------------
-
       - name: Verify the deployment
         run: |
           url='${{ steps.app.outputs.url }}'
@@ -315,32 +564,7 @@ jobs:
                   exit 1
                 fi
 
-                anon=$(curl \
-                  -s \
-                  -o /dev/null \
-                  -w '%{http_code}' \
-                  --max-time 20 \
-                  -X POST \
-                  "${url}/api/v1/incidents" \
-                  -H 'content-type: application/json' \
-                  -d '{
-                    "event_id":"EVT-ANON",
-                    "tenant_id":"T",
-                    "site_id":"S",
-                    "source_id":"C",
-                    "source_name":"n",
-                    "source_type":"video_analytics",
-                    "analytics_type":"intrusion_detection",
-                    "event_type":"intrusion_detected",
-                    "severity":"low",
-                    "timestamp":"2026-01-01T00:00:00"
-                  }')
-
-                if [ "$anon" != "401" ]; then
-                  echo "::error::An unauthenticated POST returned ${anon}, expected 401. The API is open." >&2
-                  exit 1
-                fi
-
+                INGESTION_URL="$url" bash scripts/verify-anonymous-ingestion.sh
                 echo "::notice::Deployed, healthy, ready, and refusing anonymous writes at ${url}"
                 exit 0
               fi
@@ -355,141 +579,6 @@ jobs:
           echo "::error::${url}/health did not report healthy" >&2
           exit 1
 
-      # -----------------------------------------------------------------------
-      # Verify worker end-to-end
-      # -----------------------------------------------------------------------
-
-      - name: Verify the worker drains the queue
-        run: |
-          url='${{ steps.app.outputs.url }}'
-          namespace='${{ steps.core.outputs.serviceBusName }}'
-          queue='${{ steps.core.outputs.incidentQueueName }}'
-
-          counts() {
-            az servicebus queue show \
-              --resource-group "$RESOURCE_GROUP" \
-              --namespace-name "$namespace" \
-              --name "$queue" \
-              --query '[countDetails.activeMessageCount, countDetails.deadLetterMessageCount]' \
-              -o tsv
-          }
-
-          read_counts() {
-            local out
-
-            out="$(counts)"
-
-            active="$(echo "$out" | sed -n 1p)"
-            dead="$(echo "$out" | sed -n 2p)"
-
-            case "${active}:${dead}" in
-              *[!0-9:]*|:*|*:)
-                echo "::error::Could not read queue counts (active='${active}' dead='${dead}'). The az query shape changed." >&2
-                exit 1
-                ;;
-            esac
-          }
-
-          read_counts
-
-          active_before=$active
-          dead_before=$dead
-
-          echo "before: active=${active_before} dead-lettered=${dead_before}"
-
-          token=$(az account get-access-token \
-            --resource '${{ vars.AUTH_AUDIENCE }}' \
-            --query accessToken \
-            -o tsv \
-            2>/dev/null \
-            || true)
-
-          if [ -z "$token" ]; then
-            echo "::error::Could not get a token for ${{ vars.AUTH_AUDIENCE }}. The deploy identity needs the Incidents.Write app role and an entry in TENANT_MAP." >&2
-            exit 1
-          fi
-
-          body=$(curl \
-            -sS \
-            --max-time 30 \
-            -w '\n<<HTTP:%{http_code}>>' \
-            -X POST \
-            "${url}/api/v1/incidents" \
-            -H "Authorization: Bearer ${token}" \
-            -H 'content-type: application/json' \
-            -d "{
-              \"event_id\": \"EVT-CD-${GITHUB_SHA::7}-$(date +%s)\",
-              \"tenant_id\": \"${{ vars.CD_TENANT_ID }}\",
-              \"site_id\": \"SITE-CD\",
-              \"source_id\": \"CAM-CD\",
-              \"source_name\": \"Deployment verification\",
-              \"source_type\": \"video_analytics\",
-              \"analytics_type\": \"intrusion_detection\",
-              \"event_type\": \"intrusion_detected\",
-              \"severity\": \"low\",
-              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S)\",
-              \"confidence\": 0.99,
-              \"description\": \"Synthetic incident from the CD pipeline\"
-            }")
-
-          if ! echo "$body" | grep -q '"status":"accepted"'; then
-            echo "::error::Ingestion did not accept the verification incident. Response: ${body}" >&2
-
-            echo "$body" \
-              | grep -o '"detail":"[^"]*"' >&2 \
-              || true
-
-            exit 1
-          fi
-
-          echo "published one incident through ${url}"
-
-          # Wait up to five minutes for the Worker to consume the message.
-          for attempt in $(seq 1 30); do
-            sleep 10
-
-            read_counts
-
-            if [ "$dead" -gt "$dead_before" ]; then
-              echo "::error::The worker dead-lettered the incident instead of processing it (dead-letter count ${dead_before} -> ${dead}). Check the worker logs." >&2
-              exit 1
-            fi
-
-            if [ "$active" -eq 0 ]; then
-              echo "::notice::Worker drained ${queue} after $((attempt * 10))s"
-              drained=yes
-              break
-            fi
-
-            echo "waiting: ${active} message(s) still on ${queue}"
-          done
-
-          if [ "${drained:-no}" != "yes" ]; then
-            echo "::error::${queue} still holds ${active} message(s) after 5 minutes; the worker is not consuming" >&2
-            exit 1
-          fi
-
-          # Draining proves the queue emptied, not that the incident was kept.
-          # A worker that cannot store will eventually dead-letter the message.
-          # A worker with INCIDENT_STORE unset could drain it without
-          # persisting it, so explicitly verify the deployed configuration.
-          store=$(az containerapp show \
-            --resource-group "$RESOURCE_GROUP" \
-            --name incident-worker \
-            --query "properties.template.containers[0].env[?name=='INCIDENT_STORE'].value | [0]" \
-            -o tsv)
-
-          if [ "$store" != "cosmos" ]; then
-            echo "::error::The worker drained ${queue} but is not configured to persist (INCIDENT_STORE='${store}'). It is consuming incidents and discarding them." >&2
-            exit 1
-          fi
-
-          echo "::notice::Worker is consuming and persisting to Cosmos"
-
-      # -----------------------------------------------------------------------
-      # Deploy load simulator
-      # -----------------------------------------------------------------------
-
       - name: Deploy the load simulator job
         run: |
           outputs=$(az deployment group create \
@@ -500,7 +589,7 @@ jobs:
               environmentId='${{ steps.core.outputs.environmentId }}' \
               registryName='${{ steps.core.outputs.registryName }}' \
               targetUrl='${{ steps.app.outputs.url }}' \
-              authAudience='${{ vars.AUTH_AUDIENCE }}' \
+              authAudience="$AUTH_AUDIENCE" \
               image='${{ steps.image.outputs.simulator }}' \
             --query properties.outputs \
             -o json)
@@ -508,10 +597,6 @@ jobs:
           echo "::notice::Load simulator job: $(echo "$outputs" | jq -r '.jobName.value')"
           echo "::notice::TENANT_MAP needs: $(echo "$outputs" | jq -r '.tenantMapAdditions.value | join(",")')"
           echo "::notice::Grant Incidents.Write to: $(echo "$outputs" | jq -r '.producerPrincipalIds.value | join(", ")')"
-
-      # -----------------------------------------------------------------------
-      # Resource-health workbook
-      # -----------------------------------------------------------------------
 
       - name: Deploy resource-health workbook
         continue-on-error: true
@@ -539,3 +624,133 @@ jobs:
               incidentQueueName='${{ steps.core.outputs.incidentQueueName }}' \
               cosmosAccountName='${{ steps.core.outputs.cosmosAccountName }}' \
               alertEmails='${{ vars.ALERT_EMAILS }}'
+      - name: Record the preparation boundary
+        run: |
+          echo "Notification compatibility image check, healthy revision, subscriptions storage and protected API checks passed." >> "$GITHUB_STEP_SUMMARY"
+          echo "Worker was not changed by preparation. Routing activation is optional and requires another production review." >> "$GITHUB_STEP_SUMMARY"
+          echo "Live subscribed/unsubscribed/evidence E2E testing is deferred to its separately approved phase." >> "$GITHUB_STEP_SUMMARY"
+
+  activate-worker:
+    name: Approved routing-enabled Worker rollout (last)
+    needs: [checks, preflight, prepare]
+    if: inputs.activate_routing && inputs.routing_configuration_approved
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SUBSCRIPTION_URL: ${{ needs.prepare.outputs.subscription_url }}
+      SUBSCRIPTION_AUTH_AUDIENCE: ${{ inputs.subscription_auth_audience }}
+      SUBSCRIPTION_TENANT_MAP: ${{ inputs.subscription_tenant_map }}
+      REQUIRE_ENABLED_SUBSCRIPTION: 'true'
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Sign in to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Reviewer approves migration/demo subscriptions after API preparation.
+      # This reads approved state; it never creates subscriptions or posts events.
+      - name: Recheck protected API and an enabled subscription for the verifier tenant
+        run: bash scripts/verify-subscription-api.sh
+
+
+      - name: Verify notification revision runtime readiness
+        env:
+          APP_NAME: ${{ needs.prepare.outputs.notification_app }}
+          REVISION: ${{ needs.prepare.outputs.notification_revision }}
+          EXPECTED_IMAGE: ${{ needs.prepare.outputs.notification_image }}
+        run: |
+          for attempt in $(seq 1 30); do
+            az containerapp revision show --resource-group "$RESOURCE_GROUP" \
+              --name "$APP_NAME" --revision "$REVISION" -o json > "${RUNNER_TEMP}/revision.json"
+            if python3 scripts/verify-container-revision.py "${RUNNER_TEMP}/revision.json" "$EXPECTED_IMAGE" "notification"; then
+              az containerapp logs show --resource-group "$RESOURCE_GROUP" \
+                --name "$APP_NAME" --revision "$REVISION" --type console \
+                --tail 100 --format text > "${RUNNER_TEMP}/startup.log"
+              if grep -Eq 'notification service ready notifier=TelegramNotifier' "${RUNNER_TEMP}/startup.log"; then
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo "::error::Expected notification revision did not become healthy and running" >&2
+          exit 1
+
+      - name: Recheck persistent queue selection after production approval
+        env:
+          LEGACY_WORKER_DEFAULT_IMAGE: ${{ vars.LEGACY_WORKER_DEFAULT_IMAGE }}
+          LEGACY_NOTIFICATION_DEFAULT_IMAGE: ${{ vars.LEGACY_NOTIFICATION_DEFAULT_IMAGE }}
+          SELECTED_NOTIFICATION_QUEUE: ${{ vars.NOTIFICATION_QUEUE_NAME }}
+          QUEUE_SELECTION_APPROVED: ${{ vars.NOTIFICATION_QUEUE_SELECTION_APPROVED }}
+          QUEUE_REVIEW_REFERENCE: ${{ inputs.notification_queue_review_reference }}
+          SERVICE_BUS_NAMESPACE: ${{ fromJSON(needs.prepare.outputs.core).serviceBusName.value }}
+          EXPECTED_NOTIFICATION_QUEUE: ${{ needs.prepare.outputs.notification_queue }}
+        run: python3 scripts/verify-notification-queue.py
+
+      - name: Deploy the processing worker
+        id: worker
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/worker.bicep \
+            --name "worker-${GITHUB_SHA::7}" \
+            --parameters \
+              minReplicas=1 \
+              environmentId='${{ fromJSON(needs.prepare.outputs.core).environmentId.value }}' \
+              identityId='${{ fromJSON(needs.prepare.outputs.core).workerIdentityId.value }}' \
+              identityClientId='${{ fromJSON(needs.prepare.outputs.core).workerIdentityClientId.value }}' \
+              scalerIdentityId='${{ fromJSON(needs.prepare.outputs.core).scalerIdentityId.value }}' \
+              logAnalyticsWorkspaceId='${{ fromJSON(needs.prepare.outputs.core).logAnalyticsWorkspaceId.value }}' \
+              serviceBusFqdn='${{ fromJSON(needs.prepare.outputs.core).serviceBusFqdn.value }}' \
+              serviceBusNamespace='${{ fromJSON(needs.prepare.outputs.core).serviceBusName.value }}' \
+              serviceBusQueue='${{ fromJSON(needs.prepare.outputs.core).incidentQueueName.value }}' \
+              notificationQueue='${{ needs.prepare.outputs.notification_queue }}' \
+              cosmosEndpoint='${{ fromJSON(needs.prepare.outputs.core).cosmosEndpoint.value }}' \
+              cosmosDatabase='${{ fromJSON(needs.prepare.outputs.core).cosmosDatabaseName.value }}' \
+              cosmosContainer='${{ fromJSON(needs.prepare.outputs.core).cosmosContainerName.value }}' \
+              cosmosSubscriptionsContainer='${{ fromJSON(needs.prepare.outputs.core).cosmosSubscriptionsContainerName.value }}' \
+              registryServer='${{ fromJSON(needs.prepare.outputs.core).registryLoginServer.value }}' \
+              image='${{ needs.prepare.outputs.worker_image }}' \
+            --query properties.outputs \
+            -o json)
+
+          echo "appName=$(echo "$outputs" | jq -er '.appName.value')" >> "$GITHUB_OUTPUT"
+          echo "revision=$(echo "$outputs" | jq -er '.latestRevisionName.value')" >> "$GITHUB_OUTPUT"
+
+
+      - name: Verify worker revision runtime readiness
+        env:
+          APP_NAME: ${{ steps.worker.outputs.appName }}
+          REVISION: ${{ steps.worker.outputs.revision }}
+          EXPECTED_IMAGE: ${{ needs.prepare.outputs.worker_image }}
+        run: |
+          for attempt in $(seq 1 30); do
+            az containerapp revision show --resource-group "$RESOURCE_GROUP" \
+              --name "$APP_NAME" --revision "$REVISION" -o json > "${RUNNER_TEMP}/revision.json"
+            if python3 scripts/verify-container-revision.py "${RUNNER_TEMP}/revision.json" "$EXPECTED_IMAGE" "worker"; then
+              az containerapp logs show --resource-group "$RESOURCE_GROUP" \
+                --name "$APP_NAME" --revision "$REVISION" --type console \
+                --tail 100 --format text > "${RUNNER_TEMP}/startup.log"
+              if grep -Eq 'worker ready queue=.*store=cosmos\+notification' "${RUNNER_TEMP}/startup.log"; then
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo "::error::Expected worker revision did not become healthy and running" >&2
+          exit 1
+
+
+      - name: Record rollout limitations and rollback reference
+        env:
+          ROLLBACK_WORKER_IMAGE: ${{ inputs.rollback_worker_image }}
+          ROUTING_APPROVAL_REFERENCE: ${{ inputs.routing_approval_reference }}
+        run: |
+          echo "Routing-enabled Worker is on the expected healthy, running revision with Cosmos persistence configured." >> "$GITHUB_STEP_SUMMARY"
+          echo "No authenticated E2E incident, direct Telegram request, evidence upload or dead-letter replay was performed by this workflow." >> "$GITHUB_STEP_SUMMARY"
+          echo "Rollback image: $ROLLBACK_WORKER_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          echo "Approval reference: $ROUTING_APPROVAL_REFERENCE" >> "$GITHUB_STEP_SUMMARY"
+          echo "Runtime health is not evidence of queue consumption, persistence or real delivery; live E2E approval remains required." >> "$GITHUB_STEP_SUMMARY"

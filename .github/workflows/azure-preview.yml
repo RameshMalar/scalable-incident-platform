@@ -1,0 +1,164 @@
+name: Approved Azure infrastructure preview
+run-name: Azure preview ${{ inputs.source_sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full reviewed commit SHA from this repository
+        required: true
+        type: string
+      pr_number:
+        description: Explicit open same-repository PR number targeting main
+        required: true
+        type: string
+      review_reference:
+        description: Review evidence for this exact SHA and preview scope
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: azure-preview
+  cancel-in-progress: false
+jobs:
+  compile:
+    name: Validate authorization and compile without Azure credentials
+    if: github.ref == 'refs/heads/main' && github.repository == 'RameshMalar/scalable-incident-platform'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      source_sha: ${{ steps.bundle.outputs.source_sha }}
+      template_hash: ${{ steps.bundle.outputs.template_hash }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Checkout trusted workflow revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+      - name: Validate exact SHA and approval protection
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          REVIEW_REFERENCE: ${{ inputs.review_reference }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python trusted/scripts/validate-azure-preview.py inputs
+          python trusted/scripts/validate-azure-preview.py protection
+          python trusted/scripts/validate-azure-preview.py provenance
+      - name: Checkout candidate as data only
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: candidate
+          persist-credentials: false
+          sparse-checkout: infra
+          submodules: false
+          lfs: false
+      - name: Compile reviewed infrastructure without Azure login
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          REVIEW_REFERENCE: ${{ inputs.review_reference }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          test "$(git -C candidate rev-parse HEAD)" = "$SOURCE_SHA"
+          python trusted/scripts/validate-azure-preview.py source
+          mkdir bundle
+          # Direct compiler invocation: no candidate scripts, config or Azure CLI login.
+          az bicep install --version v0.47.16 >compiler-install.log 2>&1 || { echo "::error::Pinned compiler unavailable"; exit 1; }
+          "$HOME/.azure/bin/bicep" build --no-restore candidate/infra/core.bicep --outfile bundle/core.json >compile.log 2>&1 || { echo '::error::Compilation failed; review candidate locally'; exit 1; }
+          python trusted/scripts/validate-azure-preview.py bundle
+        id: bundle
+      - name: Upload immutable compiled template
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-azure-template-${{ github.run_attempt }}
+          path: |
+            bundle/core.json
+            bundle/manifest.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Record approval boundary
+        env:
+          SOURCE_SHA: ${{ steps.bundle.outputs.source_sha }}
+          TEMPLATE_HASH: ${{ steps.bundle.outputs.template_hash }}
+        run: |
+          echo "Reviewed source SHA: $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Compiled SHA-256: $TEMPLATE_HASH" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Review the dispatch review_reference and exact SHA before approving azure-preview.' >> "$GITHUB_STEP_SUMMARY"
+
+  preview:
+    name: Approved preview of immutable template
+    needs: compile
+    if: github.ref == 'refs/heads/main' && github.repository == 'RameshMalar/scalable-incident-platform'
+    runs-on: ubuntu-latest
+    environment: azure-preview
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      id-token: write
+    steps:
+      - name: Checkout trusted workflow revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+      - name: Download artifact from this run by immutable ID
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.compile.outputs.artifact_id }}
+          path: bundle
+          merge-multiple: true
+      - name: Recheck protection, bundle and dedicated identity before login
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ needs.compile.outputs.source_sha }}
+          TEMPLATE_HASH: ${{ needs.compile.outputs.template_hash }}
+          REVIEW_REFERENCE: ${{ inputs.review_reference }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          AZURE_PREVIEW_CLIENT_ID: ${{ vars.AZURE_PREVIEW_CLIENT_ID }}
+          AZURE_PREVIEW_TENANT_ID: ${{ vars.AZURE_PREVIEW_TENANT_ID }}
+          AZURE_PREVIEW_SUBSCRIPTION_ID: ${{ vars.AZURE_PREVIEW_SUBSCRIPTION_ID }}
+          AZURE_PREVIEW_RESOURCE_GROUP: ${{ vars.AZURE_PREVIEW_RESOURCE_GROUP }}
+          AZURE_PREVIEW_DEVELOPER_PRINCIPAL_IDS: ${{ vars.AZURE_PREVIEW_DEVELOPER_PRINCIPAL_IDS }}
+          AZURE_PREVIEW_CONFIGURATION_APPROVED: ${{ vars.AZURE_PREVIEW_CONFIGURATION_APPROVED }}
+          PRODUCTION_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+        run: |
+          python trusted/scripts/validate-azure-preview.py protection
+          python trusted/scripts/validate-azure-preview.py provenance
+          python trusted/scripts/validate-azure-preview.py verify
+          python trusted/scripts/validate-azure-preview.py identity
+          az version --query '"azure-cli"' -o tsv | python trusted/scripts/validate-azure-preview.py cli-version
+      - name: Sign in using dedicated preview identity
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_PREVIEW_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_PREVIEW_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_PREVIEW_SUBSCRIPTION_ID }}
+      - name: Preview only; retain no raw infrastructure output
+        env:
+          AZURE_PREVIEW_SUBSCRIPTION_ID: ${{ vars.AZURE_PREVIEW_SUBSCRIPTION_ID }}
+          AZURE_PREVIEW_RESOURCE_GROUP: ${{ vars.AZURE_PREVIEW_RESOURCE_GROUP }}
+          AZURE_PREVIEW_DEVELOPER_PRINCIPAL_IDS: ${{ vars.AZURE_PREVIEW_DEVELOPER_PRINCIPAL_IDS }}
+          SOURCE_SHA: ${{ needs.compile.outputs.source_sha }}
+          TEMPLATE_HASH: ${{ needs.compile.outputs.template_hash }}
+        run: |
+          umask 077
+          az deployment group what-if \
+            --subscription "$AZURE_PREVIEW_SUBSCRIPTION_ID" \
+            --resource-group "$AZURE_PREVIEW_RESOURCE_GROUP" \
+            --template-file bundle/core.json \
+            --parameters developerPrincipalIds="$AZURE_PREVIEW_DEVELOPER_PRINCIPAL_IDS" \
+            --validation-level ProviderNoRbac \
+            --no-pretty-print -o json > "$RUNNER_TEMP/preview.json" 2> "$RUNNER_TEMP/preview-error.log" \
+            || { echo '::error::Preview failed; raw diagnostics are deliberately withheld'; exit 1; }
+          python trusted/scripts/validate-azure-preview.py summary "$RUNNER_TEMP/preview.json"

@@ -37,3 +37,32 @@ def test_cosmos_configuration_selects_the_real_store(monkeypatch):
     assert isinstance(handler.publisher, MockNotificationPublisher)
 
     assert handler_name(handler) == "cosmos+notification"
+    assert handler.router.reader.endpoint == handler.store.endpoint
+    assert handler.router.reader.container_name == "subscriptions"
+
+
+def test_subscription_container_configuration(monkeypatch):
+    monkeypatch.setenv("INCIDENT_STORE", "cosmos")
+    monkeypatch.setenv("COSMOS_ENDPOINT", "https://test.invalid")
+    monkeypatch.setenv("COSMOS_DATABASE", "configured-db")
+    monkeypatch.setenv("COSMOS_SUBSCRIPTIONS_CONTAINER", "configured-subscriptions")
+    monkeypatch.delenv("NOTIFICATION_PUBLISHER", raising=False)
+    handler = build_handler()
+    assert handler.router.reader.database_name == "configured-db"
+    assert handler.router.reader.container_name == "configured-subscriptions"
+
+
+async def test_startup_failure_closes_handler_and_consumer(monkeypatch):
+    from unittest.mock import AsyncMock
+    import pytest
+    import app.main as main_module
+
+    handler, consumer = AsyncMock(), AsyncMock()
+    handler.start.side_effect = RuntimeError("startup failed")
+    monkeypatch.setattr(main_module, "build_handler", lambda: handler)
+    monkeypatch.setattr(main_module, "IncidentConsumer", lambda **kwargs: consumer)
+    monkeypatch.setattr(main_module, "install_shutdown_handler", lambda stop: None)
+    with pytest.raises(RuntimeError, match="startup failed"):
+        await main_module.run()
+    handler.close.assert_awaited_once()
+    consumer.close.assert_awaited_once()

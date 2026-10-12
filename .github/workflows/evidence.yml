@@ -141,6 +141,17 @@ jobs:
       # Prove the image reaches Telegram
       # -----------------------------------------------------------------------
 
+      - name: Install read-only routing preflight dependencies
+        if: inputs.send_test_alert
+        run: pip install -r worker-service/requirements.txt
+
+      - name: Require an enabled subscription and approved evidence destination
+        if: inputs.send_test_alert
+        env:
+          CD_TENANT_ID: ${{ vars.CD_TENANT_ID }}
+          DEPLOY_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+        run: python3 scripts/verify-evidence-routing.py
+
       - name: Post an incident referencing the evidence
         id: alert
         if: inputs.send_test_alert
@@ -163,7 +174,8 @@ jobs:
             exit 1
           fi
 
-          event_id="EVT-EVIDENCE-$(date +%s)"
+          echo "::add-mask::$token"
+          event_id="EVT-EVIDENCE-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           uri='${{ steps.target.outputs.endpoint }}/${{ steps.target.outputs.container }}/${{ inputs.blob_name }}'
 
           # e2e_test reaches Telegram and is labelled as a test there, which is
@@ -246,4 +258,5 @@ jobs:
             echo "waiting for logs (${attempt}/20)"
           done
 
-          echo "::warning::No delivery log found for ${event_id} within 6 minutes. Log Analytics ingestion can lag further than that, so check the Telegram chat and the notification service logs directly before assuming a failure."
+          echo "::error::Photo delivery was not verified within the polling window; inspect delivery and Log Analytics ingestion before retrying." >&2
+          exit 1

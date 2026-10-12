@@ -20,6 +20,9 @@ from app.notification_publisher import (
 )
 from app.processor import IncidentHandler, IncidentProcessor, LoggingIncidentHandler
 from app.store import CosmosIncidentStore
+from app.subscription_store import CosmosSubscriptionReader
+from app.subscription_router import SubscriptionRouter
+from app.destination_policy import CosmosDestinationPolicy
 
 logger = logging.getLogger("app.main")
 
@@ -55,12 +58,15 @@ def build_handler() -> IncidentHandler:
               |
               +--> Cosmos DB
               |
-              +--> notification-events
+              +--> enabled subscription matches --> notification-events
 
     When Cosmos reports an incident as a duplicate, the notification publisher
     still attempts the downstream handoff. This protects against the case where
     persistence succeeded but notification publishing failed on an earlier
     delivery.
+
+    Subscription reads reuse COSMOS_ENDPOINT/COSMOS_DATABASE and the worker
+    identity, with COSMOS_SUBSCRIPTIONS_CONTAINER defaulting to subscriptions.
     """
 
     if os.environ.get("INCIDENT_STORE") != "cosmos":
@@ -78,6 +84,7 @@ def build_handler() -> IncidentHandler:
     return PersistAndNotifyHandler(
         store=store,
         publisher=publisher,
+        router=SubscriptionRouter(CosmosSubscriptionReader(), policies=CosmosDestinationPolicy()),
     )
 
 
@@ -126,29 +133,27 @@ async def run() -> int:
     stop = asyncio.Event()
     install_shutdown_handler(stop)
 
-    start = getattr(handler, "start", None)
-    if start is not None:
-        await start()
-
-    await consumer.start()
-
-    logger.info(
-        "worker ready queue=%s store=%s",
-        consumer.queue_name,
-        handler_name(handler),
-    )
-
     try:
+        start = getattr(handler, "start", None)
+        if start is not None:
+            await start()
+        await consumer.start()
+        logger.info(
+            "worker ready queue=%s store=%s",
+            consumer.queue_name,
+            handler_name(handler),
+        )
         await consumer.run(stop)
 
     finally:
         logger.info("worker draining and shutting down")
 
-        await consumer.close()
-
-        close = getattr(handler, "close", None)
-        if close is not None:
-            await close()
+        try:
+            await consumer.close()
+        finally:
+            close = getattr(handler, "close", None)
+            if close is not None:
+                await close()
 
     return 0
 

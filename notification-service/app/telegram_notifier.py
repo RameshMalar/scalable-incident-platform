@@ -8,9 +8,11 @@ import time
 
 import aiohttp
 from common_event_model import IncidentEvent
+from pydantic import TypeAdapter
 
 from .evidence import EvidenceStore, EvidenceUnavailable
 from .notifier import Notifier
+from .notification_models import TelegramChatId
 
 
 logger = logging.getLogger("app.telegram_notifier")
@@ -88,7 +90,15 @@ class TelegramNotifier(Notifier):
         self._send_lock = asyncio.Lock()
         self._next_send_at = 0.0
 
-    async def notify(self, event: IncidentEvent) -> None:
+    async def notify(
+        self, event: IncidentEvent, *, telegram_chat_id: str | None = None
+    ) -> None:
+        # None is the isolated legacy path. An explicit invalid destination
+        # raises before evidence or HTTP IO; it never falls back to self.chat_id.
+        destination = (
+            self.chat_id if telegram_chat_id is None
+            else TypeAdapter(TelegramChatId).validate_python(telegram_chat_id)
+        )
         # Fetched before the send lock is taken: blob IO must not stall the
         # throttle that the whole Telegram chat shares.
         evidence = await self._load_evidence(event)
@@ -106,7 +116,7 @@ class TelegramNotifier(Notifier):
                             session,
                             "sendPhoto",
                             lambda: {
-                                "data": self._photo_payload(event, evidence)
+                                "data": self._photo_payload(event, evidence, destination)
                             },
                             DEFAULT_PHOTO_TIMEOUT_SECONDS,
                             event,
@@ -129,7 +139,7 @@ class TelegramNotifier(Notifier):
                     "sendMessage",
                     lambda: {
                         "json": {
-                            "chat_id": self.chat_id,
+                            "chat_id": destination,
                             "text": self._format_message(event),
                         }
                     },
@@ -206,9 +216,11 @@ class TelegramNotifier(Notifier):
             )
             return None
 
-    def _photo_payload(self, event: IncidentEvent, evidence) -> aiohttp.FormData:
+    def _photo_payload(
+        self, event: IncidentEvent, evidence, destination: str
+    ) -> aiohttp.FormData:
         form = aiohttp.FormData()
-        form.add_field("chat_id", self.chat_id)
+        form.add_field("chat_id", destination)
         form.add_field("caption", self._caption(event))
         form.add_field(
             "photo",

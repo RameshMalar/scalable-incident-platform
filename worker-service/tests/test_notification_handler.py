@@ -16,6 +16,7 @@ async def test_processed_incident_is_published():
     handler = PersistAndNotifyHandler(
         store=store,
         publisher=publisher,
+        router=AsyncMock(route=AsyncMock(side_effect=lambda event: [event])),
     )
 
     event = AsyncMock()
@@ -40,6 +41,7 @@ async def test_duplicate_incident_is_still_published():
     handler = PersistAndNotifyHandler(
         store=store,
         publisher=publisher,
+        router=AsyncMock(route=AsyncMock(side_effect=lambda event: [event])),
     )
 
     event = AsyncMock()
@@ -64,6 +66,7 @@ async def test_load_test_incident_is_stored_without_notification():
     handler = PersistAndNotifyHandler(
         store=store,
         publisher=publisher,
+        router=AsyncMock(route=AsyncMock(side_effect=lambda event: [event])),
     )
 
     event = AsyncMock()
@@ -88,6 +91,7 @@ async def test_legacy_load_test_incident_is_stored_without_notification():
     handler = PersistAndNotifyHandler(
         store=store,
         publisher=publisher,
+        router=AsyncMock(route=AsyncMock(side_effect=lambda event: [event])),
     )
 
     event = AsyncMock()
@@ -113,6 +117,7 @@ async def test_publish_failure_propagates_for_retry():
     handler = PersistAndNotifyHandler(
         store=store,
         publisher=publisher,
+        router=AsyncMock(route=AsyncMock(side_effect=lambda event: [event])),
     )
 
     event = AsyncMock()
