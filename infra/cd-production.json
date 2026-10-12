@@ -2,7 +2,7 @@
   "core_deployment_name": "latest",
   "subscription_auth_tenant_id": "5ba5ef5e-3109-4e77-85bd-cfeb0d347e82",
   "subscription_auth_audience": "api://fbbe63e1-1f8f-4d4d-b695-0f9982842081",
-  "subscription_tenant_map": "416bf12a-6afc-44b4-a69d-7b8241f56012:TENANT-CD",
+  "subscription_tenant_map": "416bf12a-6afc-44b4-a69d-7b8241f56012:TENANT-CD,04b07795-8ddb-461a-bbee-02f9e1bf7b46:TENANT-CD",
   "subscription_configuration_approved": true,
   "activate_routing": false,
   "routing_configuration_approved": false,
