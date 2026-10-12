@@ -23,13 +23,10 @@ publishing each envelope. Denial skips the route with a sanitized warning;
 policy outages raise an operational error, preserving broker retry behavior.
 Incident persistence occurs first. No global-chat fallback is introduced.
 
-Before deployment, an operator must separately provision the container and
-review tenant ownership of every approved destination. Grant API and Worker
-identities read-only access scoped to this container; subscription clients must
-have no policy write access. Review existing broad Cosmos role assignments so
-they do not unintentionally grant policy writes. An operator uses a separate
-reviewed identity for policy maintenance. No Azure/RBAC changes are implemented
-here, and no destination is auto-approved from existing subscription records.
+`infra/core.bicep` provisions the container and its read-only assignments (see
+below), so CD creates them. Approval records are still written by an operator,
+who must review tenant ownership of every approved destination first; no
+destination is auto-approved from existing subscription records.
 Missing configuration/permissions must not be treated as an empty approval list.
 
 ## Container validation and failure classification
@@ -56,25 +53,26 @@ route selection and immediately before publication, multiplying these operations
 per matched route. SDK retries may add requests. Include this traffic in Cosmos
 RU/latency planning; no metadata-validation cache is implemented.
 
-## Permissions still required before deployment
+## Permissions
 
-Current `infra/core.bicep` grants Subscription Service Cosmos Contributor access
-only to the subscriptions container. It does **not** grant access to the separate
-policy container. A reviewed assignment is still required for policy reads.
-Worker currently has an account-wide Cosmos Contributor assignment, which includes
-policy writes. Adding a scoped reader does not remove those broader privileges;
-review and migrate the broad assignment against the intended least-privilege policy
-while retaining required incident writes and subscription reads.
+`infra/core.bicep` grants, on the `approved-destinations` container only:
 
-The intended policy access must include Cosmos data-plane metadata read
+| Identity | Role | Why |
+|---|---|---|
+| Subscription API | Cosmos DB Built-in Data Reader | Approval check on enabled POST/PATCH |
+| GitHub deploy identity | Cosmos DB Built-in Data Reader (also on `subscriptions`) | `scripts/verify-evidence-routing.py` preflight in the Evidence workflow |
+
+The built-in reader carries both actions the adapter needs: metadata read
 (`Microsoft.DocumentDB/databaseAccounts/readMetadata`) and item read
-(`Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers/items/read`) at
-appropriate supported scopes for the policy container and necessary parent metadata.
-Use a reviewed reader role/assignment and verify effective metadata and point-read
-access before rollout. Do not grant policy writes to application identities to make
-these reads succeed. Policy maintenance uses a separate reviewed operator identity.
-No such new container or permissions are provisioned by this local correction,
-and management-plane permissions alone do not establish Cosmos data-plane access.
+(`Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers/items/read`).
+No application identity is given policy writes.
+
+Worker reads the container through its existing account-wide Cosmos Contributor
+assignment, which also lets it write approvals. Narrowing that assignment to
+incident writes plus subscription and destination reads is still open; because
+CD deploys incrementally, it also needs the live account-wide assignment removed
+by hand. Developers listed in `developerPrincipalIds` hold account-wide Cosmos
+Contributor and are the operators who write approval records.
 
 Migration is default-deny: inventory existing records, verify ownership and bot
 membership, explicitly seed approvals, then enable routing. Existing unapproved
