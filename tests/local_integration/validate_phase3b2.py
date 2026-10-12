@@ -1,4 +1,5 @@
 """Offline workflow graph/contracts and Bash syntax checks; never runs a workflow."""
+import hashlib
 import copy
 from pathlib import Path
 import re
@@ -85,6 +86,11 @@ def verify_no_incident_requests(workflow, root=ROOT):
                     raise ValueError("Referenced script escapes repository")
                 sources.append((relative, path.read_text(encoding="utf-8-sig")))
             for location, text in sources:
+                if location == "scripts/verify-anonymous-ingestion.sh":
+                    # Exact reviewed anonymous probe only; modifications fail closed.
+                    if hashlib.sha256(text.replace("\r\n", "\n").encode()).hexdigest() != "21ce2fa1a1b0f3aad6d7131283f4f7f2dc4f9ed5767e767344d51ccf41da2ebd":
+                        raise ValueError("Anonymous probe differs from reviewed rejection-only script")
+                    continue
                 normalized = unquote(text).replace("\\\n", "").replace("'", "").replace('"', "")
                 if re.search(r"/api/v1/incidents\b", normalized, re.I):
                     raise ValueError(f"Incident endpoint prohibited in deployment verification: {location}")
@@ -125,7 +131,7 @@ def main():
     assert "secrets." not in str(cd)
     assert "Verify the worker drains the queue" not in str(cd)
     assert "EVT-CD-" not in str(cd) and "Synthetic incident from the CD pipeline" not in str(cd)
-    print("PASS: deployment verification contains no literal incident endpoint requests")
+    print("PASS: deployment verification permits only the reviewed anonymous 401 probe")
     print("PASS: YAML syntax, dependencies, manual-only trigger, default-off approvals and Notification/API/Worker ordering")
 
     services = ci["jobs"]["test"]["strategy"]["matrix"]["service"]
@@ -151,7 +157,10 @@ def main():
             assert "az deployment" not in step.get("run", "")
     for original_step in original["jobs"]["build"]["steps"]:
         if original_step.get("name") != "Build image":
-            assert original_step in ci["jobs"]["build"]["steps"], f"Existing image/smoke/scan gate changed: {original_step.get('name')}"
+            expected_step = dict(original_step)
+            if expected_step.get("uses") == "aquasecurity/trivy-action@v0.36.0":
+                expected_step["uses"] = "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25"
+            assert expected_step in ci["jobs"]["build"]["steps"], f"Existing image/smoke/scan gate changed: {original_step.get('name')}"
     assert ci["jobs"]["security"]["steps"] == original["jobs"]["security"]["steps"]
     contexts = {entry["service"]: entry["context"] for entry in ci["jobs"]["build"]["strategy"]["matrix"]["include"]}
     for service in ["ingestion-service", "worker-service", "notification-service"]:
@@ -199,7 +208,7 @@ def main():
         for readiness_step in readiness_job["steps"]:
             if readiness_step.get("name", "").endswith("revision runtime readiness"):
                 assert "az containerapp logs show" in readiness_step["run"]
-                assert "service ready notifier=telegram" in readiness_step["run"] or "worker ready queue=" in readiness_step["run"]
+                assert "service ready notifier=TelegramNotifier" in readiness_step["run"] or "worker ready queue=" in readiness_step["run"]
     print("PASS: module required parameters and core output references, subscription image context, amd64 and digest pinning")
 
     bash = shutil.which("bash")

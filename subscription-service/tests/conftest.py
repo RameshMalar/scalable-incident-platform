@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -28,7 +29,7 @@ def store():
 
 @pytest.fixture
 def client(store):
-    with TestClient(create_app(store, FakeVerifier())) as client:
+    with TestClient(create_app(store, FakeVerifier(), policy=AsyncMock(approved=AsyncMock(return_value=True)))) as client:
         yield client
 
 

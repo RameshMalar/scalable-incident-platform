@@ -331,7 +331,7 @@ jobs:
       # repository does not have. The report is kept as a build artifact and the
       # gate is enforced by failing the job instead.
       - name: Scan image for known vulnerabilities
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ matrix.image }}:ci
           format: table
@@ -341,7 +341,7 @@ jobs:
 
       - name: Record the full scan report
         if: always()
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ matrix.image }}:ci
           format: json

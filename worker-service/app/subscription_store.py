@@ -109,7 +109,11 @@ class CosmosSubscriptionReader(SubscriptionReader):
         # AsyncItemPaged iteration follows continuation tokens through every
         # page. There is no API offset/limit and no first-page shortcut here.
         async for document in rows:
-            record = validate_subscription(document)
+            try:
+                record = validate_subscription(document)
+            except InvalidSubscription:
+                logger.warning("skipping malformed subscription routing record")
+                continue
             if record.tenant_id != tenant_id:
                 logger.warning("ignoring subscription from another tenant partition")
                 continue

@@ -39,6 +39,10 @@ on:
         description: "Review evidence/reference for tenant migration, demo subscriptions and rollback approval"
         type: string
         required: false
+      notification_queue_review_reference:
+        description: "Review reference for the persistent notification queue selection"
+        type: string
+        required: false
       rollback_worker_image:
         description: "Approved pre-routing Worker image in the existing ACR, pinned as repository@sha256:digest"
         type: string
@@ -113,6 +117,7 @@ jobs:
       notification_app: ${{ steps.notification.outputs.appName }}
       notification_revision: ${{ steps.notification.outputs.revision }}
       notification_image: ${{ steps.image.outputs.notification }}
+      notification_queue: ${{ steps.queue.outputs.name }}
     env:
       CORE_DEPLOYMENT_NAME: ${{ inputs.core_deployment_name }}
       SUBSCRIPTION_AUTH_TENANT_ID: ${{ inputs.subscription_auth_tenant_id }}
@@ -189,6 +194,19 @@ jobs:
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
           done
 
+      # CD never switches queues. A separately approved, quiesced cutover must
+      # already be complete; this read-only gate checks durable selection.
+      - name: Verify persistent notification queue selection before workload changes
+        id: queue
+        env:
+          LEGACY_WORKER_DEFAULT_IMAGE: ${{ vars.LEGACY_WORKER_DEFAULT_IMAGE }}
+          LEGACY_NOTIFICATION_DEFAULT_IMAGE: ${{ vars.LEGACY_NOTIFICATION_DEFAULT_IMAGE }}
+          SELECTED_NOTIFICATION_QUEUE: ${{ vars.NOTIFICATION_QUEUE_NAME }}
+          QUEUE_SELECTION_APPROVED: ${{ vars.NOTIFICATION_QUEUE_SELECTION_APPROVED }}
+          QUEUE_REVIEW_REFERENCE: ${{ inputs.notification_queue_review_reference }}
+          SERVICE_BUS_NAMESPACE: ${{ steps.baseline.outputs.serviceBusName }}
+        run: python3 scripts/verify-notification-queue.py
+
       - name: Check the approved rollback image before changing any deployed service
         if: inputs.activate_routing
         env:
@@ -260,7 +278,7 @@ jobs:
 
 
       - name: Scan the exact subscription deployment image
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ steps.image.outputs.subscription }}
           format: table
@@ -269,7 +287,7 @@ jobs:
           exit-code: "1"
 
       - name: Scan the exact notification deployment image
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ steps.image.outputs.notification }}
           format: table
@@ -279,7 +297,7 @@ jobs:
           skip-setup-trivy: true
 
       - name: Scan the exact worker deployment image
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ steps.image.outputs.worker }}
           format: table
@@ -289,7 +307,7 @@ jobs:
           skip-setup-trivy: true
 
       - name: Scan the exact ingestion deployment image
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ steps.image.outputs.ingestion }}
           format: table
@@ -299,7 +317,7 @@ jobs:
           skip-setup-trivy: true
 
       - name: Scan the exact dashboard deployment image
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ steps.image.outputs.dashboard }}
           format: table
@@ -309,7 +327,7 @@ jobs:
           skip-setup-trivy: true
 
       - name: Scan the exact simulator deployment image
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ steps.image.outputs.simulator }}
           format: table
@@ -342,7 +360,7 @@ jobs:
               scalerIdentityId='${{ steps.baseline.outputs.notificationScalerIdentityId }}' \
               serviceBusFqdn='${{ steps.baseline.outputs.serviceBusFqdn }}' \
               serviceBusNamespace='${{ steps.baseline.outputs.serviceBusName }}' \
-              serviceBusQueue='${{ steps.baseline.outputs.notificationQueueName }}' \
+              serviceBusQueue='${{ steps.queue.outputs.name }}' \
               registryServer='${{ steps.baseline.outputs.registryLoginServer }}' \
               image='${{ steps.image.outputs.notification }}' \
               telegramChatId="$TELEGRAM_CHAT_ID" \
@@ -369,7 +387,7 @@ jobs:
               az containerapp logs show --resource-group "$RESOURCE_GROUP" \
                 --name "$APP_NAME" --revision "$REVISION" --type console \
                 --tail 100 --format text > "${RUNNER_TEMP}/startup.log"
-              if grep -Eq 'notification service ready notifier=telegram' "${RUNNER_TEMP}/startup.log"; then
+              if grep -Eq 'notification service ready notifier=TelegramNotifier' "${RUNNER_TEMP}/startup.log"; then
                 exit 0
               fi
             fi
@@ -546,8 +564,8 @@ jobs:
                   exit 1
                 fi
 
-                echo "::notice::Deployed, healthy, ready, and reporting Entra authentication configured at ${url}"
-                echo "::notice::Health/readiness do not prove authentication enforcement; no incident request was sent"
+                INGESTION_URL="$url" bash scripts/verify-anonymous-ingestion.sh
+                echo "::notice::Deployed, healthy, ready, and refusing anonymous writes at ${url}"
                 exit 0
               fi
 
@@ -652,7 +670,7 @@ jobs:
               az containerapp logs show --resource-group "$RESOURCE_GROUP" \
                 --name "$APP_NAME" --revision "$REVISION" --type console \
                 --tail 100 --format text > "${RUNNER_TEMP}/startup.log"
-              if grep -Eq 'notification service ready notifier=telegram' "${RUNNER_TEMP}/startup.log"; then
+              if grep -Eq 'notification service ready notifier=TelegramNotifier' "${RUNNER_TEMP}/startup.log"; then
                 exit 0
               fi
             fi
@@ -660,6 +678,17 @@ jobs:
           done
           echo "::error::Expected notification revision did not become healthy and running" >&2
           exit 1
+
+      - name: Recheck persistent queue selection after production approval
+        env:
+          LEGACY_WORKER_DEFAULT_IMAGE: ${{ vars.LEGACY_WORKER_DEFAULT_IMAGE }}
+          LEGACY_NOTIFICATION_DEFAULT_IMAGE: ${{ vars.LEGACY_NOTIFICATION_DEFAULT_IMAGE }}
+          SELECTED_NOTIFICATION_QUEUE: ${{ vars.NOTIFICATION_QUEUE_NAME }}
+          QUEUE_SELECTION_APPROVED: ${{ vars.NOTIFICATION_QUEUE_SELECTION_APPROVED }}
+          QUEUE_REVIEW_REFERENCE: ${{ inputs.notification_queue_review_reference }}
+          SERVICE_BUS_NAMESPACE: ${{ fromJSON(needs.prepare.outputs.core).serviceBusName.value }}
+          EXPECTED_NOTIFICATION_QUEUE: ${{ needs.prepare.outputs.notification_queue }}
+        run: python3 scripts/verify-notification-queue.py
 
       - name: Deploy the processing worker
         id: worker
@@ -678,7 +707,7 @@ jobs:
               serviceBusFqdn='${{ fromJSON(needs.prepare.outputs.core).serviceBusFqdn.value }}' \
               serviceBusNamespace='${{ fromJSON(needs.prepare.outputs.core).serviceBusName.value }}' \
               serviceBusQueue='${{ fromJSON(needs.prepare.outputs.core).incidentQueueName.value }}' \
-              notificationQueue='${{ fromJSON(needs.prepare.outputs.core).notificationQueueName.value }}' \
+              notificationQueue='${{ needs.prepare.outputs.notification_queue }}' \
               cosmosEndpoint='${{ fromJSON(needs.prepare.outputs.core).cosmosEndpoint.value }}' \
               cosmosDatabase='${{ fromJSON(needs.prepare.outputs.core).cosmosDatabaseName.value }}' \
               cosmosContainer='${{ fromJSON(needs.prepare.outputs.core).cosmosContainerName.value }}' \

@@ -46,7 +46,12 @@ def semantic_hash(value):
 def test_existing_unprivileged_ci_jobs_preserved():
     assert semantic_hash(CI['on']) == EXPECTED_CI_CONTRACT['on']
     for name, digest in EXPECTED_CI_CONTRACT['jobs'].items():
-        assert semantic_hash(CI['jobs'][name]) == digest
+        import copy
+        job = copy.deepcopy(CI['jobs'][name])
+        for step in job.get('steps', []):
+            if step.get('uses') == 'aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25':
+                step['uses'] = 'aquasecurity/trivy-action@v0.36.0'
+        assert semantic_hash(job) == digest
     assert set(CI['jobs']) == set(EXPECTED_CI_CONTRACT['jobs']) | {'workflow-safety', 'gate'}
 
 
@@ -372,7 +377,29 @@ def test_subscription_cd_remains_manual_and_semantically_unchanged():
     path = ROOT / '.github/workflows/cd.yml'
     cd = load(path.read_text(encoding='utf-8-sig'))
     assert set(cd['on']) == {'workflow_dispatch'}
-    assert semantic_hash(cd) == '5b90522ad5fb167b48c6c79b9f4d6ac6f0508719716b0bfc4844385f030ef7b2'
+    # Normalize only the three approved Phase 1 corrections to the frozen contract.
+    text = path.read_text(encoding='utf-8-sig')
+    text = text.replace('aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25', 'aquasecurity/trivy-action@v0.36.0')
+    text = text.replace('notification service ready notifier=TelegramNotifier', 'notification service ready notifier=telegram')
+    text = text.replace('                INGESTION_URL="$url" bash scripts/verify-anonymous-ingestion.sh\n                echo "::notice::Deployed, healthy, ready, and refusing anonymous writes at ${url}"',
+                        '                echo "::notice::Deployed, healthy, ready, and reporting Entra authentication configured at ${url}"\n                echo "::notice::Health/readiness do not prove authentication enforcement; no incident request was sent"')
+    # Phase 4 adds an independently tested read-only queue gate. Remove only
+    # those additions when comparing the preserved Phase 1-3 contract.
+    preserved = load(text)
+    preserved['on']['workflow_dispatch']['inputs'].pop('notification_queue_review_reference')
+    prepare = preserved['jobs']['prepare']
+    prepare['outputs'].pop('notification_queue')
+    prepare['steps'] = [step for step in prepare['steps'] if step.get('id') != 'queue']
+    for step in prepare['steps']:
+        if step.get('id') == 'notification':
+            step['run'] = step['run'].replace("steps.queue.outputs.name", "steps.baseline.outputs.notificationQueueName")
+    activate = preserved['jobs']['activate-worker']
+    activate['steps'] = [step for step in activate['steps'] if step.get('name') != 'Recheck persistent queue selection after production approval']
+    for step in activate['steps']:
+        if step.get('id') == 'worker':
+            step['run'] = step['run'].replace("needs.prepare.outputs.notification_queue", "fromJSON(needs.prepare.outputs.core).notificationQueueName.value")
+    assert semantic_hash(preserved) == '5b90522ad5fb167b48c6c79b9f4d6ac6f0508719716b0bfc4844385f030ef7b2'
+
 
 
 def test_job_contract_never_reads_historical_objects(monkeypatch):

@@ -72,7 +72,8 @@ class PersistAndNotifyHandler(IncidentHandler):
         # have persisted successfully but failed before notification handoff.
         routes = await self.router.route(event)
         for route in routes:
-            await self.publisher.publish(route)
+            if await self.router.authorized(route.incident.tenant_id, route.telegram_chat_id):
+                await self.publisher.publish(route)
 
         logger.info(
             "incident routing complete event_id=%s outcome=%s routes=%d",
@@ -88,7 +89,10 @@ class PersistAndNotifyHandler(IncidentHandler):
             await self.publisher.close()
         finally:
             try:
-                await self.router.reader.close()
+                try:
+                    await self.router.reader.close()
+                finally:
+                    await self.router.policies.close()
             finally:
                 close_store = getattr(self.store, "close", None)
                 if close_store is not None:

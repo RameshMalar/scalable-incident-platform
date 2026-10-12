@@ -22,6 +22,7 @@ from app.processor import IncidentHandler, IncidentProcessor, LoggingIncidentHan
 from app.store import CosmosIncidentStore
 from app.subscription_store import CosmosSubscriptionReader
 from app.subscription_router import SubscriptionRouter
+from app.destination_policy import CosmosDestinationPolicy
 
 logger = logging.getLogger("app.main")
 
@@ -83,7 +84,7 @@ def build_handler() -> IncidentHandler:
     return PersistAndNotifyHandler(
         store=store,
         publisher=publisher,
-        router=SubscriptionRouter(CosmosSubscriptionReader()),
+        router=SubscriptionRouter(CosmosSubscriptionReader(), policies=CosmosDestinationPolicy()),
     )
 
 

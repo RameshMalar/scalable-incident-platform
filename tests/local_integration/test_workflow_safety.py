@@ -156,4 +156,13 @@ def test_current_cd_verification_is_non_mutating():
     WORKFLOW.verify_no_incident_requests(workflow)
     step = next(s for s in workflow["jobs"]["prepare"]["steps"] if s.get("name") == "Verify the deployment")
     assert '/health' in step['run'] and '/ready' in step['run']
-    assert 'do not prove authentication enforcement' in step['run']
+    assert 'bash scripts/verify-anonymous-ingestion.sh' in step['run']
+
+
+def test_anonymous_probe_exception_rejects_modified_script(tmp_path):
+    (tmp_path / "scripts").mkdir()
+    original = (ROOT / "scripts/verify-anonymous-ingestion.sh").read_text()
+    (tmp_path / "scripts/verify-anonymous-ingestion.sh").write_text(original.replace('"401"', '"202"'))
+    workflow = {"jobs": {"prepare": {"steps": [{"run": "bash scripts/verify-anonymous-ingestion.sh"}]}}}
+    with pytest.raises(ValueError, match="differs from reviewed"):
+        WORKFLOW.verify_no_incident_requests(workflow, tmp_path)

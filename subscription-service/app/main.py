@@ -10,6 +10,7 @@ from azure.core.exceptions import AzureError
 from app.auth import TenantContext, build_verifier, require_read, require_write
 from app.models import Subscription, SubscriptionCreate, SubscriptionPage, SubscriptionPatch
 from app.store import SubscriptionStore, build_store
+from app.destination_policy import CosmosDestinationPolicy, PolicyUnavailable
 
 logger = logging.getLogger("app.main")
 MAX_SUBSCRIPTION_OFFSET = 10000
@@ -19,18 +20,33 @@ def get_store(request: Request) -> SubscriptionStore:
     return request.app.state.store
 
 
-def create_app(store=None, verifier=None) -> FastAPI:
+def create_app(store=None, verifier=None, policy=None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.verifier = verifier if verifier is not None else build_verifier()
         app.state.store = store if store is not None else build_store()
+        app.state.policy = policy if policy is not None else CosmosDestinationPolicy()
         try:
             await app.state.store.start()
             yield
         finally:
-            await app.state.store.close()
+            try:
+                await app.state.store.close()
+            finally:
+                await app.state.policy.close()
 
     app = FastAPI(title="Scalable Incident Platform - Subscription Service", version="1.0.0", lifespan=lifespan)
+
+    async def authorize(subscription, tenant_id):
+        if not subscription.enabled:
+            return
+        if (await app.state.policy.approved(tenant_id, subscription.telegram_chat_id)) is not True:
+            raise HTTPException(403, "destination not approved")
+
+    @app.exception_handler(PolicyUnavailable)
+    async def policy_error(request: Request, exc: PolicyUnavailable):
+        logger.error("destination policy unavailable")
+        return JSONResponse(status_code=503, content={"detail": "destination policy unavailable"})
 
     @app.exception_handler(AzureError)
     async def storage_error(request: Request, exc: AzureError):
@@ -55,6 +71,7 @@ def create_app(store=None, verifier=None) -> FastAPI:
     async def create_subscription(payload: SubscriptionCreate, response: Response, context: TenantContext = Depends(require_write), store: SubscriptionStore = Depends(get_store)):
         now = datetime.now(timezone.utc)
         subscription = Subscription(**payload.model_dump(), id=f"SUB-{uuid4()}", tenant_id=context.tenant_id, created_at=now, updated_at=now)
+        await authorize(subscription, context.tenant_id)
         result = await store.create(subscription)
         response.headers["Location"] = f"/api/v1/subscriptions/{result.id}"
         return result
@@ -80,6 +97,7 @@ def create_app(store=None, verifier=None) -> FastAPI:
         if existing is None:
             raise HTTPException(404, "subscription not found")
         updated = existing.model_copy(update={**payload.model_dump(exclude_unset=True), "updated_at": datetime.now(timezone.utc)})
+        await authorize(updated, context.tenant_id)
         result = await store.replace(updated)
         if result is None:
             raise HTTPException(404, "subscription not found")

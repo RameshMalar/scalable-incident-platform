@@ -193,3 +193,9 @@ Manual CD prepares compatible Notification code, storage and the API before its
 optional Worker-last activation. Existing load-test suppression and incident
 persistence remain intact. Live authorization and delivery require separate
 verification; local and CI tests do not establish production readiness.
+
+
+Enabled subscription writes now require operator-approved tenant destinations.
+See [destination policy and migration](DESTINATION_POLICY.md). Unapproved
+subscriptions remain readable; disabling and deletion do not require approval.
+No policy records or Azure role assignments are provisioned automatically.

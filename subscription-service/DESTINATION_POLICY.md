@@ -1,0 +1,92 @@
+# Tenant-approved Telegram destinations
+
+Destination approvals are operator-controlled records in a separate Cosmos
+container, `approved-destinations`, partitioned by `/tenant_id`. Configure its
+name with `COSMOS_DESTINATIONS_CONTAINER`; endpoint/database reuse the existing
+Cosmos configuration. No service creates the container or writes policy records.
+The API exposes no policy creation or approval endpoints.
+
+Each record uses `id = "telegram:" + telegram_chat_id` within the tenant partition,
+and contains `tenant_id`, `channel: "telegram"`, `telegram_chat_id` (a string),
+and strict boolean `enabled`. A missing/disabled/foreign-tenant record denies
+approval. Malformed records or unavailable storage fail closed. Chat IDs must
+match exactly; no alternate representations are automatically normalized.
+
+Enabled POST/PATCH results require approval under the authenticated server-bound
+tenant and return sanitized 403 on denial, 503 on policy unavailability. Reads
+remain available for old unapproved subscriptions. Disabled writes and DELETE
+remain available, including disabling revoked subscriptions. Re-enabling requires
+current approval. API permission checks remain unchanged.
+
+Worker independently reads policy during routing and again immediately before
+publishing each envelope. Denial skips the route with a sanitized warning;
+policy outages raise an operational error, preserving broker retry behavior.
+Incident persistence occurs first. No global-chat fallback is introduced.
+
+Before deployment, an operator must separately provision the container and
+review tenant ownership of every approved destination. Grant API and Worker
+identities read-only access scoped to this container; subscription clients must
+have no policy write access. Review existing broad Cosmos role assignments so
+they do not unintentionally grant policy writes. An operator uses a separate
+reviewed identity for policy maintenance. No Azure/RBAC changes are implemented
+here, and no destination is auto-approved from existing subscription records.
+Missing configuration/permissions must not be treated as an empty approval list.
+
+## Container validation and failure classification
+
+The configured container must have its exact configured ID (by default
+`approved-destinations`) and `partitionKey.paths = ["/tenant_id"]` with
+`partitionKey.kind = "Hash"`. A different path, hierarchical partition layout,
+kind or container ID fails validation. Endpoint and database configuration must
+point to the operator-reviewed policy store; no container is created by the adapter.
+
+Every approval lookup first reads and validates container metadata, then performs
+a point item read using `id = "telegram:" + chat_id` and the tenant partition.
+A missing-item 404 triggers a second metadata read to detect parent-container
+deletion during lookup. Only a missing approval record in a still-valid container
+returns ordinary denial. Disabled or foreign-tenant records also deny approval.
+Missing database/container, invalid metadata, permission failures, throttling,
+network/service failures and malformed records raise sanitized `PolicyUnavailable`.
+The API returns 503; Worker propagates the failure for broker retry without sending.
+No infrastructure failure is interpreted as approval.
+
+There is one explicit metadata request per lookup in addition to the item request,
+and another metadata request after an item 404. Worker checks policy both during
+route selection and immediately before publication, multiplying these operations
+per matched route. SDK retries may add requests. Include this traffic in Cosmos
+RU/latency planning; no metadata-validation cache is implemented.
+
+## Permissions still required before deployment
+
+Current `infra/core.bicep` grants Subscription Service Cosmos Contributor access
+only to the subscriptions container. It does **not** grant access to the separate
+policy container. A reviewed assignment is still required for policy reads.
+Worker currently has an account-wide Cosmos Contributor assignment, which includes
+policy writes. Adding a scoped reader does not remove those broader privileges;
+review and migrate the broad assignment against the intended least-privilege policy
+while retaining required incident writes and subscription reads.
+
+The intended policy access must include Cosmos data-plane metadata read
+(`Microsoft.DocumentDB/databaseAccounts/readMetadata`) and item read
+(`Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers/items/read`) at
+appropriate supported scopes for the policy container and necessary parent metadata.
+Use a reviewed reader role/assignment and verify effective metadata and point-read
+access before rollout. Do not grant policy writes to application identities to make
+these reads succeed. Policy maintenance uses a separate reviewed operator identity.
+No such new container or permissions are provisioned by this local correction,
+and management-plane permissions alone do not establish Cosmos data-plane access.
+
+Migration is default-deny: inventory existing records, verify ownership and bot
+membership, explicitly seed approvals, then enable routing. Existing unapproved
+subscriptions remain readable but do not deliver. Destination authorization is
+not proof of Telegram ownership or successful delivery.
+
+Limitations: legacy flat notification delivery is unchanged and bypasses this
+policy. Already-queued envelopes are not revalidated by Notification Service.
+Revocation after the final Worker check can race with publication. Partial
+publication retries and duplicate Telegram alerts remain a separate blocker.
+Policy outages can stall affected processing until recovered; monitor retries and
+dead-letter queues. No security acceptance or live deployment readiness is implied.
+
+The two services retain identical read-only policy adapters because the API has
+an isolated Docker build context; regression tests cover both implementations.

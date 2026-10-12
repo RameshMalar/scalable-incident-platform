@@ -169,8 +169,8 @@ def harness():
     evidence = AsyncMock()
     evidence.fetch.return_value = N["evidence"].Evidence(b"synthetic-image", "synthetic.jpg", "image/jpeg")
     notifier = N["telegram_notifier"].TelegramNotifier(bot_token="synthetic-token", chat_id="-999999", min_send_interval_seconds=0, evidence_store=evidence, session_factory=lambda: transport)
-    worker = W["processor"].IncidentProcessor(W["notification_handler"].PersistAndNotifyHandler(persistence, publisher, W["subscription_router"].SubscriptionRouter(reader)))
-    with TestClient(S["main"].create_app(store, LocalVerifier())) as client:
+    worker = W["processor"].IncidentProcessor(W["notification_handler"].PersistAndNotifyHandler(persistence, publisher, W["subscription_router"].SubscriptionRouter(reader, policies=AsyncMock(approved=AsyncMock(return_value=True)))))
+    with TestClient(S["main"].create_app(store, LocalVerifier(), policy=AsyncMock(approved=AsyncMock(return_value=True)))) as client:
         yield SimpleNamespace(client=client, store=store, reader=reader, persistence=persistence, publisher=publisher, transport=transport, evidence=evidence, worker=worker, notification=N["processor"].NotificationProcessor(notifier), trace=trace)
 
 

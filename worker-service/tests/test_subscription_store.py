@@ -101,11 +101,10 @@ async def test_later_page_failure_does_not_return_partial_matches(cosmos):
         await reader.find_matches("TENANT-A", "intrusion_detected")
 
 
-async def test_malformed_cosmos_row_is_error(cosmos):
+async def test_malformed_cosmos_row_is_skipped(cosmos):
     reader, container, _, _, _ = cosmos
     container.query_items.return_value = PagedRows([[subscription_document(enabled="true")]])
-    with pytest.raises(InvalidSubscription):
-        await reader.find_matches("TENANT-A", "intrusion_detected")
+    assert await reader.find_matches("TENANT-A", "intrusion_detected") == []
 
 
 async def test_client_reuse_and_external_credential_ownership(cosmos):
@@ -160,3 +159,22 @@ async def test_memory_exact_matching_and_tenant_isolation():
 def test_memory_rejects_invalid_configuration():
     with pytest.raises(InvalidSubscription):
         InMemorySubscriptionReader([subscription_document(channel="email")])
+
+
+async def test_valid_malformed_valid_cosmos_records(cosmos, caplog):
+    reader, container, _, _, _ = cosmos
+    bad = subscription_document(id='SECRET-TOKEN', tenant_id=None, telegram_chat_id='SECRET-CHAT')
+    container.query_items.return_value = PagedRows([
+        [subscription_document(id='SUB-FIRST'), bad],
+        [{}, subscription_document(tenant_id=123), subscription_document(id='SUB-LAST')]])
+    records = await reader.find_matches('TENANT-A','intrusion_detected')
+    assert [r.id for r in records] == ['SUB-FIRST','SUB-LAST']
+    assert caplog.text.count('skipping malformed') == 3
+    assert 'SECRET' not in caplog.text
+
+
+async def test_unexpected_query_exception_propagates(cosmos):
+    reader, container, _, _, _ = cosmos
+    container.query_items.side_effect = RuntimeError('unexpected infrastructure failure')
+    with pytest.raises(RuntimeError):
+        await reader.find_matches('TENANT-A','intrusion_detected')

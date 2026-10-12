@@ -23,7 +23,7 @@ def pipeline(documents=None, outcome=Outcome.PROCESSED):
     reader.find_matches = AsyncMock(wraps=reader.find_matches)
     reader.start, reader.close = AsyncMock(), AsyncMock()
     publisher = MockNotificationPublisher()
-    handler = PersistAndNotifyHandler(store, publisher, SubscriptionRouter(reader))
+    handler = PersistAndNotifyHandler(store, publisher, SubscriptionRouter(reader, policies=AsyncMock(approved=AsyncMock(return_value=True))))
     return handler, store, reader, publisher
 
 
