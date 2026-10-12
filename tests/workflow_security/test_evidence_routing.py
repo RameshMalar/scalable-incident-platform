@@ -1,4 +1,5 @@
 """Evidence preflight tests; no cloud or notification IO."""
+import asyncio
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,21 +17,19 @@ def record(**changes):
     return SimpleNamespace(**({"tenant_id": "T", "event_type": "intrusion_detected", "enabled": True, "channel": "telegram", "telegram_chat_id": "synthetic"} | changes))
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("records,approval,success", [([record()], True, True), ([], True, False), ([record(enabled=False)], True, False), ([record(event_type="other")], True, False), ([record(tenant_id="other")], True, False), ([record()], False, False), ([record(),record()], True, False)])
-async def test_evidence_requires_exact_approved_route(records, approval, success):
+def test_evidence_requires_exact_approved_route(records, approval, success):
     reader = AsyncMock(find_matches=AsyncMock(return_value=records))
     policy = AsyncMock(approved=AsyncMock(return_value=approval))
-    if success: await gate.require_route(reader, policy, "T")
+    if success: asyncio.run(gate.require_route(reader, policy, "T"))
     else:
-        with pytest.raises(ValueError): await gate.require_route(reader, policy, "T")
+        with pytest.raises(ValueError): asyncio.run(gate.require_route(reader, policy, "T"))
     reader.find_matches.assert_awaited_once_with("T", "intrusion_detected")
 
 
-@pytest.mark.asyncio
-async def test_policy_outage_blocks_event():
+def test_policy_outage_blocks_event():
     with pytest.raises(RuntimeError):
-        await gate.require_route(AsyncMock(find_matches=AsyncMock(return_value=[record()])), AsyncMock(approved=AsyncMock(side_effect=RuntimeError("private"))), "T")
+        asyncio.run(gate.require_route(AsyncMock(find_matches=AsyncMock(return_value=[record()])), AsyncMock(approved=AsyncMock(side_effect=RuntimeError("private"))), "T"))
 
 
 def test_tenant_mapping():
