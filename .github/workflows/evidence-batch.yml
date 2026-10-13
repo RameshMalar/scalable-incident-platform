@@ -40,9 +40,11 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Install validation dependency
-        # Same version as notification-service/requirements.txt.
-        run: python -m pip install pydantic==2.13.5
+      - name: Install validation dependencies
+        # Same pydantic as notification-service/requirements.txt. The validator
+        # checks evidence against IncidentEvent, so it needs the Common Event
+        # Model too; without it the dry run fails before reaching Azure.
+        run: python -m pip install pydantic==2.13.5 ./packages/common-event-model
       - name: Validate all local evidence before Azure login
         run: python scripts/upload-evidence-batch.py --mode dry-run
       - name: Sign in using the existing Azure OIDC identity
