@@ -26,7 +26,7 @@ on:
         required: true
         default: false
       activate_routing:
-        description: "Deploy routing-enabled Worker after preparation and a second production approval"
+        description: "Deploy routing-enabled Worker after preparation (set through a reviewed infra/cd-production.json)"
         type: boolean
         required: true
         default: false
@@ -65,11 +65,12 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   preflight:
-    name: Fail closed on missing rollout configuration and reviewer protection
+    name: Fail closed on missing rollout configuration or unreviewed code
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7
       - name: Validate explicit approval and required configuration without cloud access
@@ -93,23 +94,26 @@ jobs:
           TELEGRAM_BOT_TOKEN_SECRET_URI: ${{ vars.TELEGRAM_BOT_TOKEN_SECRET_URI }}
         run: python3 scripts/validate-rollout-config.py --inputs-only
 
-      # Reuse the existing environment. Never silently create an unprotected one.
+      # The two-person rule. GitHub Free cannot require environment reviewers or
+      # protect branches on a private repository, so it is checked here: only
+      # the merge of a pull request that someone other than its author approved,
+      # on its final commit, is deployed. A direct push to main is refused.
       # A denied API read also fails closed; do not bypass it with a new PAT.
-      - name: Require production reviewers and prevent self approval
+      - name: Require the deployed commit to be an approved pull request merge
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-        run: |
-          gh api "repos/${REPOSITORY}/environments/production" \
-            --jq '.protection_rules' > "${RUNNER_TEMP}/production-rules.json"
-          jq -e 'any(.[]; .type == "required_reviewers" and (.reviewers | length > 0) and .prevent_self_review == true)' \
-            "${RUNNER_TEMP}/production-rules.json" >/dev/null
+          DEPLOY_SHA: ${{ github.sha }}
+        run: python3 scripts/verify-approved-merge.py
 
   prepare:
     name: Prepare Notification, storage and Subscription API
     needs: [checks, preflight]
     runs-on: ubuntu-latest
-    environment: production
+    # No `environment:` on purpose. On GitHub Free a private repository cannot
+    # restrict which branches use an environment, so an environment subject
+    # would let a workflow on any branch sign in. The deploy identity federates
+    # refs/heads/main only, which is the subject this dispatch carries.
     outputs:
       core: ${{ steps.core.outputs.json }}
       worker_image: ${{ steps.image.outputs.worker }}
@@ -139,8 +143,8 @@ jobs:
       TELEGRAM_BOT_TOKEN_SECRET_URI: ${{ vars.TELEGRAM_BOT_TOKEN_SECRET_URI }}
     steps:
       - uses: actions/checkout@v7
-      # Run again after entering the existing protected environment so existing
-      # environment-scoped GitHub variables remain supported.
+      # Full validation, including repository variables, in the job that signs
+      # in to Azure, before it does.
       - name: Validate environment configuration before Azure authentication
         run: python3 scripts/validate-rollout-config.py
       - name: Sign in to Azure
@@ -627,7 +631,7 @@ jobs:
       - name: Record the preparation boundary
         run: |
           echo "Notification compatibility image check, healthy revision, subscriptions storage and protected API checks passed." >> "$GITHUB_STEP_SUMMARY"
-          echo "Worker was not changed by preparation. Routing activation is optional and requires another production review." >> "$GITHUB_STEP_SUMMARY"
+          echo "Worker was not changed by preparation. Routing activation is optional: a later run with activate_routing set through a reviewed infra/cd-production.json." >> "$GITHUB_STEP_SUMMARY"
           echo "Live subscribed/unsubscribed/evidence E2E testing is deferred to its separately approved phase." >> "$GITHUB_STEP_SUMMARY"
 
   activate-worker:
@@ -635,7 +639,7 @@ jobs:
     needs: [checks, preflight, prepare]
     if: inputs.activate_routing && inputs.routing_configuration_approved
     runs-on: ubuntu-latest
-    environment: production
+    # No `environment:`, for the same reason as prepare.
     env:
       SUBSCRIPTION_URL: ${{ needs.prepare.outputs.subscription_url }}
       SUBSCRIPTION_AUTH_AUDIENCE: ${{ inputs.subscription_auth_audience }}

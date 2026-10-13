@@ -115,7 +115,8 @@ def main():
     activate = cd["jobs"]["activate-worker"]
     assert set(activate["needs"]) == {"checks", "preflight", "prepare"}
     assert activate["if"] == "inputs.activate_routing && inputs.routing_configuration_approved"
-    assert cd["jobs"]["prepare"]["environment"] == activate["environment"] == "production"
+    # Azure federates refs/heads/main only; an environment subject would not match.
+    assert "environment" not in cd["jobs"]["prepare"] and "environment" not in activate
     prepare_names = names(cd["jobs"]["prepare"])
     order = ["Deploy the notification service", "Verify notification revision runtime readiness", "Deploy core infrastructure", "Deploy the Subscription API", "Verify Subscription API Cosmos readiness and bearer authorization"]
     assert [prepare_names.index(name) for name in order] == sorted(prepare_names.index(name) for name in order)
@@ -127,7 +128,7 @@ def main():
     assert activation_names.index("Recheck protected API and an enabled subscription for the verifier tenant") < activation_names.index("Deploy the processing worker") < activation_names.index("Verify worker revision runtime readiness")
     assert activation_names.index("Verify notification revision runtime readiness") < activation_names.index("Deploy the processing worker")
     preflight_text = str(cd["jobs"]["preflight"])
-    assert "required_reviewers" in preflight_text and "prevent_self_review == true" in preflight_text
+    assert "scripts/verify-approved-merge.py" in preflight_text and "${{ github.sha }}" in preflight_text
     assert "secrets." not in str(cd)
     assert "Verify the worker drains the queue" not in str(cd)
     assert "EVT-CD-" not in str(cd) and "Synthetic incident from the CD pipeline" not in str(cd)

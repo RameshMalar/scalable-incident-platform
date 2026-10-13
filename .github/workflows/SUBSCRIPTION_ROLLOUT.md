@@ -97,15 +97,15 @@ also removes the old path filters: deployment now has no push trigger to filter.
 
 ```text
 CI checks at selected commit ---------+
-                                     +--> protected production preparation
-input + environment-protection gate -+      |
+                                     +--> production preparation
+input + approved-merge gate ---------+      |
                                             +--> exact-image scans and mocked compatibility
                                             +--> Notification deployment + runtime/startup checks
                                             +--> additive core storage/identity/RBAC
                                             +--> Subscription API deployment + protected-read checks
                                             +--> existing ingestion/dashboard/simulator/workbook steps
                                             |
-                         optional explicit activation + second production approval
+              optional explicit activation (reviewed infra/cd-production.json)
                                             |
                                             +--> recheck API/enabled subscription and Notification
                                             +--> routing-enabled Worker LAST
@@ -128,7 +128,8 @@ the prior workflow and default Bicep contract.
 Preparation does not change Worker. It can complete with `activate_routing=false`.
 The API can then be used, under a separately authorized plan, to prepare approved
 subscriptions. For an activation dispatch, the optional activation job waits on
-all preparation and another approval of the same existing `production` environment.
+all preparation; activation itself is requested by a reviewed change to
+`infra/cd-production.json`.
 It rechecks the API and an enabled subscription for the verifier tenant, rechecks
 Notification readiness, then deploys Worker with explicit
 `cosmosSubscriptionsContainer` from core. `INCIDENT_STORE=cosmos`, notification
@@ -136,15 +137,25 @@ publishing, Cosmos connection/identity and queue contracts remain intact.
 
 ## Manual approvals and fail-closed behavior
 
-Only the already existing `production` environment is named. Before any deployment
-job is scheduled, preflight reads its GitHub protection rules and requires at
-least one required reviewer with `prevent_self_review=true`. The read uses the
-built-in GitHub token with contents/actions read permissions; no PAT or new secret
-was introduced. An absent environment, missing protection, unsupported feature
-or denied API read fails closed. Actual GitHub settings/token API permissions are
-**unverified** locally. The workflow does not create or modify the environment.
-Administrators should restrict its deployment branches to the approved main
-branch and review bypass permissions before executing a rollout.
+The repository is private on GitHub Free, which offers neither environment
+required reviewers nor branch protection, so the original design (preflight
+requiring `production` reviewers with `prevent_self_review=true`) could never
+pass. The two-person rule is enforced at merge time instead:
+
+- **Preflight** runs `scripts/verify-approved-merge.py` before any deployment job
+  is scheduled. The deployed commit must be exactly the merge of a pull request
+  into `main` that someone other than its author approved, on its final commit,
+  with no reviewer's latest review requesting changes. A direct push, a stale
+  approval or a denied API read fails closed. It uses the built-in token with
+  `pull-requests: read`; no PAT or new secret was introduced.
+- **Azure** trusts only `refs/heads/main`. The deploy identity has no
+  `pull_request` or `environment:` federated credential, and the deploying jobs
+  name no environment: on Free, any branch may name an environment, so an
+  environment subject would let any branch sign in.
+- **Residual risk:** a collaborator with write access can still push a modified
+  workflow to `main` and dispatch it. That is visible in the history, but nothing
+  on this plan prevents it. GitHub Pro adds branch protection for private
+  repositories and would close that gap.
 
 The inputs `subscription_configuration_approved`, `activate_routing` and
 `routing_configuration_approved` all default to false. Preparation requires
@@ -152,8 +163,8 @@ explicit Subscription API configuration review. Activation additionally requires
 the routing approval boolean, a non-empty review evidence reference and an
 approved pre-routing Worker image pinned by digest. Typed booleans and valid
 mapping/UUID/configuration inputs are checked offline; missing or unsafe values
-fail before cloud authentication. Required variables are checked again after
-entering production so existing environment-scoped variables are supported.
+fail before cloud authentication. Required repository variables are checked
+again in the job that signs in to Azure, before it does.
 
 Before any service update on an activation dispatch, the approved rollback digest
 must match the currently deployed Worker's resolved image in the existing ACR.
@@ -161,9 +172,9 @@ Matching a digest does **not** automatically prove that the image is pre-routing
 the operator/reviewer must establish that provenance and record the review
 reference. No inferred rollback image, app role or subscriber is invented.
 
-Job-level production reviews are the human authorization boundary. Boolean
-attestations are supplementary configuration assertions, not a substitute for
-reviewers. The activation reviewer must verify intended tenants, approved demo
+Pull request review is the human authorization boundary. Boolean attestations
+are supplementary configuration assertions, not a substitute for reviewers. The
+reviewer of the pull request that enables activation must verify intended tenants, approved demo
 subscriptions and Notification legacy/routed compatibility. API list checks prove
 only the deploy verifier's tenant has an enabled Telegram subscription, not that
 every tenant has been migrated or a specific business event is subscribed.
@@ -206,9 +217,8 @@ No Entra roles, consent or mappings are automatically provisioned by this workfl
 The required-role check is an actual authenticated API read, not a health claim;
 if token acquisition/authorization fails, Worker is not activated.
 
-Unresolved execution prerequisites: production reviewer protection and feature
-support; GitHub-token permission to inspect it; approved subscription issuer,
-audience, manager mapping and roles; retained pre-routing image provenance;
+Unresolved execution prerequisites: an approved pull request merge at the tip of
+`main`; retained pre-routing image provenance;
 approved tenant/demo subscription migration; actual regional quota and Docker/image
 scan results. These intentionally block deployment until verified/approved.
 

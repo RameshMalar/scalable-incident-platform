@@ -398,6 +398,31 @@ def test_subscription_cd_remains_manual_and_semantically_unchanged():
     for step in activate['steps']:
         if step.get('id') == 'worker':
             step['run'] = step['run'].replace("needs.prepare.outputs.notification_queue", "fromJSON(needs.prepare.outputs.core).notificationQueueName.value")
+    # The approved-merge gate replaces the environment-reviewer rule, which
+    # GitHub Free cannot enforce on a private repository, and the deploying jobs
+    # name no environment (test_approved_merge.py covers both). Restore only
+    # those parts to their frozen form.
+    preserved['on']['workflow_dispatch']['inputs']['activate_routing']['description'] = (
+        'Deploy routing-enabled Worker after preparation and a second production approval')
+    preflight = preserved['jobs']['preflight']
+    preflight['name'] = 'Fail closed on missing rollout configuration and reviewer protection'
+    del preflight['permissions']['pull-requests']
+    preflight['steps'] = [
+        {'name': 'Require production reviewers and prevent self approval',
+         'env': {'GH_TOKEN': '${{ github.token }}', 'REPOSITORY': '${{ github.repository }}'},
+         'run': 'gh api "repos/${REPOSITORY}/environments/production" \\\n'
+                '  --jq \'.protection_rules\' > "${RUNNER_TEMP}/production-rules.json"\n'
+                'jq -e \'any(.[]; .type == "required_reviewers" and (.reviewers | length > 0) and .prevent_self_review == true)\' \\\n'
+                '  "${RUNNER_TEMP}/production-rules.json" >/dev/null\n'}
+        if 'verify-approved-merge.py' in step.get('run', '') else step
+        for step in preflight['steps']
+    ]
+    for step in prepare['steps']:
+        if step.get('name') == 'Record the preparation boundary':
+            step['run'] = step['run'].replace(
+                'optional: a later run with activate_routing set through a reviewed infra/cd-production.json.',
+                'optional and requires another production review.')
+    prepare['environment'] = activate['environment'] = 'production'
     assert semantic_hash(preserved) == '5b90522ad5fb167b48c6c79b9f4d6ac6f0508719716b0bfc4844385f030ef7b2'
 
 
