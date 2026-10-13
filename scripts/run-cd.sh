@@ -16,7 +16,8 @@
 # mistake fails here in seconds instead of in a queued run:
 #   - scripts/validate-rollout-config.py over the inputs and repository
 #     variables;
-#   - the `production` environment requires a reviewer and blocks self-review.
+#   - scripts/verify-approved-merge.py: the tip of main must be the merge of
+#     a pull request that someone other than its author approved.
 #
 # Run from a shell logged in with both `az login` and `gh auth login`.
 # Pass --yes to skip the confirmation prompt.
@@ -60,12 +61,7 @@ while IFS= read -r pair; do
 done < <(gh variable list --repo "$REPO" --json name,value --jq '.[] | "\(.name)=\(.value)"')
 env "${validator_env[@]}" python3 scripts/validate-rollout-config.py
 
-if ! gh api "repos/${REPO}/environments/production" --jq '.protection_rules' |
-  jq -e 'any(.[]; .type == "required_reviewers" and (.reviewers | length > 0) and .prevent_self_review == true)' >/dev/null; then
-  echo "The production environment must require a reviewer with self-review prevented, or CD's preflight fails." >&2
-  echo "A repository admin sets this under Settings -> Environments -> production." >&2
-  exit 1
-fi
+REPOSITORY="$REPO" DEPLOY_SHA="$(git rev-parse origin/main)" python3 scripts/verify-approved-merge.py
 
 echo
 echo "CD inputs (from origin/main:${CONFIG}):"
@@ -86,4 +82,3 @@ gh workflow run cd.yml --repo "$REPO" --ref main "${inputs[@]}"
 # The run takes a moment to appear after dispatch.
 sleep 5
 gh run list --repo "$REPO" --workflow cd.yml --limit 1 --json url --jq '.[0].url'
-echo "The prepare job waits for a production reviewer other than whoever dispatched it."

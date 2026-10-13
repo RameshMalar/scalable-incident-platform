@@ -16,8 +16,6 @@ LOCATION="${LOCATION:-malaysiawest}"
 IDENTITY_NAME="${IDENTITY_NAME:-incident-github-deploy}"
 GITHUB_REPO="${GITHUB_REPO:-RameshMalar/scalable-incident-platform}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
-# Must match the `environment:` named by the deploy job in cd.yml.
-DEPLOY_ENVIRONMENT="${DEPLOY_ENVIRONMENT:-production}"
 
 # Contributor deploys the template; RBAC Administrator is needed because the
 # template itself creates a role assignment (the ingestion app's AcrPull).
@@ -64,8 +62,8 @@ owner_id="$(gh api "users/${owner}" --jq .id)"
 repo_id="$(gh api "repos/${GITHUB_REPO}" --jq .id)"
 qualified="repo:${owner}@${owner_id}/${repo}@${repo_id}"
 
-# One credential per trusted GitHub context. A workflow triggered from any
-# other branch or fork gets no token at all.
+# The deploy branch is the only trusted GitHub context. A workflow triggered
+# from any other branch, a pull request or a fork gets no token at all.
 add_federated_credential() {
   local name="$1" subject="$2"
   echo "==> Federated credential: ${name}"
@@ -79,11 +77,12 @@ add_federated_credential() {
     --output none
 }
 
-# A job that names a GitHub environment gets an environment-scoped subject
-# instead of a branch-scoped one, so the deploy job needs its own credential.
+# Deliberately no `pull_request` or `environment:` credential. No workflow signs
+# in to Azure on a pull request, and on GitHub Free a private repository cannot
+# restrict which branches use an environment, so an environment subject would
+# let a workflow on any branch sign in. Jobs that deploy therefore name no
+# environment and carry this branch subject.
 add_federated_credential "branch-${DEPLOY_BRANCH}" "${qualified}:ref:refs/heads/${DEPLOY_BRANCH}"
-add_federated_credential "pull-request" "${qualified}:pull_request"
-add_federated_credential "environment-${DEPLOY_ENVIRONMENT}" "${qualified}:environment:${DEPLOY_ENVIRONMENT}"
 
 cat <<MSG
 

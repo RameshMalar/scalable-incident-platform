@@ -155,10 +155,14 @@ dispatches CD on `main` once you confirm. It needs both `az login` and
     -n incident-subscription --query properties.configuration.ingress.fqdn -o tsv)
   curl -H "Authorization: Bearer $token" "$url/api/v1/subscriptions"
   ```
-- **Approval.** The `prepare` job (and `activate-worker`, when
-  `activate_routing` is true) waits for a `production` reviewer other than
-  whoever dispatched the run. The environment must be configured with required
-  reviewers and *Prevent self-review*, or CD's preflight fails.
+- **Approval happens at merge time.** GitHub Free cannot require environment
+  reviewers or protect branches on a private repository, so CD checks the
+  two-person rule itself (`scripts/verify-approved-merge.py`): it deploys only
+  a commit that is the merge of a pull request approved by someone other than
+  its author, on that pull request's final commit. Never push straight to
+  `main`; CD refuses to deploy what did not go through review. A team member
+  with write access could still push a changed workflow to `main`; that is
+  visible in the history, but nothing on this plan can prevent it.
 - **Routing.** Enabling subscription-based routing means setting
   `activate_routing` and `routing_configuration_approved` to `true` and filling
   in `routing_approval_reference` and `rollback_worker_image`; see
@@ -188,11 +192,11 @@ repository's numeric ids rather than its name. A credential written with plain
 names simply never matches, and the failure appears as `AADSTS700213` at
 sign-in.
 
-One credential is registered per trusted context -- the deploy branch, pull
-requests, and the `production` environment. The deploy job names an
-environment, which gives it an environment-scoped subject rather than a
-branch-scoped one; without that third credential the deployment fails to
-authenticate even though the branch credential looks correct. It prints four values to add under
+Only the deploy branch is trusted: a workflow on any other branch, or on a pull
+request, gets no Azure token. That is also why CD's jobs name no GitHub
+environment. A job that does carries an environment-scoped subject, and on
+GitHub Free a private repository cannot restrict which branches use an
+environment, so trusting that subject would let any branch sign in. It prints four values to add under
 **Settings → Secrets and variables → Actions → Variables**:
 
 `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
@@ -1024,8 +1028,8 @@ for enough.
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `ci.yml` | Every push and pull request | Tests the Common Event Model and the Producer SDK; runs every service test suite; builds all four images and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit); on pull requests, previews the infrastructure change against the live subscription |
-| `cd.yml` | Push to `main` | Deploys infrastructure (registry, logging, Container Apps environment, Service Bus namespace and queue, identities), builds and pushes SHA-tagged images for all four components, rolls out the ingestion, worker and dashboard revisions, verifies `/health` reports the ingestion service healthy **and** publishing to Service Bus and that the dashboard is serving, publishes a real incident and waits for the worker to drain the queue, then deploys the load simulator's job definition without starting it |
+| `ci.yml` | Every push and pull request | Tests the Common Event Model and the Producer SDK; runs every service test suite; builds every image and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit). It never signs in to Azure |
+| `cd.yml` | Dispatch on `main` only, via `scripts/run-cd.sh` | Refuses unless the commit is an approved pull request merge; reruns CI at that commit; deploys Notification, core infrastructure and the Subscription API, then ingestion, the dashboard, the load simulator's job definition, the workbook and alerts, verifying each; optionally rolls out the subscription-routing Worker last |
 
 Dependabot raises weekly pull requests for Python, Docker and Actions
 dependencies.
@@ -1036,33 +1040,25 @@ cannot report success while being unreachable — and, because `/health` names t
 active publisher, so it cannot report success while quietly dropping every
 incident it accepts.
 
-The worker has no endpoint to probe, so its verification is behavioural: CD
-posts one incident through the deployed ingestion service and fails unless the
-queue's backlog returns to zero, or if the message dead-letters instead. That
-single assertion covers the whole path — ingress, publish, queue, the autoscaler
-waking a replica from zero, receive, complete — and it is the only check that
-would notice the worker's receive rights or its scale rule being wrong.
+CD no longer posts an incident to watch the worker drain the queue: since the
+Subscription API rollout its verification sends no incident requests beyond an
+anonymous probe that must be refused with 401. The end-to-end check is now the
+Evidence workflow, which posts a test incident and waits for Telegram delivery.
 
 The model-drift check exists because both services carry their own copy of the
 Common Event Model, so that each can build from its own directory. Drift between
 the copies is a protocol break that neither service's unit tests can see: each
 would still agree with itself.
 
-The infrastructure preview runs `what-if` against the live subscription, which
-catches what `az bicep build` cannot — a stale API version, an `existing`
-reference to something absent, a change to a property that cannot be changed. It
-runs as the deploy identity, using a federated credential for `pull_request` that
-already existed and went unused, and that is the point of it: previewing role
-assignments needs Role Based Access Control Administrator, which the pipeline
-holds and no person does, so this is what puts a preview within everyone's reach.
-
-Its output is filtered, which is unusual for a check and deliberate here. Raw
-`what-if` reports around forty property changes against this template, of which
-one is real: every value taken from another resource is reported as changing,
-because a `reference()` cannot be evaluated before deployment and the expression
-itself is printed as the new value. Each known class of false positive is counted
-instead of listed, so that a genuine change is not the fortieth line of a summary
-nobody reads.
+Pull requests no longer preview the infrastructure change against the live
+subscription. That preview ran as the deploy identity through a `pull_request`
+federated credential, which let any pull request's workflow sign in with the
+deploy identity's rights. It now lives in the manual `azure-preview.yml`, which
+needs its own read-only identity (see `.github/workflows/AZURE_PREVIEW.md`).
+Until that exists, preview a change with `az deployment group what-if` from an
+account that can read role assignments. Raw `what-if` output reports dozens of
+spurious changes: every value taken from another resource shows as changing,
+because a `reference()` cannot be evaluated before deployment.
 
 Image builds are retried three times with increasing backoff. Both pipelines
 pull the base image from Docker Hub and push to a registry, neither of which
