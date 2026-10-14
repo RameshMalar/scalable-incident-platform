@@ -49,3 +49,18 @@ def test_queue_gate_lists_role_assignments_with_a_valid_az_invocation(monkeypatc
     listing = next(call for call in calls if call[:3] == ("role", "assignment", "list"))
     # The Azure CLI rejects --all together with --scope or --resource-group.
     assert "--scope" in listing and "--all" not in listing
+
+
+def test_every_subscription_api_check_signs_in_right_before():
+    # GitHub's federated assertion lasts five minutes, and a token for the
+    # Subscription API audience is first requested by verify-subscription-api.sh.
+    # Run 38502649013 failed with AADSTS700024 eleven minutes after sign-in.
+    cd = yaml.safe_load((ROOT / ".github/workflows/cd.yml").read_text())
+    checked = 0
+    for job in cd["jobs"].values():
+        steps = job.get("steps", [])
+        for index, step in enumerate(steps):
+            if "verify-subscription-api.sh" in step.get("run", ""):
+                assert steps[index - 1].get("uses", "").startswith("azure/login@"), step["name"]
+                checked += 1
+    assert checked == 2
