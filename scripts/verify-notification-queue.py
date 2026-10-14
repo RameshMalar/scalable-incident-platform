@@ -123,7 +123,9 @@ def main():
         record = az("identity", "show", "-g", group, "-n", identity)
         UUID(record["clientId"])
         identities[key] = record
-    assignments = az("role", "assignment", "list", "--scope", queue["id"], "--all")
+    # Only exact queue-scoped assignments count, which --scope returns on its
+    # own; the CLI rejects --scope combined with --all.
+    assignments = az("role", "assignment", "list", "--scope", queue["id"])
     revisions = {}
     scaler_queues = []
     for service in ("worker", "notification"):

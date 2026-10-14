@@ -188,7 +188,9 @@ jobs:
           PY
           )
           environment_id=$(echo "$outputs" | jq -er '.environmentId.value')
-          actual_location=$(az resource show --ids "$environment_id" --query location -o tsv)
+          # Container Apps reports the display name ("Malaysia West"), Bicep the
+          # short name ("malaysiawest"); compare them in the short form.
+          actual_location=$(az resource show --ids "$environment_id" --query location -o tsv | tr -d ' ' | tr '[:upper:]' '[:lower:]')
           test "$actual_location" = "$expected_location"
           for key in registryName registryLoginServer environmentId \
             notificationIdentityId notificationIdentityClientId notificationScalerIdentityId \
