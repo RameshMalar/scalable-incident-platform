@@ -383,6 +383,12 @@ def test_subscription_cd_remains_manual_and_semantically_unchanged():
     text = text.replace('notification service ready notifier=TelegramNotifier', 'notification service ready notifier=telegram')
     text = text.replace('                INGESTION_URL="$url" bash scripts/verify-anonymous-ingestion.sh\n                echo "::notice::Deployed, healthy, ready, and refusing anonymous writes at ${url}"',
                         '                echo "::notice::Deployed, healthy, ready, and reporting Entra authentication configured at ${url}"\n                echo "::notice::Health/readiness do not prove authentication enforcement; no incident request was sent"')
+    # The baseline location check compared Azure's display name with Bicep's
+    # short name and could never pass (test_cd_prepare_preflight.py).
+    text = text.replace('          # Container Apps reports the display name ("Malaysia West"), Bicep the\n'
+                        '          # short name ("malaysiawest"); compare them in the short form.\n'
+                        '          actual_location=$(az resource show --ids "$environment_id" --query location -o tsv | tr -d \' \' | tr \'[:upper:]\' \'[:lower:]\')',
+                        '          actual_location=$(az resource show --ids "$environment_id" --query location -o tsv)')
     # Phase 4 adds an independently tested read-only queue gate. Remove only
     # those additions when comparing the preserved Phase 1-3 contract.
     preserved = load(text)
