@@ -475,6 +475,19 @@ jobs:
           test -n "$url"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
+      # The GitHub token the first sign-in exchanged expires after five
+      # minutes. Tokens Azure issued from it last longer, so the deployments
+      # above keep working, but a token for a new audience (the Subscription
+      # API, below) needs a fresh assertion; by this point the image builds,
+      # scans and deployments have taken well over five minutes
+      # (AADSTS700024 in run 38502649013).
+      - name: Sign in to Azure again for a fresh federated token
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
       - name: Verify Subscription API Cosmos readiness and bearer authorization
         env:
           SUBSCRIPTION_URL: ${{ steps.subscription.outputs.url }}

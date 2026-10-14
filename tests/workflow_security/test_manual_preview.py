@@ -429,6 +429,9 @@ def test_subscription_cd_remains_manual_and_semantically_unchanged():
                 'optional: a later run with activate_routing set through a reviewed infra/cd-production.json.',
                 'optional and requires another production review.')
     prepare['environment'] = activate['environment'] = 'production'
+    # A second sign-in refreshes the five-minute federated assertion before the
+    # Subscription API check (test_cd_prepare_preflight.py).
+    prepare['steps'] = [step for step in prepare['steps'] if step.get('name') != 'Sign in to Azure again for a fresh federated token']
     assert semantic_hash(preserved) == '5b90522ad5fb167b48c6c79b9f4d6ac6f0508719716b0bfc4844385f030ef7b2'
 
 
