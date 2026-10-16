@@ -112,7 +112,7 @@ jobs:
           path: trusted
           persist-credentials: false
       - name: Download artifact from this run by immutable ID
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.compile.outputs.artifact_id }}
           path: bundle
