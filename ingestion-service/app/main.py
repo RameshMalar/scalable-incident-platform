@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
+import json
 import logging
 import os
+from pathlib import Path
 import random
 import uuid
 
@@ -214,21 +216,15 @@ def _record_demo_event(event: IncidentEvent) -> None:
 
 
 # Blobs from evidence_images/manifest.proposed.json, already in the evidence
-# container through the Evidence batch workflow. Referencing one gives a
-# simulated incident a photograph the dashboard's Evidence page and the Telegram
-# alert can actually show, and the camera named is the one printed on it. The
-# set has no PPE image, so a simulated PPE incident keeps its placeholder and
+# container through the Evidence batch workflow; scripts/sync-simulated-evidence.py
+# writes the list. Each simulated incident references one at random, so a demo
+# shows a different photograph each time on the dashboard's Evidence page and in
+# the Telegram alert, and the camera named is the one printed on that image. The
+# set has no PPE image yet, so a simulated PPE incident keeps its placeholder and
 # alerts as text.
-SIMULATED_EVIDENCE = {
-    "intrusion": {
-        "source_id": "CAM-01",
-        "blob": "TENANT-DEV/intrusion/EVT-SYNTH-489984C9AAFB53DF8602A4A3E5FE1A28.jpg",
-    },
-    "crowd": {
-        "source_id": "CAM-107",
-        "blob": "TENANT-DEV/people_counting/EVT-SYNTH-76B2E77FD33B50499B4265448545E46E.jpg",
-    },
-}
+SIMULATED_EVIDENCE = json.loads(
+    Path(__file__).with_name("simulated_evidence.json").read_text()
+)
 
 
 def _simulated_evidence(
@@ -241,11 +237,12 @@ def _simulated_evidence(
     stands and no camera is imposed.
     """
     endpoint = os.environ.get("EVIDENCE_BLOB_ENDPOINT", "").strip().rstrip("/")
-    evidence = SIMULATED_EVIDENCE.get(analytics_type)
+    candidates = SIMULATED_EVIDENCE.get(analytics_type)
 
-    if not endpoint or evidence is None:
+    if not endpoint or not candidates:
         return None, placeholder
 
+    evidence = random.choice(candidates)
     container = os.environ.get("EVIDENCE_CONTAINER", "evidence").strip()
     return evidence["source_id"], f"{endpoint}/{container}/{evidence['blob']}"
 
