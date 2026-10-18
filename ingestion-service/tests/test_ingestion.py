@@ -1,9 +1,21 @@
+import json
+from pathlib import Path
+
 import pytest
 from common_event_model import IncidentEvent
 from fastapi.testclient import TestClient
 
-from app.main import _build_default_publisher, app, get_publisher
+from app.main import (
+    SIMULATED_EVIDENCE,
+    _build_default_publisher,
+    app,
+    get_publisher,
+)
 from app.publisher import MockEventPublisher, ServiceBusEventPublisher
+
+MANIFEST = (
+    Path(__file__).resolve().parents[2] / "evidence_images/manifest.proposed.json"
+)
 
 
 @pytest.fixture
@@ -177,6 +189,58 @@ def test_the_same_model_carries_every_analytics_type(client, mock_publisher):
     published = [e.analytics_type for e in mock_publisher.published_events]
     assert published == ["intrusion_detection", "PPE_detection", "crowd_detection"]
     assert {e.event_purpose for e in mock_publisher.published_events} == {"e2e_test"}
+
+
+EVIDENCE_ENDPOINT = "https://incidentevitest.blob.core.windows.net"
+
+
+def test_simulate_references_real_evidence_when_deployed(
+    client, mock_publisher, monkeypatch
+):
+    # The trailing slash is how the storage account reports its endpoint.
+    monkeypatch.setenv("EVIDENCE_BLOB_ENDPOINT", EVIDENCE_ENDPOINT + "/")
+    monkeypatch.setenv("EVIDENCE_CONTAINER", "evidence")
+
+    for analytics_type in ("intrusion", "ppe", "crowd"):
+        client.post(f"/api/v1/simulate/{analytics_type}")
+
+    intrusion, ppe, crowd = mock_publisher.published_events
+
+    assert intrusion.evidence_uri == (
+        f"{EVIDENCE_ENDPOINT}/evidence/"
+        f"{SIMULATED_EVIDENCE['intrusion']['blob']}"
+    )
+    assert intrusion.source_id == "CAM-01"
+
+    assert crowd.evidence_uri == (
+        f"{EVIDENCE_ENDPOINT}/evidence/{SIMULATED_EVIDENCE['crowd']['blob']}"
+    )
+    assert crowd.source_id == "CAM-107"
+
+    # No PPE image exists, so its placeholder stands and the alert is text.
+    assert ppe.evidence_uri == "/evidence/ppe_sample.jpg"
+
+
+def test_simulate_keeps_placeholders_without_an_evidence_endpoint(
+    client, mock_publisher, monkeypatch
+):
+    monkeypatch.delenv("EVIDENCE_BLOB_ENDPOINT", raising=False)
+
+    client.post("/api/v1/simulate/intrusion")
+
+    (event,) = mock_publisher.published_events
+    assert event.evidence_uri == "/evidence/intrusion_sample.jpg"
+
+
+def test_simulated_evidence_is_in_the_uploaded_manifest():
+    # The Evidence batch workflow uploads exactly the manifest's blobs, so a path
+    # missing from it would name an image that is not in the container.
+    manifest = json.loads(MANIFEST.read_text())
+    images = {image["blob_path"]: image["event"] for image in manifest["images"]}
+
+    for evidence in SIMULATED_EVIDENCE.values():
+        assert evidence["blob"] in images
+        assert images[evidence["blob"]]["source_id"] == evidence["source_id"]
 
 
 def test_invalid_event_purpose_is_rejected(client):

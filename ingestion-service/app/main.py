@@ -213,6 +213,43 @@ def _record_demo_event(event: IncidentEvent) -> None:
     events.insert(0, event_data)
 
 
+# Blobs from evidence_images/manifest.proposed.json, already in the evidence
+# container through the Evidence batch workflow. Referencing one gives a
+# simulated incident a photograph the dashboard's Evidence page and the Telegram
+# alert can actually show, and the camera named is the one printed on it. The
+# set has no PPE image, so a simulated PPE incident keeps its placeholder and
+# alerts as text.
+SIMULATED_EVIDENCE = {
+    "intrusion": {
+        "source_id": "CAM-01",
+        "blob": "TENANT-DEV/intrusion/EVT-SYNTH-489984C9AAFB53DF8602A4A3E5FE1A28.jpg",
+    },
+    "crowd": {
+        "source_id": "CAM-107",
+        "blob": "TENANT-DEV/people_counting/EVT-SYNTH-76B2E77FD33B50499B4265448545E46E.jpg",
+    },
+}
+
+
+def _simulated_evidence(
+    analytics_type: str, placeholder: str
+) -> tuple[str | None, str]:
+    """Return the camera and evidence reference for a simulated incident.
+
+    A blob reference has to name the deployment's storage account, which only
+    the container app is told. Without it -- a local run -- the placeholder path
+    stands and no camera is imposed.
+    """
+    endpoint = os.environ.get("EVIDENCE_BLOB_ENDPOINT", "").strip().rstrip("/")
+    evidence = SIMULATED_EVIDENCE.get(analytics_type)
+
+    if not endpoint or evidence is None:
+        return None, placeholder
+
+    container = os.environ.get("EVIDENCE_CONTAINER", "evidence").strip()
+    return evidence["source_id"], f"{endpoint}/{container}/{evidence['blob']}"
+
+
 @app.post(
     "/api/v1/simulate/{analytics_type}",
     summary="Generate a sample incident (demo/dev only)",
@@ -259,12 +296,15 @@ async def simulate_event(
         }
 
     sample = analytics_samples[analytics_type]
+    source_id, evidence_uri = _simulated_evidence(
+        analytics_type, sample["evidence_uri"]
+    )
 
     event = IncidentEvent(
         event_id=f"EVT-{uuid.uuid4().hex[:8].upper()}",
         tenant_id="TENANT-01",
         site_id="SITE-01",
-        source_id=f"CAM-{random.randint(1, 20):03}",
+        source_id=source_id or f"CAM-{random.randint(1, 20):03}",
         source_name="Demo Camera",
         source_type="video_analytics",
         analytics_type=sample["analytics_type"],
@@ -274,7 +314,7 @@ async def simulate_event(
         event_purpose="e2e_test",
         confidence=round(random.uniform(0.80, 0.99), 2),
         description=sample["description"],
-        evidence_uri=sample["evidence_uri"]
+        evidence_uri=evidence_uri
     )
 
     try:

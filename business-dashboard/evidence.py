@@ -123,8 +123,9 @@ class EvidenceStore:
         """Whether this URI points at a blob this store could read.
 
         Lets a caller count or filter incidents without downloading anything.
-        Incidents from `/api/v1/simulate` carry placeholder paths such as
-        `/evidence/ppe_sample.jpg` that name no real blob, and listing those as
+        Simulated PPE incidents, and any simulated incident from a local run,
+        carry placeholder paths such as `/evidence/ppe_sample.jpg` that name no
+        real blob, and listing those as
         having evidence would promise an image that never arrives.
         """
         if not evidence_uri:
