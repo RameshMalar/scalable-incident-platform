@@ -57,7 +57,7 @@ jobs:
         run: python scripts/upload-evidence-batch.py --mode "$BATCH_MODE" --report evidence-upload-summary.json
       - name: Retain per-image results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: evidence-batch-summary
           path: evidence-upload-summary.json

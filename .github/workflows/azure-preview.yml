@@ -76,7 +76,7 @@ jobs:
         id: bundle
       - name: Upload immutable compiled template
         id: upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reviewed-azure-template-${{ github.run_attempt }}
           path: |
