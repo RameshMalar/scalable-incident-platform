@@ -36,7 +36,7 @@ PREVIEW = load((ROOT / '.github/workflows/azure-preview.yml').read_text(encoding
 
 # Frozen semantic hashes of every unprivileged job at the verified base.
 # Independent of Git objects/history; changing a command, matrix or dependency fails.
-EXPECTED_CI_CONTRACT = {'on': 'a41e2e1c8615f508c061c8cc1e113c4dfa24bbd8b8adfcf7d8b86339e5c97e5f', 'jobs': {'bicep': 'd2cd7c2cc02c48be0e6f6620c87896cb35b3c81446dc24ffc721bcd8a5ebbf31', 'integration': '66f1f489965e301fb76141c927cbb1eedff9066e343802e1cc965c74cdcc8c68', 'contract': '932a01b0a3c447bf36267327e582efbab78866590e532681b29cdb4c6444c879', 'producer-sdk': '7896891ed2c705f854cf99295ab02b94ee873fbb288023de714b6de4ac2dda55', 'test': '0d277a938b6c23480eba4531c07559970d8150202c7ac1c293cd04f3e2e17a2c', 'build': 'bbca876211c1ae5d92dcad8c5a210b1267fd8bb21854e42da9c0443c8de302d9', 'security': '36b9f04694da9a8f04c7d7d93c84496ff1d1f2c203a155d099fea57ba61f1f7a'}}
+EXPECTED_CI_CONTRACT = {'on': 'a41e2e1c8615f508c061c8cc1e113c4dfa24bbd8b8adfcf7d8b86339e5c97e5f', 'jobs': {'bicep': 'd2cd7c2cc02c48be0e6f6620c87896cb35b3c81446dc24ffc721bcd8a5ebbf31', 'integration': '66f1f489965e301fb76141c927cbb1eedff9066e343802e1cc965c74cdcc8c68', 'contract': '932a01b0a3c447bf36267327e582efbab78866590e532681b29cdb4c6444c879', 'producer-sdk': '7896891ed2c705f854cf99295ab02b94ee873fbb288023de714b6de4ac2dda55', 'test': '0d277a938b6c23480eba4531c07559970d8150202c7ac1c293cd04f3e2e17a2c', 'build': 'bbca876211c1ae5d92dcad8c5a210b1267fd8bb21854e42da9c0443c8de302d9', 'security': 'f4951f9de27975780fddfab8a45fd1fddacaba4e149b02fc7b89cf030f4e4432'}}
 
 
 def semantic_hash(value):

@@ -1079,6 +1079,12 @@ rather than by uploading to the Security tab. Trivy ignores unfixed
 vulnerabilities: a CVE with no available patch in the base image is not
 something a build can act on.
 
+Every run keeps what the scanners saw, pass or fail. Each service's
+`security-report-<service>` artifact holds Bandit's HTML and JSON reports and
+pip-audit's JSON, and the run page summarises both; Trivy's JSON is kept as
+`trivy-report-<image>`. Bandit's report lists every severity, including the Low
+findings the `-ll` gate lets through.
+
 Dependabot alerts and version updates are free on private repositories and are
 enabled separately.
 
