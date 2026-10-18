@@ -189,14 +189,23 @@ def test_common_event_model_requires_tenant_id(client):
 
 
 def test_the_same_model_carries_every_analytics_type(client, mock_publisher):
-    for analytics_type in ("intrusion", "ppe", "crowd"):
+    for analytics_type in ("intrusion", "ppe", "crowd", "fire", "smoke"):
         response = client.post(f"/api/v1/simulate/{analytics_type}")
 
         assert response.status_code == 200
         assert response.json()["status"] == "accepted"
 
-    published = [e.analytics_type for e in mock_publisher.published_events]
-    assert published == ["intrusion_detection", "PPE_detection", "crowd_detection"]
+    published = [
+        (e.analytics_type, e.event_type) for e in mock_publisher.published_events
+    ]
+    assert published == [
+        ("intrusion_detection", "intrusion_detected"),
+        ("PPE_detection", "helmet_missing"),
+        ("crowd_detection", "crowd_threshold_exceeded"),
+        # The same analytics and event types as the fire/smoke evidence images.
+        ("fire_smoke_detection", "fire_detected"),
+        ("fire_smoke_detection", "smoke_detected"),
+    ]
     assert {e.event_purpose for e in mock_publisher.published_events} == {"e2e_test"}
 
 
@@ -210,13 +219,15 @@ def test_simulate_references_real_evidence_when_deployed(
     monkeypatch.setenv("EVIDENCE_BLOB_ENDPOINT", EVIDENCE_ENDPOINT + "/")
     monkeypatch.setenv("EVIDENCE_CONTAINER", "evidence")
 
-    for analytics_type in ("intrusion", "ppe", "crowd"):
+    for analytics_type in ("intrusion", "ppe", "crowd", "fire", "smoke"):
         client.post(f"/api/v1/simulate/{analytics_type}")
 
-    intrusion, ppe, crowd = mock_publisher.published_events
+    intrusion, ppe, crowd, fire, smoke = mock_publisher.published_events
 
     # Whichever image was drawn, the camera is the one printed on it.
-    for event, kind in ((intrusion, "intrusion"), (crowd, "crowd")):
+    for event, kind in (
+        (intrusion, "intrusion"), (crowd, "crowd"), (fire, "fire"), (smoke, "smoke")
+    ):
         cameras = {
             f"{EVIDENCE_ENDPOINT}/evidence/{evidence['blob']}": evidence["source_id"]
             for evidence in SIMULATED_EVIDENCE[kind]

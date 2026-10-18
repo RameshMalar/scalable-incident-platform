@@ -20,6 +20,8 @@ EVENT_TYPES = {
     "intrusion": "intrusion_detected",
     "crowd": "people_count_observed",
     "ppe": "helmet_missing",
+    "fire": "fire_detected",
+    "smoke": "smoke_detected",
 }
 
 

@@ -252,7 +252,7 @@ def _simulated_evidence(
     summary="Generate a sample incident (demo/dev only)",
     description=(
         "Generates and publishes a realistic sample incident for "
-        "'intrusion', 'ppe', or 'crowd' without needing a real analytics "
+        "'intrusion', 'ppe', 'crowd', 'fire' or 'smoke' without needing a real analytics "
         "producer. Not part of the real ingestion contract -- intended for "
         "local development and demos, and its output also populates the "
         "in-memory dashboard at '/'."
@@ -283,6 +283,20 @@ async def simulate_event(
         "description": "Crowd threshold exceeded in monitored area",
         "severity": "high",
         "evidence_uri": "/evidence/crowd_sample.jpg"
+    },
+    "fire": {
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "fire_detected",
+        "description": "Fire detected in monitored area",
+        "severity": "high",
+        "evidence_uri": "/evidence/fire_sample.jpg"
+    },
+    "smoke": {
+        "analytics_type": "fire_smoke_detection",
+        "event_type": "smoke_detected",
+        "description": "Smoke detected in monitored area",
+        "severity": "high",
+        "evidence_uri": "/evidence/smoke_sample.jpg"
     }
 }
 
