@@ -1,5 +1,7 @@
+import importlib.util
 import json
 from pathlib import Path
+import random
 
 import pytest
 from common_event_model import IncidentEvent
@@ -16,6 +18,13 @@ from app.publisher import MockEventPublisher, ServiceBusEventPublisher
 MANIFEST = (
     Path(__file__).resolve().parents[2] / "evidence_images/manifest.proposed.json"
 )
+
+_sync_spec = importlib.util.spec_from_file_location(
+    "sync_simulated_evidence",
+    Path(__file__).resolve().parents[2] / "scripts/sync-simulated-evidence.py",
+)
+SYNC = importlib.util.module_from_spec(_sync_spec)
+_sync_spec.loader.exec_module(SYNC)
 
 
 @pytest.fixture
@@ -206,19 +215,30 @@ def test_simulate_references_real_evidence_when_deployed(
 
     intrusion, ppe, crowd = mock_publisher.published_events
 
-    assert intrusion.evidence_uri == (
-        f"{EVIDENCE_ENDPOINT}/evidence/"
-        f"{SIMULATED_EVIDENCE['intrusion']['blob']}"
-    )
-    assert intrusion.source_id == "CAM-01"
-
-    assert crowd.evidence_uri == (
-        f"{EVIDENCE_ENDPOINT}/evidence/{SIMULATED_EVIDENCE['crowd']['blob']}"
-    )
-    assert crowd.source_id == "CAM-107"
+    # Whichever image was drawn, the camera is the one printed on it.
+    for event, kind in ((intrusion, "intrusion"), (crowd, "crowd")):
+        cameras = {
+            f"{EVIDENCE_ENDPOINT}/evidence/{evidence['blob']}": evidence["source_id"]
+            for evidence in SIMULATED_EVIDENCE[kind]
+        }
+        assert event.evidence_uri in cameras
+        assert event.source_id == cameras[event.evidence_uri]
 
     # No PPE image exists, so its placeholder stands and the alert is text.
     assert ppe.evidence_uri == "/evidence/ppe_sample.jpg"
+
+
+def test_repeated_simulations_show_different_images(
+    client, mock_publisher, monkeypatch
+):
+    monkeypatch.setenv("EVIDENCE_BLOB_ENDPOINT", EVIDENCE_ENDPOINT)
+    random.seed(7)
+
+    for _ in range(10):
+        client.post("/api/v1/simulate/crowd")
+
+    shown = {event.evidence_uri for event in mock_publisher.published_events}
+    assert len(shown) > 1
 
 
 def test_simulate_keeps_placeholders_without_an_evidence_endpoint(
@@ -232,15 +252,14 @@ def test_simulate_keeps_placeholders_without_an_evidence_endpoint(
     assert event.evidence_uri == "/evidence/intrusion_sample.jpg"
 
 
-def test_simulated_evidence_is_in_the_uploaded_manifest():
+def test_simulated_evidence_matches_the_uploaded_manifest():
     # The Evidence batch workflow uploads exactly the manifest's blobs, so a path
-    # missing from it would name an image that is not in the container.
+    # missing from it would name an image that is not in the container. Run
+    # scripts/sync-simulated-evidence.py after changing the manifest.
     manifest = json.loads(MANIFEST.read_text())
-    images = {image["blob_path"]: image["event"] for image in manifest["images"]}
 
-    for evidence in SIMULATED_EVIDENCE.values():
-        assert evidence["blob"] in images
-        assert images[evidence["blob"]]["source_id"] == evidence["source_id"]
+    assert SIMULATED_EVIDENCE == SYNC.build(manifest)
+    assert SIMULATED_EVIDENCE["intrusion"] and SIMULATED_EVIDENCE["crowd"]
 
 
 def test_invalid_event_purpose_is_rejected(client):
