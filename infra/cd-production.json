@@ -4,9 +4,9 @@
   "subscription_auth_audience": "api://fbbe63e1-1f8f-4d4d-b695-0f9982842081",
   "subscription_tenant_map": "416bf12a-6afc-44b4-a69d-7b8241f56012:TENANT-CD,04b07795-8ddb-461a-bbee-02f9e1bf7b46:TENANT-CD",
   "subscription_configuration_approved": true,
-  "activate_routing": true,
-  "routing_configuration_approved": true,
-  "routing_approval_reference": "TENANT-CD destination telegram:-4803357508 approved and subscription SUB-f4b4c35d-0b14-4a02-b71f-d0042e7faf13 (intrusion_detected) enabled on 2026-10-16; legacy notification-events queue kept",
+  "activate_routing": false,
+  "routing_configuration_approved": false,
+  "routing_approval_reference": "",
   "notification_queue_review_reference": "",
-  "rollback_worker_image": "incidentacr4pqaac2c4e4hs.azurecr.io/incident-worker@sha256:248ee56e8b994cee9241efbdb3dad48900c5f2af256c81431c7cf21f75fe983c"
+  "rollback_worker_image": ""
 }
