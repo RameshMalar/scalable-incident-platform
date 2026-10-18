@@ -189,7 +189,7 @@ def test_common_event_model_requires_tenant_id(client):
 
 
 def test_the_same_model_carries_every_analytics_type(client, mock_publisher):
-    for analytics_type in ("intrusion", "ppe", "crowd", "fire", "smoke"):
+    for analytics_type in ("intrusion", "ppe", "crowd", "people_count", "fire_smoke"):
         response = client.post(f"/api/v1/simulate/{analytics_type}")
 
         assert response.status_code == 200
@@ -198,14 +198,16 @@ def test_the_same_model_carries_every_analytics_type(client, mock_publisher):
     published = [
         (e.analytics_type, e.event_type) for e in mock_publisher.published_events
     ]
-    assert published == [
+    intrusion, ppe, crowd, people_count, fire_smoke = published
+    assert (intrusion, ppe, crowd, people_count) == (
         ("intrusion_detection", "intrusion_detected"),
         ("PPE_detection", "helmet_missing"),
         ("crowd_detection", "crowd_threshold_exceeded"),
-        # The same analytics and event types as the fire/smoke evidence images.
-        ("fire_smoke_detection", "fire_detected"),
-        ("fire_smoke_detection", "smoke_detected"),
-    ]
+        ("people_counting", "people_count_observed"),
+    )
+    # Fire/smoke is one analytics type whose event is randomised per press.
+    assert fire_smoke[0] == "fire_smoke_detection"
+    assert fire_smoke[1] in {"fire_detected", "smoke_detected"}
     assert {e.event_purpose for e in mock_publisher.published_events} == {"e2e_test"}
 
 
@@ -219,14 +221,15 @@ def test_simulate_references_real_evidence_when_deployed(
     monkeypatch.setenv("EVIDENCE_BLOB_ENDPOINT", EVIDENCE_ENDPOINT + "/")
     monkeypatch.setenv("EVIDENCE_CONTAINER", "evidence")
 
-    for analytics_type in ("intrusion", "ppe", "crowd", "fire", "smoke"):
+    for analytics_type in ("intrusion", "ppe", "crowd", "people_count", "fire_smoke"):
         client.post(f"/api/v1/simulate/{analytics_type}")
 
-    intrusion, ppe, crowd, fire, smoke = mock_publisher.published_events
+    intrusion, ppe, crowd, people_count, fire_smoke = mock_publisher.published_events
 
     # Whichever image was drawn, the camera is the one printed on it.
+    # people_count draws on the same people-counting photos as crowd.
     for event, kind in (
-        (intrusion, "intrusion"), (crowd, "crowd"), (fire, "fire"), (smoke, "smoke")
+        (intrusion, "intrusion"), (crowd, "crowd"), (people_count, "crowd")
     ):
         cameras = {
             f"{EVIDENCE_ENDPOINT}/evidence/{evidence['blob']}": evidence["source_id"]
@@ -234,6 +237,16 @@ def test_simulate_references_real_evidence_when_deployed(
         }
         assert event.evidence_uri in cameras
         assert event.source_id == cameras[event.evidence_uri]
+
+    # Fire/smoke draws from whichever of the two pools matches the event type
+    # that was randomly picked.
+    fire_smoke_kind = "fire" if fire_smoke.event_type == "fire_detected" else "smoke"
+    cameras = {
+        f"{EVIDENCE_ENDPOINT}/evidence/{evidence['blob']}": evidence["source_id"]
+        for evidence in SIMULATED_EVIDENCE[fire_smoke_kind]
+    }
+    assert fire_smoke.evidence_uri in cameras
+    assert fire_smoke.source_id == cameras[fire_smoke.evidence_uri]
 
     # No PPE image exists, so its placeholder stands and the alert is text.
     assert ppe.evidence_uri == "/evidence/ppe_sample.jpg"
@@ -315,5 +328,5 @@ def test_an_anonymous_incident_is_refused_once_authentication_is_on(client):
 def test_dashboard_offers_a_button_for_every_simulated_type(client):
     page = client.get("/").text
 
-    for analytics_type in ("intrusion", "ppe", "crowd", "fire", "smoke"):
+    for analytics_type in ("intrusion", "ppe", "crowd", "people_count", "fire_smoke"):
         assert f"simulateEvent('{analytics_type}')" in page
