@@ -252,7 +252,7 @@ def _simulated_evidence(
     summary="Generate a sample incident (demo/dev only)",
     description=(
         "Generates and publishes a realistic sample incident for "
-        "'intrusion', 'ppe', 'crowd', 'fire' or 'smoke' without needing a real analytics "
+        "'intrusion', 'ppe', 'crowd', 'people_count' or 'fire_smoke' without needing a real analytics "
         "producer. Not part of the real ingestion contract -- intended for "
         "local development and demos, and its output also populates the "
         "in-memory dashboard at '/'."
@@ -284,31 +284,53 @@ async def simulate_event(
         "severity": "high",
         "evidence_uri": "/evidence/crowd_sample.jpg"
     },
-    "fire": {
-        "analytics_type": "fire_smoke_detection",
-        "event_type": "fire_detected",
-        "description": "Fire detected in monitored area",
-        "severity": "high",
-        "evidence_uri": "/evidence/fire_sample.jpg"
+    "people_count": {
+        "analytics_type": "people_counting",
+        "event_type": "people_count_observed",
+        "description": "People count observed in monitored area",
+        "severity": "low",
+        "evidence_uri": "/evidence/people_count_sample.jpg"
     },
-    "smoke": {
-        "analytics_type": "fire_smoke_detection",
-        "event_type": "smoke_detected",
-        "description": "Smoke detected in monitored area",
-        "severity": "high",
-        "evidence_uri": "/evidence/smoke_sample.jpg"
-    }
 }
 
-    if analytics_type not in analytics_samples:
+    # Fire and smoke are one analytics type -- fire_smoke_detection -- so one
+    # button simulates both, picking which was detected at random each press.
+    fire_smoke_samples = {
+        "fire": {
+            "analytics_type": "fire_smoke_detection",
+            "event_type": "fire_detected",
+            "description": "Fire detected in monitored area",
+            "severity": "high",
+            "evidence_uri": "/evidence/fire_sample.jpg"
+        },
+        "smoke": {
+            "analytics_type": "fire_smoke_detection",
+            "event_type": "smoke_detected",
+            "description": "Smoke detected in monitored area",
+            "severity": "high",
+            "evidence_uri": "/evidence/smoke_sample.jpg"
+        }
+    }
+
+    # The public simulate key doesn't always match the key the evidence pool is
+    # filed under in simulated_evidence.json -- people_count draws on the same
+    # people-counting photos as crowd.
+    evidence_pool_keys = {"people_count": "crowd"}
+
+    if analytics_type == "fire_smoke":
+        evidence_kind = random.choice(list(fire_smoke_samples))
+        sample = fire_smoke_samples[evidence_kind]
+    elif analytics_type in analytics_samples:
+        evidence_kind = evidence_pool_keys.get(analytics_type, analytics_type)
+        sample = analytics_samples[analytics_type]
+    else:
         return {
             "status": "error",
             "message": "Unsupported analytics type"
         }
 
-    sample = analytics_samples[analytics_type]
     source_id, evidence_uri = _simulated_evidence(
-        analytics_type, sample["evidence_uri"]
+        evidence_kind, sample["evidence_uri"]
     )
 
     event = IncidentEvent(
