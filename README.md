@@ -1033,6 +1033,7 @@ for enough.
 | --- | --- | --- |
 | `ci.yml` | Every push and pull request | Tests the Common Event Model and the Producer SDK; runs every service test suite; builds every image and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit). It never signs in to Azure |
 | `cd.yml` | Dispatch on `main` only, via `scripts/run-cd.sh` | Refuses unless the commit is an approved pull request merge; reruns CI at that commit; deploys Notification, core infrastructure and the Subscription API, then ingestion, the dashboard, the load simulator's job definition, the workbook and alerts, verifying each; optionally rolls out the subscription-routing Worker last |
+| `dast.yml` | Dispatch, after a CD run | Scans the deployed services with OWASP ZAP as an anonymous client: an active scan of the Ingestion and Subscription APIs and a passive baseline of the dashboard. Fails on any High-risk alert. Holds no Azure credential |
 
 Dependabot raises weekly pull requests for Python, Docker and Actions
 dependencies.
@@ -1080,3 +1081,45 @@ something a build can act on.
 
 Dependabot alerts and version updates are free on private repositories and are
 enabled separately.
+
+### Dynamic application security testing
+
+Bandit, pip-audit and Trivy read code and images; `dast.yml` attacks the running
+services instead, from outside and without a token, which is how an attacker
+meets them. Run it after CD has deployed:
+
+```bash
+fqdn() { az containerapp show -g rg-incident-platform -n "$1" \
+  --query properties.configuration.ingress.fqdn -o tsv; }
+
+gh workflow run dast.yml \
+  -f ingestion_url="https://$(fqdn incident-ingestion)" \
+  -f subscription_url="https://$(fqdn incident-subscription)" \
+  -f dashboard_url="https://$(fqdn incident-dashboard)"
+```
+
+`scripts/dast.py` decides what ZAP is allowed to touch, and each rule is tested
+in `tests/workflow_security/test_dast.py`:
+
+- **Only our own hosts.** Each URL must be that service's
+  `*.azurecontainerapps.io` address, so a typo cannot aim an active scanner at
+  someone else's site.
+- **Only when anonymous calls are refused.** Before anything is scanned,
+  ingestion's `/health` must report Entra auth, the reviewed anonymous probe
+  must get 401, and an anonymous read of the Subscription API must get 401.
+  Scanning a service with authentication switched off would publish whatever
+  the scanner invents.
+- **Never the simulate endpoint.** `POST /api/v1/simulate/{analytics_type}`
+  takes no token and publishes a real incident to Telegram. The active scan
+  attacks exactly the operations in the OpenAPI definition it imports and runs
+  no spider, so the path is removed from that definition. The dashboard only
+  gets ZAP's passive baseline, which sends no attacks.
+
+The run fails on any High-risk alert and uploads the HTML, Markdown and JSON
+reports as the `dast-reports` artifact. Medium and Low alerts, such as missing
+security headers, are listed in the run summary rather than failing it.
+
+One result looks wrong and is not: a malformed JSON body sent to
+`/api/v1/incidents` without a token is answered 422, not 401. FastAPI parses the
+body before it runs the authentication dependency. Nothing is processed either
+way, and a well-formed anonymous request gets 401.
