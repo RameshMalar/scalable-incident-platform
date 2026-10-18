@@ -310,3 +310,10 @@ def test_an_anonymous_incident_is_refused_once_authentication_is_on(client):
 
     assert response.status_code == 401
     assert "Bearer" in response.headers.get("WWW-Authenticate", "")
+
+
+def test_dashboard_offers_a_button_for_every_simulated_type(client):
+    page = client.get("/").text
+
+    for analytics_type in ("intrusion", "ppe", "crowd", "fire", "smoke"):
+        assert f"simulateEvent('{analytics_type}')" in page
