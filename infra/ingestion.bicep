@@ -33,6 +33,12 @@ param tenantMap string
 @description('Entra directory that issues producer tokens. Defaults to the subscription\'s own tenant.')
 param authTenantId string = subscription().tenantId
 
+@description('Blob endpoint holding incident evidence. /api/v1/simulate points its sample incidents at images there; empty leaves them with placeholder paths.')
+param evidenceBlobEndpoint string = ''
+
+@description('Blob container holding incident evidence.')
+param evidenceContainer string = 'evidence'
+
 @description('Fully qualified image reference, tagged with the commit it was built from.')
 param image string
 
@@ -126,6 +132,17 @@ resource ingestion 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'TENANT_MAP'
               value: tenantMap
+            }
+            // Read only by /api/v1/simulate, to reference real sample images.
+            // The service builds the URI and never reads the blob, so its
+            // identity holds no role on the storage account.
+            {
+              name: 'EVIDENCE_BLOB_ENDPOINT'
+              value: evidenceBlobEndpoint
+            }
+            {
+              name: 'EVIDENCE_CONTAINER'
+              value: evidenceContainer
             }
           ]
           probes: [

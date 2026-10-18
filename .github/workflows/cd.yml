@@ -509,6 +509,8 @@ jobs:
               serviceBusQueue='${{ steps.core.outputs.incidentQueueName }}' \
               authAudience="$AUTH_AUDIENCE" \
               tenantMap="$TENANT_MAP" \
+              evidenceBlobEndpoint='${{ steps.core.outputs.evidenceBlobEndpoint }}' \
+              evidenceContainer='${{ steps.core.outputs.evidenceContainerName }}' \
               image='${{ steps.image.outputs.ingestion }}' \
             --query properties.outputs.url.value \
             -o tsv)

@@ -448,9 +448,9 @@ def render_evidence(filtered: pd.DataFrame, page_size: int = 24) -> None:
     if with_evidence.empty:
         st.info(
             "No incident in the current filters references an image in "
-            f"`{store.container}`. Incidents created through "
-            "`/api/v1/simulate` carry placeholder paths rather than real blob "
-            "references, so they appear here without an image."
+            f"`{store.container}`. Simulated PPE incidents, and any from a "
+            "local run of `/api/v1/simulate`, carry placeholder paths rather "
+            "than real blob references, so they appear here without an image."
         )
         return
 

@@ -389,6 +389,12 @@ def test_subscription_cd_remains_manual_and_semantically_unchanged():
                         '          # short name ("malaysiawest"); compare them in the short form.\n'
                         '          actual_location=$(az resource show --ids "$environment_id" --query location -o tsv | tr -d \' \' | tr \'[:upper:]\' \'[:lower:]\')',
                         '          actual_location=$(az resource show --ids "$environment_id" --query location -o tsv)')
+    # Ingestion is told where evidence lives, as the dashboard is, so that
+    # /api/v1/simulate can reference real sample images.
+    text = text.replace('              tenantMap="$TENANT_MAP" \\\n'
+                        "              evidenceBlobEndpoint='${{ steps.core.outputs.evidenceBlobEndpoint }}' \\\n"
+                        "              evidenceContainer='${{ steps.core.outputs.evidenceContainerName }}' \\\n",
+                        '              tenantMap="$TENANT_MAP" \\\n')
     # Phase 4 adds an independently tested read-only queue gate. Remove only
     # those additions when comparing the preserved Phase 1-3 contract.
     preserved = load(text)

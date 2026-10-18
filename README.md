@@ -800,8 +800,11 @@ host and container match the configured account are fetched, and only the
 remaining path is used — the same rules `notification-service/app/evidence.py`
 applies, for the same reason. Two consequences worth knowing:
 
-- Incidents created through `/api/v1/simulate` carry placeholder paths such as
-  `/evidence/ppe_sample.jpg`, which name no real blob. They are listed as
+- Deployed, `/api/v1/simulate/intrusion` and `/api/v1/simulate/crowd` reference
+  real images from the uploaded manifest set, so they show on the Evidence page
+  and arrive in Telegram as photos. `/api/v1/simulate/ppe` has no image in that
+  set, and a local run has no blob endpoint, so those incidents carry
+  placeholder paths such as `/evidence/ppe_sample.jpg`. They are listed as
   incidents and skipped on the Evidence page rather than shown as broken images.
 - **Running locally, the page stays empty**, and that is not a
   misconfiguration. `DefaultAzureCredential` falls back to your `az login` user
