@@ -158,6 +158,14 @@ jobs:
       - name: Read approved existing core outputs
         id: baseline
         run: |
+          # infra/cd-production.json says "latest": every run creates a new core
+          # deployment, so a fixed name would be stale after the first one.
+          if [ "$CORE_DEPLOYMENT_NAME" = latest ]; then
+            CORE_DEPLOYMENT_NAME=$(az deployment group list --resource-group "$RESOURCE_GROUP" \
+              --query "sort_by([?(name == 'core' || starts_with(name, 'core-')) && properties.provisioningState == 'Succeeded'], &properties.timestamp)[-1].name" -o tsv)
+            test -n "$CORE_DEPLOYMENT_NAME"
+            echo "::notice::Baseline core deployment: ${CORE_DEPLOYMENT_NAME}"
+          fi
           state=$(az deployment group show \
             --resource-group "$RESOURCE_GROUP" --name "$CORE_DEPLOYMENT_NAME" \
             --query properties.provisioningState -o tsv)

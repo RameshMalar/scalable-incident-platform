@@ -121,20 +121,22 @@ python -m pytest tests -v
 
 ## Deploying to Azure
 
-CD builds, deploys and verifies `main`, and since the Subscription API rollout
-it runs **only when dispatched**: a merge to `main` deploys nothing by itself.
-There is no server to log into.
+CD builds, deploys and verifies `main`. **Every merge to `main` deploys**:
+`cd-on-merge.yml` reads the reviewed inputs in `infra/cd-production.json` and
+dispatches `cd.yml` with them. Changes to Markdown, `docs/` or
+`evidence_images/` alone deploy nothing. There is no server to log into.
 
-### Running CD
+### Running CD by hand
+
+To redeploy without a merge, for instance after a failed run:
 
 ```bash
 ./scripts/run-cd.sh
 ```
 
-It reads the reviewed inputs from `infra/cd-production.json` on `origin/main`,
-fails fast on the same checks as CD's preflight job, shows the inputs, and
-dispatches CD on `main` once you confirm. It needs both `az login` and
-`gh auth login`.
+It reads the same inputs from `origin/main`, fails fast on the same checks as
+CD's preflight job, shows the inputs, and dispatches CD on `main` once you
+confirm. It needs both `az login` and `gh auth login`.
 
 - **Changing an input** means editing `infra/cd-production.json` in a pull
   request; the script never reads local, unmerged changes.
@@ -1032,7 +1034,8 @@ for enough.
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
 | `ci.yml` | Every push and pull request | Tests the Common Event Model and the Producer SDK; runs every service test suite; builds every image and smoke tests each; scans the images (Trivy), the source (Bandit) and the dependencies (pip-audit). It never signs in to Azure |
-| `cd.yml` | Dispatch on `main` only, via `scripts/run-cd.sh` | Refuses unless the commit is an approved pull request merge; reruns CI at that commit; deploys Notification, core infrastructure and the Subscription API, then ingestion, the dashboard, the load simulator's job definition, the workbook and alerts, verifying each; optionally rolls out the subscription-routing Worker last |
+| `cd-on-merge.yml` | Push to `main`, except Markdown, `docs/` and `evidence_images/` | Dispatches `cd.yml` with the inputs in `infra/cd-production.json`. It never signs in to Azure |
+| `cd.yml` | Dispatch on `main` only: by `cd-on-merge.yml`, or by hand via `scripts/run-cd.sh` | Refuses unless the commit is an approved pull request merge; reruns CI at that commit; deploys Notification, core infrastructure and the Subscription API, then ingestion, the dashboard, the load simulator's job definition, the workbook and alerts, verifying each; optionally rolls out the subscription-routing Worker last |
 | `dast.yml` | Dispatch, after a CD run | Scans the deployed services with OWASP ZAP as an anonymous client: an active scan of the Ingestion and Subscription APIs and a passive baseline of the dashboard. Fails on any High-risk alert. Holds no Azure credential |
 
 Dependabot raises weekly pull requests for Python, Docker and Actions

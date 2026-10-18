@@ -91,9 +91,13 @@ branch-protection settings were read or changed.
 ## CD trigger and dependency graph
 
 The **automatic push-to-main deployment trigger was removed**. CD can only be
-manually dispatched, and its offline preflight rejects refs other than main.
-No ordinary merge deploys production through this workflow. This intentionally
-also removes the old path filters: deployment now has no push trigger to filter.
+dispatched, and its offline preflight rejects refs other than main.
+
+*Update after the rollout:* merges deploy again, without giving CD a push
+trigger. `cd-on-merge.yml` runs on each push to `main` (except Markdown,
+`docs/` and `evidence_images/` changes), reads the reviewed
+`infra/cd-production.json` and dispatches CD with it, so CD's inputs are
+still explicit and its approved-merge preflight still applies.
 
 ```text
 CI checks at selected commit ---------+
