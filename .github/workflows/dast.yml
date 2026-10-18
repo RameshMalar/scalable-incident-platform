@@ -1,0 +1,108 @@
+name: DAST
+
+# Dynamic application security testing. OWASP ZAP scans the deployed services
+# from the outside, as an anonymous client sees them: no bearer token and no
+# Azure credential, so the job holds nothing an attacker would not.
+#
+# Manual, like CD: run it after each CD run. scripts/dast.py refuses targets
+# that are not this platform's Container Apps, refuses to scan a service that
+# accepts anonymous calls, and removes the token-free simulate endpoint from
+# what the active scan may attack, because every request to it pages Telegram.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ingestion_url:
+        description: "Ingestion API, https://incident-ingestion.<environment>.<region>.azurecontainerapps.io"
+        required: true
+        type: string
+      subscription_url:
+        description: "Subscription API (leave empty to skip)"
+        required: false
+        type: string
+        default: ""
+      dashboard_url:
+        description: "Business dashboard (leave empty to skip)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dast
+  cancel-in-progress: false
+
+env:
+  # Pinned by digest: the scanner is third-party code pointed at production.
+  ZAP_IMAGE: ghcr.io/zaproxy/zaproxy@sha256:5ccfff9a411743ab2615136a2edd7416bec9ce41572fa94e935df38c14adb2b6
+  # Bound how long, and how hard, the active scan hits the deployed services.
+  ZAP_OPTIONS: -config scanner.maxScanDurationInMins=10 -config scanner.threadPerHost=4
+
+jobs:
+  scan:
+    name: OWASP ZAP, anonymous view of the deployed services
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Accept only this platform's Container Apps as targets
+        env:
+          INGESTION_URL: ${{ inputs.ingestion_url }}
+          SUBSCRIPTION_URL: ${{ inputs.subscription_url }}
+          DASHBOARD_URL: ${{ inputs.dashboard_url }}
+        run: python3 scripts/dast.py targets
+
+      - name: Refuse to scan unless anonymous calls are rejected
+        run: |
+          python3 scripts/dast.py preflight ingestion "$DAST_INGESTION"
+          INGESTION_URL="$DAST_INGESTION" bash scripts/verify-anonymous-ingestion.sh
+          if [ -n "${DAST_SUBSCRIPTION:-}" ]; then
+            python3 scripts/dast.py preflight subscription "$DAST_SUBSCRIPTION"
+          fi
+
+      - name: Prepare the API definitions the active scan may attack
+        run: |
+          mkdir -p dast
+          # ZAP runs as its own user inside the container and writes reports here.
+          chmod 777 dast
+          python3 scripts/dast.py spec ingestion "$DAST_INGESTION" dast/ingestion-openapi.json
+          if [ -n "${DAST_SUBSCRIPTION:-}" ]; then
+            python3 scripts/dast.py spec subscription "$DAST_SUBSCRIPTION" dast/subscription-openapi.json
+          fi
+
+      - name: Active API scan of the Ingestion API
+        run: |
+          docker run --rm -v "$PWD/dast:/zap/wrk:rw" "$ZAP_IMAGE" zap-api-scan.py \
+            -t ingestion-openapi.json -f openapi -O "$DAST_INGESTION" \
+            -J zap-ingestion.json -r zap-ingestion.html -w zap-ingestion.md \
+            -I -z "$ZAP_OPTIONS"
+
+      - name: Active API scan of the Subscription API
+        if: env.DAST_SUBSCRIPTION != ''
+        run: |
+          docker run --rm -v "$PWD/dast:/zap/wrk:rw" "$ZAP_IMAGE" zap-api-scan.py \
+            -t subscription-openapi.json -f openapi -O "$DAST_SUBSCRIPTION" \
+            -J zap-subscription.json -r zap-subscription.html -w zap-subscription.md \
+            -I -z "$ZAP_OPTIONS"
+
+      - name: Passive baseline scan of the dashboard
+        if: env.DAST_DASHBOARD != ''
+        run: |
+          docker run --rm -v "$PWD/dast:/zap/wrk:rw" "$ZAP_IMAGE" zap-baseline.py \
+            -t "$DAST_DASHBOARD" -m 2 \
+            -J zap-dashboard.json -r zap-dashboard.html -w zap-dashboard.md \
+            -I
+
+      - name: Fail on any High-risk alert
+        run: python3 scripts/dast.py gate dast/zap-*.json
+
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dast-reports
+          path: dast/
+          if-no-files-found: ignore

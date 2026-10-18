@@ -406,6 +406,28 @@ jobs:
         working-directory: .
         run: pip-audit -r ${{ matrix.service }}/requirements.txt
 
+      # The two gates above decide pass or fail. These steps only record what
+      # they saw, pass or fail: an HTML report per service as an artifact, and
+      # a summary on the run's page. Bandit records every severity, including
+      # the Low findings the gate lets through.
+      - name: Record the scan reports
+        if: always()
+        working-directory: .
+        run: |
+          mkdir -p security-report
+          bandit -r "${{ matrix.service }}/${{ matrix.bandit_target }}" --exit-zero -f html -o security-report/bandit.html
+          bandit -r "${{ matrix.service }}/${{ matrix.bandit_target }}" --exit-zero -f json -o security-report/bandit.json
+          pip-audit -r "${{ matrix.service }}/requirements.txt" -f json -o security-report/pip-audit.json || true
+          python3 scripts/security-summary.py "${{ matrix.service }}" security-report >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the scan reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-report-${{ matrix.service }}
+          path: security-report/
+          if-no-files-found: ignore
+
   workflow-safety:
     name: Workflow security checks
     runs-on: ubuntu-latest
