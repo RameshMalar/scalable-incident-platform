@@ -115,5 +115,69 @@
       "blob": "TENANT-DEV/people_counting/EVT-SYNTH-DFB16DE3DCA85005B8C7E72FC86A93FF.jpg"
     }
   ],
-  "ppe": []
+  "ppe": [],
+  "fire": [
+    {
+      "source_id": "CAM-215",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-19CB53AEFE75510CB63272D7FCBE2DB1.jpg"
+    },
+    {
+      "source_id": "CAM-211",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-1B6FD963C5115FEBBC2921E96B783AFB.jpg"
+    },
+    {
+      "source_id": "CAM-201",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-57D7400C995F50D5BBF2FE928A5C3223.jpg"
+    },
+    {
+      "source_id": "CAM-207",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-79018C283A2C5B4FB37B079ED81154C9.jpg"
+    },
+    {
+      "source_id": "CAM-203",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-9BE78F6E921A5072AA27C71C76A2CE59.jpg"
+    },
+    {
+      "source_id": "CAM-213",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-D0B4188565FF53EBAB87E7B3D3F74ED9.jpg"
+    },
+    {
+      "source_id": "CAM-209",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-D68CD096CA0F5900B6B37CFB78247BD9.jpg"
+    },
+    {
+      "source_id": "CAM-205",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-D78D32E60D5F5A4CBCBFCD8F5B44B83D.jpg"
+    }
+  ],
+  "smoke": [
+    {
+      "source_id": "CAM-204",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-3687C0B7BD015A7197CC187561881300.jpg"
+    },
+    {
+      "source_id": "CAM-208",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-46917259AB315FD2971DD641C0248FEB.jpg"
+    },
+    {
+      "source_id": "CAM-210",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-748A3D30F5E152DBAFE89768D9F0AEF7.jpg"
+    },
+    {
+      "source_id": "CAM-214",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-7D3696EBF17450C19211A3F03F2D0D1B.jpg"
+    },
+    {
+      "source_id": "CAM-202",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-9839B1936E435C1181BBF0E042604045.jpg"
+    },
+    {
+      "source_id": "CAM-206",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-A251ACEF65CE53F08D98C70CCB9C56A3.jpg"
+    },
+    {
+      "source_id": "CAM-212",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-F3A02D2C47D4529FB2023269454908C7.jpg"
+    }
+  ]
 }

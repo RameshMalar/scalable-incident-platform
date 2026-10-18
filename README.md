@@ -802,9 +802,10 @@ host and container match the configured account are fetched, and only the
 remaining path is used — the same rules `notification-service/app/evidence.py`
 applies, for the same reason. Two consequences worth knowing:
 
-- Deployed, `/api/v1/simulate/intrusion` and `/api/v1/simulate/crowd` reference
-  real images from the uploaded manifest set, so they show on the Evidence page
-  and arrive in Telegram as photos. `/api/v1/simulate/ppe` has no image in that
+- Deployed, `/api/v1/simulate/intrusion`, `crowd`, `fire` and `smoke` each pick
+  a random image of their type from the uploaded manifest set, so they show on
+  the Evidence page and arrive in Telegram as photos (Telegram only for
+  subscribed tenant/event pairs). `/api/v1/simulate/ppe` has no image in that
   set, and a local run has no blob endpoint, so those incidents carry
   placeholder paths such as `/evidence/ppe_sample.jpg`. They are listed as
   incidents and skipped on the Evidence page rather than shown as broken images.
