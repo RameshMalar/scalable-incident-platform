@@ -17,6 +17,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 BASE = "main"
 DECISIVE = {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}
@@ -72,11 +73,26 @@ def approved_merge(sha, pulls, reviews_for):
     return number, approvers
 
 
+def pulls_for(sha, lookup, attempts=7, wait=10, sleep=time.sleep):
+    """Pull requests that `sha` belongs to, allowing for GitHub's indexing lag.
+
+    GitHub links a merge commit to its pull request a few seconds after the
+    merge, and CD on merge asks straight away. Until the link appears the
+    commit looks like a direct push, so wait about a minute before concluding
+    that it is one.
+    """
+    for attempt in range(attempts):
+        pulls = lookup()
+        if any(pull.get("merge_commit_sha") == sha for pull in pulls) or attempt == attempts - 1:
+            return pulls
+        sleep(wait)
+
+
 def main():
     repository, sha = os.environ["REPOSITORY"], os.environ["DEPLOY_SHA"]
     number, approvers = approved_merge(
         sha,
-        gh_list(f"repos/{repository}/commits/{sha}/pulls"),
+        pulls_for(sha, lambda: gh_list(f"repos/{repository}/commits/{sha}/pulls")),
         lambda n: gh_list(f"repos/{repository}/pulls/{n}/reviews"),
     )
     print(f"{sha[:7]} is the merge of #{number}, approved by {', '.join(approvers)}")

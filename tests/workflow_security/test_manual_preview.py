@@ -395,6 +395,16 @@ def test_subscription_cd_remains_manual_and_semantically_unchanged():
                         "              evidenceBlobEndpoint='${{ steps.core.outputs.evidenceBlobEndpoint }}' \\\n"
                         "              evidenceContainer='${{ steps.core.outputs.evidenceContainerName }}' \\\n",
                         '              tenantMap="$TENANT_MAP" \\\n')
+    # CD on merge passes "latest", which the baseline resolves to the newest
+    # successful core deployment (test_cd_on_merge.py).
+    text = text.replace('          # infra/cd-production.json says "latest": every run creates a new core\n'
+                        '          # deployment, so a fixed name would be stale after the first one.\n'
+                        '          if [ "$CORE_DEPLOYMENT_NAME" = latest ]; then\n'
+                        '            CORE_DEPLOYMENT_NAME=$(az deployment group list --resource-group "$RESOURCE_GROUP" \\\n'
+                        '              --query "sort_by([?(name == \'core\' || starts_with(name, \'core-\')) && properties.provisioningState == \'Succeeded\'], &properties.timestamp)[-1].name" -o tsv)\n'
+                        '            test -n "$CORE_DEPLOYMENT_NAME"\n'
+                        '            echo "::notice::Baseline core deployment: ${CORE_DEPLOYMENT_NAME}"\n'
+                        '          fi\n', '')
     # Phase 4 adds an independently tested read-only queue gate. Remove only
     # those additions when comparing the preserved Phase 1-3 contract.
     preserved = load(text)

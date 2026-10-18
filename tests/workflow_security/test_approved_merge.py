@@ -83,3 +83,19 @@ def test_setup_federates_main_only():
     script = (ROOT / "scripts/setup-github-oidc.sh").read_text()
     calls = [line for line in script.splitlines() if line.startswith("add_federated_credential ")]
     assert calls == ['add_federated_credential "branch-${DEPLOY_BRANCH}" "${qualified}:ref:refs/heads/${DEPLOY_BRANCH}"']
+
+
+def test_waits_for_github_to_link_a_fresh_merge_to_its_pull_request():
+    answers = iter([[], [], [pull()]])
+    naps = []
+    pulls = gate.pulls_for(SHA, lambda: next(answers), sleep=naps.append)
+    assert check([review("RameshMalar", "APPROVED")], pulls) == (70, ["RameshMalar"])
+    assert len(naps) == 2
+
+
+def test_a_direct_push_is_refused_after_waiting():
+    naps = []
+    pulls = gate.pulls_for(SHA, lambda: [], attempts=3, sleep=naps.append)
+    assert len(naps) == 2
+    with pytest.raises(gate.Refused, match="not the merge result"):
+        check([review("RameshMalar", "APPROVED")], pulls)
