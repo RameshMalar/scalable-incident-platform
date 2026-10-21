@@ -30,9 +30,14 @@ def records():
     return df
 
 
+def operator(role='admin', tenants=('TENANT-01', 'TENANT-02')):
+    return dashboard.OperatorContext(f'local:{role}', 'directory', tenants, dashboard.LOCAL_ROLE_PERMISSIONS[role],
+                                     4102444800, dashboard.LOCAL_ROLE_NAMES[role])
+
+
 @pytest.fixture(autouse=True)
 def offline(monkeypatch):
-    monkeypatch.setattr(dashboard, 'require_operator', lambda: SimpleNamespace(tenants=('TENANT-01','TENANT-02'), can_simulate=True))
+    monkeypatch.setattr(dashboard, 'require_operator', lambda: operator('admin'))
     monkeypatch.setattr(dashboard, 'get_container', Mock(side_effect=AssertionError('unexpected Cosmos read')))
     monkeypatch.setattr(dashboard, 'get_evidence_store', Mock(return_value=None))
     monkeypatch.delenv('ENABLE_EVENT_SIMULATOR', raising=False)
@@ -66,11 +71,11 @@ def test_overview_and_filter_rerun(monkeypatch, records):
     markup = '\n'.join(element.value for element in at.markdown)
     assert 'Critical incidents' in markup and 'Latest incident' in markup
     assert any(element.proto.label == 'Platform Observability' for element in at.get('link_button'))
-    assert any('2026-10-19T10:01' in element.value for element in at.caption)
+    assert 'Cosmos refreshed 2026-10-19 10:01 UTC' in markup
     tenant = next(element for element in at.checkbox if element.label == 'TENANT-02')
     tenant.uncheck().run()
     assert not at.exception
-    assert any('Active tenants: TENANT-01' == element.value for element in at.text)
+    assert any(element.value.startswith('<div class="soc-filters">Tenants: TENANT-01 ·') for element in at.markdown)
 
 
 def test_empty_store_still_has_simulator_navigation(monkeypatch, records):

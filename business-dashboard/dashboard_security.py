@@ -35,6 +35,23 @@ class OperatorContext:
     def can_manage_access(self) -> bool:
         return self.role == Role.PLATFORM_ADMIN and 'Access.Manage' in self.permissions
 
+    @property
+    def is_admin(self) -> bool:
+        return 'Dashboard.Admin' in self.permissions or self.role == Role.PLATFORM_ADMIN
+
+    @property
+    def can_export(self) -> bool:
+        return 'Dashboard.Export' in self.permissions or self.is_admin
+
+
+# Local sign-in roles. Admin-only capabilities are listed here, server-side,
+# and checked again inside every page that uses them.
+LOCAL_ROLE_PERMISSIONS = {
+    'admin': frozenset({'Dashboard.Read', 'Dashboard.Export', 'Dashboard.Admin', 'Incidents.Simulate'}),
+    'viewer': frozenset({'Dashboard.Read'}),
+}
+LOCAL_ROLE_NAMES = {'admin': 'Admin', 'viewer': 'Viewer'}
+
 
 @dataclass(frozen=True)
 class VerifiedIdentity:

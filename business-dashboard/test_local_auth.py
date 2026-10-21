@@ -84,7 +84,8 @@ def test_malformed_or_weak_hashes_never_verify(stored):
 
 def test_credentials_file_rules(tmp_path):
     good = write_credentials(tmp_path / "a.toml")
-    assert local_auth.load_credentials(str(good))[0] == "admin"
+    # A legacy single-account file without a role never grants more than Viewer.
+    assert local_auth.load_credentials(str(good)).accounts["admin"].role == "viewer"
     for bad in (tmp_path / "missing.toml",
                 write_credentials(tmp_path / "b.toml", extra='password = "plaintext"\n'),
                 tmp_path / "c.toml"):
@@ -216,7 +217,7 @@ def test_container_preflight_refuses_test_only_and_weak_hashes(tmp_path):
     test_only = write_credentials(tmp_path / "test.toml", testing_only=True)
     assert "local_auth_testing_only_hash" in auth_preflight.check({**base, "DASHBOARD_LOCAL_AUTH_FILE": str(test_only)})
     weak = write_credentials(tmp_path / "weak.toml", password=auth_preflight.WEAK_PASSWORDS[0])
-    assert "local_auth_weak_password" in auth_preflight.check({**base, "DASHBOARD_LOCAL_AUTH_FILE": str(weak)})
+    assert "local_auth_weak_password:admin" in auth_preflight.check({**base, "DASHBOARD_LOCAL_AUTH_FILE": str(weak)})
     assert auth_preflight.check({**base, "DASHBOARD_LOCAL_AUTH_FILE": str(tmp_path / "x")}) == ["local_auth_file"]
     flagged = auth_preflight.check({**base, "DASHBOARD_LOCAL_AUTH_FILE": str(strong), "ENABLE_EVENT_SIMULATOR": "true"})
     assert flagged == ["entra_only_feature_enabled:ENABLE_EVENT_SIMULATOR"]
@@ -232,15 +233,16 @@ def test_hash_tool_requires_strong_password_unless_test_only(tmp_path):
     assert weak.returncode != 0 and not (tmp_path / "w.toml").exists()
     ok = run("--password-stdin", "--out", str(tmp_path / "s.toml"), password=PASSWORD)
     assert ok.returncode == 0 and PASSWORD not in ok.stdout + ok.stderr
-    assert local_auth.load_credentials(str(tmp_path / "s.toml"))[2] is False
+    assert local_auth.load_credentials(str(tmp_path / "s.toml")).testing_only is False
     generated = subprocess.run([sys.executable, str(tool), "--generate", str(tmp_path / "pw.txt"), "--out", str(tmp_path / "g.toml")],
                                capture_output=True, text=True)
     secret = (tmp_path / "pw.txt").read_text(encoding="utf-8").strip()
     assert generated.returncode == 0 and len(secret) == 24 and secret not in generated.stdout + generated.stderr
-    _, generated_hash, generated_test_only = local_auth.load_credentials(str(tmp_path / "g.toml"))
-    assert local_auth.verify_password(generated_hash, secret) and generated_test_only is False
+    generated_file = local_auth.load_credentials(str(tmp_path / "g.toml"))
+    assert local_auth.verify_password(generated_file.accounts["admin"].password_hash, secret)
+    assert generated_file.testing_only is False
     assert secret not in (tmp_path / "g.toml").read_text(encoding="utf-8")
     assert auth_preflight.check({"DASHBOARD_AUTH_MODE": "local", "DASHBOARD_LOCAL_AUTH_FILE": str(tmp_path / "g.toml")}) == []
     test = run("--password-stdin", "--local-testing", "--out", str(tmp_path / "t.toml"), password="weak")
-    assert test.returncode == 0 and local_auth.load_credentials(str(tmp_path / "t.toml"))[2] is True
+    assert test.returncode == 0 and local_auth.load_credentials(str(tmp_path / "t.toml")).testing_only is True
     assert "weak" not in (tmp_path / "t.toml").read_text(encoding="utf-8").split("password_hash")[0]

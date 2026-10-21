@@ -1,17 +1,22 @@
 """Username/password sign-in for the dashboard (DASHBOARD_AUTH_MODE=local).
 
 A demonstration fallback while Microsoft Entra sign-in is pending; Entra stays
-the production design and its code is untouched. One admin account:
+the production design and its code is untouched.
 
   * Credentials come from a TOML file named by DASHBOARD_LOCAL_AUTH_FILE (in
-    Azure a Key Vault secret mounted as a file), holding only a username and a
-    scrypt hash -- never a plaintext password. Nothing is hard-coded.
-  * Verification is constant time. Sessions live in Streamlit's server-side
-    session state, expire after 30 idle minutes or 8 hours, and end on sign out.
+    Azure a Key Vault secret mounted as a file), holding only usernames, scrypt
+    hashes and roles -- never a plaintext password. Nothing is hard-coded.
+  * Two roles: "admin" and "viewer". A legacy single-account file without a
+    role is a viewer, so an old secret can never grant more than it used to.
+  * The role is read from the file on every request, never from the session,
+    so removing an account or downgrading it takes effect immediately.
+  * Verification is constant time, including for unknown usernames. Sessions
+    live in Streamlit's server-side session state, expire after 30 idle
+    minutes or 8 hours, and end on sign out.
   * Failed attempts are limited per client address and overall.
 
-This mode carries no Entra token, so it can only ever read the dashboard:
-central access, Telegram onboarding and the simulator stay disabled.
+This mode carries no Entra token, so central access, Telegram onboarding and
+the Entra simulator path stay disabled.
 """
 import base64
 import hashlib
@@ -24,6 +29,7 @@ import threading
 import time
 import tomllib
 from pathlib import Path
+from typing import NamedTuple
 
 import streamlit as st
 
@@ -39,10 +45,24 @@ USERNAME = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 # Features that act for a person need a genuine Entra token. Local sign-in has
 # none, so the dashboard refuses to run with any of them switched on.
 ENTRA_ONLY_FLAGS = ("ENABLE_CENTRAL_ACCESS", "ENABLE_TELEGRAM_ONBOARDING", "ENABLE_EVENT_SIMULATOR", "SIMULATOR_AUTH_VERIFIED")
+ADMIN, VIEWER = "admin", "viewer"
+ROLES = (ADMIN, VIEWER)
+MAX_ACCOUNTS = 20
 
 
 class LocalAuthUnavailable(Exception):
     """Sign-in configuration is missing or invalid; fail closed."""
+
+
+class LocalAccount(NamedTuple):
+    username: str
+    password_hash: str
+    role: str
+
+
+class LocalCredentials(NamedTuple):
+    accounts: dict  # username -> LocalAccount
+    testing_only: bool
 
 
 def _b64(data):
@@ -76,18 +96,62 @@ def verify_password(stored, password):
     return hmac.compare_digest(actual, expected)
 
 
+def _account(entry, default_role):
+    if not isinstance(entry, dict) or "password" in entry:
+        raise ValueError("invalid account")
+    username, password_hash = entry["username"], entry["password_hash"]
+    role = entry.get("role", default_role)
+    if not isinstance(username, str) or not USERNAME.fullmatch(username) or role not in ROLES:
+        raise ValueError("invalid account")
+    parse_hash(password_hash)
+    return LocalAccount(username, password_hash, role)
+
+
 def load_credentials(path=None):
+    """Read the sign-in file: a list of accounts, or the legacy single account.
+
+        [local_auth]                      [local_auth]
+        local_testing_only = false        username = "admin"
+        [[local_auth.accounts]]           password_hash = "scrypt$..."
+        username = "admin"                (role defaults to "viewer")
+        password_hash = "scrypt$..."
+        role = "admin"
+
+    Any malformed account, unknown role or duplicate username rejects the whole
+    file rather than skipping the bad entry.
+    """
     path = path or os.environ.get("DASHBOARD_LOCAL_AUTH_FILE", "")
     try:
         data = tomllib.loads(Path(path).read_text(encoding="utf-8")) if path else None
         section = data["local_auth"]
-        username, password_hash = section["username"], section["password_hash"]
-        if "password" in section or not isinstance(username, str) or not USERNAME.fullmatch(username):
-            raise ValueError("invalid local sign-in configuration")
-        parse_hash(password_hash)
-        return username, password_hash, bool(section.get("local_testing_only", False))
-    except (OSError, ValueError, KeyError, TypeError):
+        if "password" in section:
+            raise ValueError("plaintext password")
+        if "accounts" in section:
+            if "username" in section or "password_hash" in section:
+                raise ValueError("mixed formats")
+            entries = section["accounts"]
+            if not isinstance(entries, list) or not 1 <= len(entries) <= MAX_ACCOUNTS:
+                raise ValueError("invalid accounts")
+            accounts = [_account(entry, None) for entry in entries]
+        else:
+            accounts = [_account(section, VIEWER)]
+        by_name = {account.username: account for account in accounts}
+        if len(by_name) != len(accounts):
+            raise ValueError("duplicate username")
+        return LocalCredentials(by_name, bool(section.get("local_testing_only", False)))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         raise LocalAuthUnavailable("local sign-in is not configured") from None
+
+
+_DUMMY_HASH = []
+
+
+def _dummy_hash():
+    # Verified against when the username is unknown, so that path costs one
+    # scrypt like every other and timing does not reveal valid usernames.
+    if not _DUMMY_HASH:
+        _DUMMY_HASH.append(hash_password(secrets.token_urlsafe(16)))
+    return _DUMMY_HASH[0]
 
 
 class AttemptLimiter:
@@ -158,14 +222,16 @@ def attempt_sign_in(username, password, client, credentials=None, limiter=None):
     if limiter.blocked(client):
         logger.warning("local sign-in blocked by rate limit client=%s", client)
         return False
-    expected_user, password_hash, _ = credentials or load_credentials()
+    accounts = (credentials or load_credentials()).accounts
+    account = accounts.get(username) if isinstance(username, str) else None
     # Always run the hash so a wrong username takes as long as a wrong password.
-    password_ok = verify_password(password_hash, password if isinstance(password, str) else "")
-    if hmac.compare_digest(str(username).encode(), expected_user.encode()) and password_ok:
+    password_ok = verify_password(account.password_hash if account else _dummy_hash(),
+                                  password if isinstance(password, str) else "")
+    if account is not None and password_ok:
         limiter.succeeded(client)
         now = time.time()
-        st.session_state[SESSION_KEY] = {"username": expected_user, "signed_in_at": now, "last_seen": now}
-        logger.info("local sign-in succeeded client=%s", client)
+        st.session_state[SESSION_KEY] = {"username": account.username, "signed_in_at": now, "last_seen": now}
+        logger.info("local sign-in succeeded client=%s role=%s", client, account.role)
         return True
     limiter.failed(client)
     logger.warning("local sign-in failed client=%s", client)
@@ -174,24 +240,31 @@ def attempt_sign_in(username, password, client, credentials=None, limiter=None):
 
 
 def require_signed_in(headers):
-    """Return the username, or draw the sign-in form and stop the page.
+    """Return the signed-in LocalAccount, or draw the sign-in form and stop.
 
     Nothing after this call runs for an unauthenticated session, so no page
-    renders and no data is loaded before sign-in.
+    renders and no data is loaded before sign-in. The account, and so the
+    role, is looked up in the credentials file on every call.
     """
     if entra_only_flags_enabled():
         st.error("Local sign-in cannot be combined with Entra-only features. Contact the administrator.")
         st.stop()
-    username = current_session()
-    if username:
-        return username
-    st.title("Smart Incident Monitoring Platform")
-    st.caption("Administrator sign-in")
     try:
         credentials = load_credentials()
     except LocalAuthUnavailable:
+        st.title("Smart Incident Monitoring Platform")
         st.error("Sign-in is not configured. Access is denied.")
         st.stop()
+    username = current_session()
+    if username:
+        account = credentials.accounts.get(username)
+        if account is not None:
+            return account
+        # The account was removed or renamed since sign-in.
+        logger.warning("local session ended: account no longer configured")
+        sign_out()
+    st.title("Smart Incident Monitoring Platform")
+    st.caption("Security Operations Center · sign in")
     client = client_address(headers)
     with st.form("local_sign_in", clear_on_submit=True):
         entered_user = st.text_input("Username", autocomplete="username")

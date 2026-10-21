@@ -31,7 +31,9 @@ from azure.cosmos import CosmosClient
 from azure.identity import DefaultAzureCredential
 
 from evidence import EvidenceStore, EvidenceUnavailable
-from dashboard_security import AccessDenied, OperatorContext, OperatorVerifier, access_token, id_token
+from dashboard_security import (
+    LOCAL_ROLE_NAMES, LOCAL_ROLE_PERMISSIONS, AccessDenied, OperatorContext, OperatorVerifier, access_token, id_token,
+)
 from account_setup import render_account_setup
 from access_api import AccessAPIUnavailable, current_grant
 from access_roles import InvalidAccess
@@ -40,12 +42,26 @@ import local_auth
 
 logger = logging.getLogger("dashboard")
 
-# Consistent categorical accents on navy surfaces. Severity always includes text.
-SERIES_COLORS = ["#38bdf8", "#818cf8", "#22d3ee", "#fbbf24", "#c084fc"]
-# Severity is a state, not an identity, so it takes the fixed dark-surface
-# status palette instead of the categorical one.
-SEVERITY_COLORS = {"low": "#67e8f9", "medium": "#fbbf24", "high": "#fda4af", "critical": "#f0abfc"}
+# Magnitude charts (per type, per site, per day) are one series, so they take a
+# single accent rather than a hue per category.
+ACCENT = "#3987e5"
+SERIES_COLORS = [ACCENT, "#d95926", "#199e70", "#9085e9"]
+# Severity is a state, not an identity, so it takes the status palette. Every
+# adjacent pair clears normal-vision Delta E 15 and CVD Delta E 13 on SURFACE
+# (validated), and severity is always shown with its own shape and label too.
+SEVERITY_COLORS = {"critical": "#d03b3b", "high": "#ec835a", "medium": "#f2cc3d", "low": "#7d93b2"}
+SEVERITY_ICONS = {"critical": "■", "high": "▲", "medium": "◆", "low": "●"}
 SEVERITY_ORDER = ["critical", "high", "medium", "low"]
+TREND_WORSE, TREND_BETTER = "#ec835a", "#0ca30c"
+# Readable names for the Common Event Model's analytics types.
+ANALYTICS_NAMES = {
+    "intrusion_detection": "Intrusion",
+    "PPE_detection": "PPE compliance",
+    "crowd_detection": "Crowd",
+    "people_counting": "People count",
+    "fire_smoke_detection": "Fire / smoke",
+}
+TEST_PURPOSES = ("e2e_test", "load_test")
 
 DATE_RANGE_PRESETS = {
     "Last 7 days": 7,
@@ -99,12 +115,18 @@ def operator_tokens():
     raise AccessDenied("Unsupported authentication mode")
 
 
-def local_operator_context(username: str) -> OperatorContext:
-    """Read-only access to the approved Admin's platform tenants, nothing more."""
+def local_operator_context(username: str, role: str = local_auth.VIEWER) -> OperatorContext:
+    """The approved platform tenants, with the permissions of the account's role."""
     policy = json.loads((Path(__file__).with_name("access-policy.json")).read_text(encoding="utf-8"))
     tenants = sorted({tenant for entry in policy["users"].values() for tenant in entry["tenants"]})
     return OperatorContext(f"local:{username}", policy["directory_id"], tuple(tenants),
-                           frozenset({"Dashboard.Read"}), int(time.time()) + local_auth.IDLE_SECONDS, "SOC Viewer")
+                           LOCAL_ROLE_PERMISSIONS[role], int(time.time()) + local_auth.IDLE_SECONDS,
+                           LOCAL_ROLE_NAMES[role])
+
+
+def operator_display_name(context) -> str:
+    user = str(getattr(context, "user_id", ""))
+    return user.removeprefix("local:") if user.startswith("local:") else "Microsoft account"
 
 
 def delegated_api_token():
@@ -115,7 +137,8 @@ def delegated_api_token():
 def require_operator():
     if os.environ.get("DASHBOARD_AUTH_MODE", "oidc") == "local":
         # Draws the sign-in form and stops the page until signed in.
-        return local_operator_context(local_auth.require_signed_in(st.context.headers))
+        account = local_auth.require_signed_in(st.context.headers)
+        return local_operator_context(account.username, account.role)
     try:
         verifier=get_operator_verifier()
         tokens=operator_tokens()
@@ -238,30 +261,47 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        .block-container {{ padding-top: 2rem; max-width: 1600px; }}
+        .block-container {{ padding-top: 3rem; max-width: 1600px; }}
         .stApp {{ background: {PAGE_BG}; }}
         h1, h2, h3 {{ letter-spacing: -0.02em; }}
-        .soc-kpis {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }}
-        .soc-kpis .kpi-card {{ border-top:3px solid var(--accent); min-height:145px; }}
-        .kpi-value {{ overflow-wrap:anywhere; }}
+        [data-testid="stSidebar"] {{ border-right: 1px solid rgba(255,255,255,0.08); }}
+
+        .soc-header {{
+            display:flex; flex-wrap:wrap; gap:12px 24px; align-items:flex-end; justify-content:space-between;
+            padding: 4px 0 14px; margin-bottom: 14px; border-bottom: 1px solid {GRIDLINE};
+        }}
+        .soc-eyebrow {{ font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:{INK_MUTED}; }}
+        .soc-title {{ font-size:28px; font-weight:750; color:{INK_PRIMARY}; line-height:1.2; margin-top:2px; }}
+        .soc-chips {{ display:flex; flex-wrap:wrap; gap:8px; }}
+        .chip {{
+            display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px;
+            font-size:12.5px; color:{INK_SECONDARY}; background:{SURFACE}; border:1px solid rgba(255,255,255,0.10);
+            white-space:nowrap;
+        }}
+        .chip.role-admin {{ color:{INK_PRIMARY}; border-color:{ACCENT}; background:rgba(57,135,229,0.18); font-weight:650; }}
+        .chip.role-viewer {{ color:{INK_PRIMARY}; font-weight:650; }}
+        .chip .live {{ width:7px; height:7px; border-radius:50%; background:{TREND_BETTER}; }}
+        .soc-filters {{ font-size:12.5px; color:{INK_MUTED}; margin:-6px 0 14px; }}
+
+        .soc-kpis {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-bottom:14px; }}
+        .soc-kpis .kpi-card {{ border-top:3px solid var(--accent); min-height:132px; }}
         @media(max-width:1100px) {{ .soc-kpis {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
-        @media(max-width:600px) {{ .soc-kpis {{ grid-template-columns:1fr; }} }}
+        @media(max-width:600px) {{ .soc-kpis {{ grid-template-columns:1fr; }} .soc-title {{ font-size:22px; }} }}
 
         .kpi-card {{
             background: {SURFACE}; color: {INK_PRIMARY}; border: 1px solid rgba(255,255,255,0.10);
-            border-radius: 12px; padding: 16px;
+            border-radius: 12px; padding: 14px 16px;
         }}
-        .kpi-top {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }}
+        .kpi-top {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }}
         .kpi-icon {{
-            width: 34px; height: 34px; border-radius: 9px;
-            display: flex; align-items: center; justify-content: center; font-size: 16px;
+            width: 30px; height: 30px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center; font-size: 14px;
         }}
-        .kpi-trend {{ font-size: 12px; font-variant-numeric: tabular-nums; }}
-        .kpi-trend.up {{ color: #0ca30c; }}
-        .kpi-trend.down {{ color: #d03b3b; }}
-        .kpi-trend.flat {{ color: {INK_MUTED}; }}
-        .kpi-label {{ font-size: 12.5px; color: {INK_SECONDARY}; margin-bottom: 4px; }}
-        .kpi-value {{ font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }}
+        .kpi-trend {{ font-size: 12px; font-variant-numeric: tabular-nums; font-weight:600; }}
+        .kpi-trend.flat {{ color: {INK_MUTED}; font-weight:400; }}
+        .kpi-label {{ font-size: 12.5px; color: {INK_SECONDARY}; margin-bottom: 2px; }}
+        .kpi-value {{ font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap:anywhere; }}
+        .kpi-sub {{ font-size: 11.5px; color: {INK_MUTED}; margin-top: 4px; }}
 
         .panel {{
             background: {SURFACE}; color: {INK_PRIMARY}; border: 1px solid rgba(255,255,255,0.10);
@@ -273,46 +313,63 @@ def inject_css() -> None:
         .bar-row .name {{ width: 110px; color: {INK_SECONDARY}; flex-shrink: 0; }}
         .bar-track {{ flex: 1; height: 8px; background: {GRIDLINE}; border-radius: 4px; overflow: hidden; }}
         .bar-fill {{ height: 100%; border-radius: 4px; }}
-        .bar-row .count {{ width: 28px; text-align: right; font-variant-numeric: tabular-nums; }}
+        .bar-row .count {{ width: 64px; text-align: right; font-variant-numeric: tabular-nums; color:{INK_SECONDARY}; }}
 
-        .incident-row {{ display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-radius: 8px; font-size: 13.5px; }}
-        .incident-row .sev-dot {{ width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }}
-        .incident-row .desc {{ flex: 1; }}
-        .incident-row .desc .t {{ display: block; }}
-        .incident-row .desc .m {{ color: {INK_MUTED}; font-size: 12px; }}
-        .incident-row .ago {{ color: {INK_MUTED}; font-size: 12px; white-space: nowrap; }}
+        .sev-pill {{
+            display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:999px;
+            font-size:11.5px; font-weight:700; letter-spacing:.04em; color:{INK_PRIMARY};
+            background: color-mix(in srgb, var(--sev) 22%, transparent); border:1px solid var(--sev);
+        }}
+        .sev-pill .shape {{ color: var(--sev); }}
+        .sev-summary {{ display:flex; flex-wrap:wrap; gap:8px; margin: 2px 0 10px; }}
 
         .insight-row {{ display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid {GRIDLINE}; }}
         .insight-row:last-child {{ border-bottom: none; }}
         .insight-dot {{ width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }}
         .insight-row .t {{ font-size: 13.5px; margin-bottom: 2px; }}
         .insight-row .d {{ font-size: 12.5px; color: {INK_MUTED}; }}
+
+        .user-card {{ background:{SURFACE}; border:1px solid rgba(255,255,255,0.10); border-radius:10px; padding:10px 12px; margin-bottom:8px; }}
+        .user-card .u {{ font-weight:650; color:{INK_PRIMARY}; overflow-wrap:anywhere; }}
+        .user-card .m {{ font-size:12px; color:{INK_MUTED}; margin-top:2px; }}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def kpi_card(label: str, value: str, icon: str, color: str, delta: float | None) -> str:
+def analytics_name(value) -> str:
+    return ANALYTICS_NAMES.get(str(value), str(value))
+
+
+def severity_badge(severity, count: int | None = None) -> str:
+    severity = str(severity).lower()
+    color = SEVERITY_COLORS.get(severity, INK_MUTED)
+    icon = SEVERITY_ICONS.get(severity, "○")
+    suffix = f' <span style="font-variant-numeric:tabular-nums">{count}</span>' if count is not None else ""
+    return (f'<span class="sev-pill" style="--sev:{color}"><span class="shape">{icon}</span>'
+            f'{escape(severity.upper())}{suffix}</span>')
+
+
+def kpi_card(label: str, value: str, icon: str, color: str, delta: float | None,
+             sub: str = "", higher_is_worse: bool = True) -> str:
     if delta is None:
         trend_html = '<span class="kpi-trend flat">—</span>'
     elif delta == 0:
         trend_html = '<span class="kpi-trend flat">flat</span>'
     else:
-        cls = "up" if delta > 0 else "down"
+        # More incidents is bad news, so "up" is not painted as good.
+        worse = (delta > 0) == higher_is_worse
         arrow = "↑" if delta > 0 else "↓"
-        trend_html = f'<span class="kpi-trend {cls}">{arrow} {abs(delta):.0f}%</span>'
-
-    return f"""
-    <div class="kpi-card" style="--accent:{color}">
-      <div class="kpi-top">
-        <div class="kpi-icon" style="background:{color}26; color:{color}">{icon}</div>
-        {trend_html}
-      </div>
-      <div class="kpi-label">{escape(label)}</div>
-      <div class="kpi-value">{escape(value)}</div>
-    </div>
-    """.strip()
+        trend_html = (f'<span class="kpi-trend" style="color:{TREND_WORSE if worse else TREND_BETTER}">'
+                      f'{arrow} {abs(delta):.0f}%</span>')
+    sub_html = f'<div class="kpi-sub">{escape(sub)}</div>' if sub else ""
+    return (
+        f'<div class="kpi-card" style="--accent:{color}">'
+        f'<div class="kpi-top"><div class="kpi-icon" style="background:{color}26; color:{color}">{icon}</div>{trend_html}</div>'
+        f'<div class="kpi-label">{escape(label)}</div>'
+        f'<div class="kpi-value">{escape(value)}</div>{sub_html}</div>'
+    )
 
 
 def pct_change(current: int, previous: int) -> float | None:
@@ -323,14 +380,16 @@ def pct_change(current: int, previous: int) -> float | None:
 
 def bar_panel(title: str, counts: pd.Series, color_map: dict) -> str:
     max_count = counts.max() if len(counts) else 1
+    total = counts.sum() if len(counts) else 0
     rows = ""
     for name, count in counts.items():
         width = int(count / max_count * 100) if max_count else 0
         color = color_map.get(name, SERIES_COLORS[0])
+        share = f" · {count / total * 100:.0f}%" if total else ""
         rows += (
             f'<div class="bar-row"><span class="name">{escape(str(name))}</span>'
             f'<div class="bar-track"><div class="bar-fill" style="width:{width}%; background:{color}"></div></div>'
-            f'<span class="count">{int(count)}</span></div>'
+            f'<span class="count">{int(count)}{share}</span></div>'
         )
     return f'<div class="panel"><h3>{escape(title)}</h3>{rows}</div>'
 
@@ -345,6 +404,10 @@ def relative_time(ts: pd.Timestamp) -> str:
     if seconds < 86400:
         return f"{int(seconds // 3600)}h ago"
     return f"{int(seconds // 86400)}d ago"
+
+
+def is_test_purpose(value) -> bool:
+    return value in TEST_PURPOSES
 
 
 def render_latest_incidents(filtered: pd.DataFrame, limit: int = 8) -> None:
@@ -367,14 +430,12 @@ def render_latest_incidents(filtered: pd.DataFrame, limit: int = 8) -> None:
                 else:
                     st.caption("Evidence unavailable" if uri else "No evidence image")
             with detail_col:
-                severity = str(row["severity"])
-                color = SEVERITY_COLORS.get(severity, INK_SECONDARY)
-                st.markdown(f'<span style="color:{color};font-weight:700">{escape(severity.upper())}</span>', unsafe_allow_html=True)
-                st.text(f"{row['event_type']} · {row['analytics_type']}")
+                st.markdown(severity_badge(row["severity"]), unsafe_allow_html=True)
+                st.text(f"{row['event_type']} · {analytics_name(row['analytics_type'])}")
                 st.caption(f"Tenant {row['tenant_id']} · Site {row['site_id']} · Camera/source {row.get('source_id', 'Unavailable')}")
                 st.caption(row["timestamp"].strftime("%Y-%m-%d %H:%M:%S UTC"))
                 purpose = row.get("event_purpose", "incident")
-                st.caption(f"TEST · {purpose}" if purpose in ("e2e_test", "load_test") else "Purpose: incident")
+                st.caption(f"TEST · {purpose}" if is_test_purpose(purpose) else "Purpose: incident")
                 st.text(f"Event ID: {row['event_id']}")
 
 
@@ -382,22 +443,30 @@ def key_insights_panel(filtered: pd.DataFrame, previous: pd.DataFrame) -> str:
     insights = []
 
     total = len(filtered)
-    high = int((filtered["severity"] == "high").sum())
+    serious = int(filtered["severity"].isin(["critical", "high"]).sum())
     if total:
-        share = high / total * 100
+        share = serious / total * 100
         insights.append((
-            "#d03b3b",
-            "High-severity share",
-            f"{high} of {total} incidents ({share:.0f}%) in the selected range.",
+            SEVERITY_COLORS["critical"],
+            "Critical and high share",
+            f"{serious} of {total} incidents ({share:.0f}%) in the selected range.",
         ))
 
     if total and filtered["tenant_id"].nunique():
         top_tenant = filtered["tenant_id"].value_counts().idxmax()
         top_count = filtered["tenant_id"].value_counts().max()
         insights.append((
-            SERIES_COLORS[0],
+            ACCENT,
             f"{top_tenant} is the top contributor",
             f"{top_count} incidents, {top_count / total * 100:.0f}% of total volume.",
+        ))
+
+    if total and "site_id" in filtered and filtered["site_id"].nunique():
+        sites = filtered["site_id"].value_counts()
+        insights.append((
+            ACCENT,
+            f"Busiest site: {sites.idxmax()}",
+            f"{sites.max()} incidents, {sites.max() / total * 100:.0f}% of total volume.",
         ))
 
     prev_total = len(previous)
@@ -405,7 +474,7 @@ def key_insights_panel(filtered: pd.DataFrame, previous: pd.DataFrame) -> str:
     if change is not None:
         direction = "up" if change > 0 else "down" if change < 0 else "flat"
         insights.append((
-            "#199e70",
+            TREND_WORSE if change > 0 else TREND_BETTER,
             f"Volume trending {direction}",
             f"{change:+.0f}% vs. the previous period of equal length.",
         ))
@@ -416,81 +485,140 @@ def key_insights_panel(filtered: pd.DataFrame, previous: pd.DataFrame) -> str:
         for color, title, detail in insights
     )
     if not rows:
-        rows = '<p style="color:#9bafc7; font-size:13px;">Not enough data for insights.</p>'
+        rows = f'<p style="color:{INK_MUTED}; font-size:13px;">Not enough data for insights.</p>'
     return f'<div class="panel"><h3>Key insights</h3>{rows}</div>'
+
+
+def _style_figure(fig: go.Figure, title: str, height: int) -> go.Figure:
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=15, color=INK_PRIMARY), x=0.01),
+        paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
+        font=dict(color=INK_SECONDARY, size=12),
+        margin=dict(l=10, r=16, t=48, b=10), height=height,
+        hoverlabel=dict(bgcolor=PAGE_BG, bordercolor=GRIDLINE, font_color=INK_PRIMARY),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(color=INK_SECONDARY)),
+    )
+    fig.update_xaxes(showgrid=False, linecolor=GRIDLINE, tickfont=dict(color=INK_MUTED))
+    fig.update_yaxes(gridcolor=GRIDLINE, zeroline=False, tickfont=dict(color=INK_MUTED))
+    return fig
+
+
+def daily_severity_figure(filtered: pd.DataFrame) -> go.Figure:
+    days = filtered["timestamp"].dt.floor("D")
+    counts = (filtered.assign(day=days).groupby(["day", "severity"]).size().unstack(fill_value=0))
+    full = pd.date_range(days.min(), days.max(), freq="D", tz="UTC")
+    counts = counts.reindex(full, fill_value=0)
+    fig = go.Figure()
+    # Critical sits on the baseline, where it is easiest to compare day to day.
+    for severity in SEVERITY_ORDER + sorted(set(counts.columns) - set(SEVERITY_ORDER)):
+        if severity not in counts:
+            continue
+        fig.add_bar(
+            x=counts.index, y=counts[severity], name=severity.title(),
+            marker=dict(color=SEVERITY_COLORS.get(severity, INK_MUTED), line=dict(color=SURFACE, width=1.5)),
+            hovertemplate=f"%{{y}} {escape(severity)}<extra></extra>",
+        )
+    fig.update_layout(barmode="stack", bargap=0.25, barcornerradius=4, hovermode="x unified",
+                      legend_traceorder="normal")
+    fig.update_xaxes(hoverformat="%a %d %b %Y")
+    return _style_figure(fig, "Incidents per day by severity (UTC)", 280)
+
+
+def ranked_bar_figure(counts: pd.Series, title: str, noun: str) -> go.Figure:
+    counts = counts.sort_values()
+    fig = go.Figure(go.Bar(
+        x=counts.values, y=[str(label) for label in counts.index], orientation="h",
+        marker=dict(color=ACCENT), text=counts.values, textposition="outside",
+        textfont=dict(color=INK_SECONDARY), cliponaxis=False,
+        hovertemplate=f"%{{y}}: %{{x}} {noun}<extra></extra>",
+    ))
+    fig.update_layout(barcornerradius=4, bargap=0.35, showlegend=False)
+    fig.update_xaxes(showgrid=True, gridcolor=GRIDLINE, showticklabels=False)
+    fig.update_yaxes(showgrid=False, tickfont=dict(color=INK_SECONDARY))
+    return _style_figure(fig, title, max(220, 70 + 34 * len(counts)))
+
+
+WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def activity_heatmap_figure(filtered: pd.DataFrame) -> go.Figure:
+    grid = (filtered.assign(weekday=filtered["timestamp"].dt.dayofweek, hour=filtered["timestamp"].dt.hour)
+            .groupby(["weekday", "hour"]).size().unstack(fill_value=0)
+            .reindex(index=range(7), columns=range(24), fill_value=0))
+    fig = go.Figure(go.Heatmap(
+        z=grid.values, x=[f"{hour:02d}" for hour in range(24)], y=WEEKDAYS,
+        # One hue, dark (quiet) to bright (busy) on the dark surface.
+        colorscale=[[0, "#16263d"], [0.5, "#1f5eae"], [1, "#7fb2f0"]],
+        xgap=2, ygap=2, colorbar=dict(title=dict(text="Incidents", font=dict(color=INK_MUTED)), tickfont=dict(color=INK_MUTED), thickness=10),
+        hovertemplate="%{y} %{x}:00 UTC · %{z} incidents<extra></extra>",
+    ))
+    fig.update_yaxes(autorange="reversed", showgrid=False)
+    fig.update_xaxes(title=dict(text="Hour of day (UTC)", font=dict(color=INK_MUTED)))
+    return _style_figure(fig, "When incidents happen", 300)
+
+
+def overview_kpis(filtered: pd.DataFrame, previous: pd.DataFrame, now: datetime | None = None) -> list[str]:
+    now = now or datetime.now(timezone.utc)
+    period = "previous period"
+    count = lambda frame, severity: int((frame["severity"] == severity).sum())
+
+    def card(label, value, prev_value, icon, color, unit):
+        sub = f"{prev_value} in the {period}" if prev_value is not None else unit
+        return kpi_card(label, str(value), icon, color,
+                        pct_change(value, prev_value) if prev_value is not None else None, sub)
+
+    total = len(filtered)
+    last_day = int((filtered["timestamp"] > now - timedelta(hours=24)).sum())
+    day_before = int(((filtered["timestamp"] > now - timedelta(hours=48))
+                      & (filtered["timestamp"] <= now - timedelta(hours=24))).sum())
+    latest = filtered["timestamp"].max()
+    cameras = filtered["source_id"].nunique() if "source_id" in filtered else 0
+    return [
+        card("Total incidents", total, len(previous), "◆", ACCENT, ""),
+        card("Critical incidents", count(filtered, "critical"), count(previous, "critical"), SEVERITY_ICONS["critical"], SEVERITY_COLORS["critical"], ""),
+        card("High severity", count(filtered, "high"), count(previous, "high"), SEVERITY_ICONS["high"], SEVERITY_COLORS["high"], ""),
+        card("Medium severity", count(filtered, "medium"), count(previous, "medium"), SEVERITY_ICONS["medium"], SEVERITY_COLORS["medium"], ""),
+        kpi_card("Last 24 hours", str(last_day), "◷", ACCENT, pct_change(last_day, day_before), f"{day_before} in the 24 hours before"),
+        kpi_card("Sites affected", str(filtered["site_id"].nunique()), "⌂", ACCENT,
+                 pct_change(filtered["site_id"].nunique(), previous["site_id"].nunique()),
+                 f"across {filtered['tenant_id'].nunique()} tenants"),
+        kpi_card("Cameras reporting", str(cameras), "◉", ACCENT, None, "distinct sources in range"),
+        kpi_card("Latest incident · UTC", latest.strftime("%d %b %H:%M") if pd.notna(latest) else "No incidents", "↻", ACCENT, None,
+                 relative_time(latest) if pd.notna(latest) else "nothing in range"),
+    ]
 
 
 def render_overview(filtered: pd.DataFrame, previous: pd.DataFrame) -> None:
     require_operator()
-    total = len(filtered)
-    high = int((filtered["severity"] == "high").sum())
-    medium = int((filtered["severity"] == "medium").sum())
-    sites = filtered["site_id"].nunique()
-    tenants = filtered["tenant_id"].nunique()
-    types = filtered["analytics_type"].nunique()
-
-    prev_total = len(previous)
-    prev_high = int((previous["severity"] == "high").sum())
-
-    critical = int((filtered["severity"] == "critical").sum())
-    latest = filtered["timestamp"].max()
-    cards = [
-        ("Total incidents", str(total), "◆", SERIES_COLORS[0], pct_change(total, prev_total)),
-        ("Critical incidents", str(critical), "!", SEVERITY_COLORS["critical"], None),
-        ("High-severity incidents", str(high), "▲", SEVERITY_COLORS["high"], pct_change(high, prev_high)),
-        ("Latest incident · UTC", latest.strftime("%d %b %Y %H:%M:%S") if pd.notna(latest) else "No incidents", "◷", SERIES_COLORS[4], None),
-    ]
-    st.markdown('<div class="soc-kpis">' + ''.join(kpi_card(*card) for card in cards) + '</div>', unsafe_allow_html=True)
-    secondary_cards = [
-        ("Medium severity", medium, int((previous["severity"] == "medium").sum()), SEVERITY_COLORS["medium"]),
-        ("Sites affected", sites, previous["site_id"].nunique(), SERIES_COLORS[2]),
-        ("Tenants affected", tenants, previous["tenant_id"].nunique(), SERIES_COLORS[4]),
-        ("Analytics types", types, previous["analytics_type"].nunique(), SERIES_COLORS[1]),
-    ]
-    st.markdown('<div class="soc-kpis">' + ''.join(kpi_card(label, str(value), "·", color, pct_change(value, prev)) for label, value, prev, color in secondary_cards) + '</div>', unsafe_allow_html=True)
-    st.caption(f"{medium} medium severity · {sites} sites · {tenants} tenants · {types} analytics types. Counts include all persisted event purposes within current filters.")
-
-    st.write("")
+    cards = overview_kpis(filtered, previous)
+    st.markdown('<div class="soc-kpis">' + ''.join(cards[:4]) + '</div>', unsafe_allow_html=True)
+    st.markdown('<div class="soc-kpis">' + ''.join(cards[4:]) + '</div>', unsafe_allow_html=True)
+    st.caption("Trends compare with the previous period of equal length; for incident counts, ↑ is shown as worse. "
+               "Counts include every persisted event purpose within the current filters.")
 
     if filtered.empty:
         st.warning("No incidents match the current filters.")
         return
 
-    left, right = st.columns(2)
+    st.plotly_chart(daily_severity_figure(filtered), width="stretch", config={"displayModeBar": False})
+
+    left, right = st.columns([1.2, 1])
     with left:
-        by_type = filtered["analytics_type"].value_counts()
-        color_map = dict(zip(by_type.index, SERIES_COLORS * (len(by_type) // len(SERIES_COLORS) + 1)))
-        st.markdown(bar_panel("Incidents by analytics type", by_type, color_map), unsafe_allow_html=True)
+        by_type = filtered["analytics_type"].map(analytics_name).value_counts()
+        st.plotly_chart(ranked_bar_figure(by_type, "Incidents by analytics type", "incidents"),
+                        width="stretch", config={"displayModeBar": False})
     with right:
         by_severity = filtered["severity"].value_counts().reindex(SEVERITY_ORDER).dropna()
-        st.markdown(bar_panel("Severity distribution", by_severity, SEVERITY_COLORS), unsafe_allow_html=True)
+        labels = {sev: f"{SEVERITY_ICONS[sev]} {sev.title()}" for sev in SEVERITY_ORDER}
+        st.markdown(bar_panel("Severity mix", by_severity.rename(index=labels),
+                              {labels[sev]: SEVERITY_COLORS[sev] for sev in SEVERITY_ORDER}), unsafe_allow_html=True)
 
-    st.write("")
-
-    daily = (
-        filtered.set_index("timestamp")
-        .resample("D")
-        .size()
-        .reset_index(name="count")
-    )
-    fig = go.Figure(
-        go.Scatter(
-            x=daily["timestamp"], y=daily["count"],
-            mode="lines", line=dict(color=SERIES_COLORS[0], width=2, shape="spline"),
-            fill="tozeroy", fillcolor="rgba(57,135,229,0.12)",
-        )
-    )
-    fig.update_layout(
-        title="Incidents per day",
-        paper_bgcolor=SURFACE, plot_bgcolor=SURFACE,
-        font_color=INK_SECONDARY,
-        margin=dict(l=10, r=10, t=40, b=10), height=220,
-        xaxis=dict(gridcolor=GRIDLINE, showgrid=False),
-        yaxis=dict(gridcolor=GRIDLINE),
-    )
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
-
-    st.write("")
+    left, right = st.columns([1.2, 1])
+    with left:
+        st.plotly_chart(activity_heatmap_figure(filtered), width="stretch", config={"displayModeBar": False})
+    with right:
+        st.plotly_chart(ranked_bar_figure(filtered["site_id"].value_counts().head(8), "Busiest sites", "incidents"),
+                        width="stretch", config={"displayModeBar": False})
 
     lower_left, lower_right = st.columns([1.3, 1])
     with lower_left:
@@ -499,15 +627,142 @@ def render_overview(filtered: pd.DataFrame, previous: pd.DataFrame) -> None:
         st.markdown(key_insights_panel(filtered, previous), unsafe_allow_html=True)
 
 
+PURPOSE_FILTERS = ("All purposes", "Real incidents", "Tests only")
+EVIDENCE_FILTERS = ("Any evidence", "With image", "Without image")
+SORT_ORDERS = ("Newest first", "Oldest first", "Most severe first")
+SEARCH_COLUMNS = ("event_id", "tenant_id", "site_id", "source_id", "analytics_type", "event_type", "description")
+MAX_SEARCH_LENGTH = 100
+
+
+def filter_incidents(frame: pd.DataFrame, query: str = "", severities=None, purpose: str = PURPOSE_FILTERS[0],
+                     evidence: str = EVIDENCE_FILTERS[0], sort: str = SORT_ORDERS[0]) -> pd.DataFrame:
+    """The All incidents page's search and filters, as a pure function."""
+    result = frame
+    query = (query or "").strip()[:MAX_SEARCH_LENGTH].lower()
+    if query:
+        # Literal, case-insensitive substring match; user text is never a regex.
+        hit = pd.Series(False, index=result.index)
+        for column in SEARCH_COLUMNS:
+            if column in result:
+                hit |= result[column].astype("string").str.lower().str.contains(query, regex=False, na=False)
+        hit |= result["analytics_type"].map(analytics_name).str.lower().str.contains(query, regex=False, na=False)
+        result = result[hit]
+    if severities is not None:
+        result = result[result["severity"].isin(severities)]
+    purposes = result["event_purpose"] if "event_purpose" in result else pd.Series("incident", index=result.index)
+    if purpose == PURPOSE_FILTERS[1]:
+        result = result[~purposes.isin(TEST_PURPOSES)]
+    elif purpose == PURPOSE_FILTERS[2]:
+        result = result[purposes.isin(TEST_PURPOSES)]
+    has_image = (result["evidence_uri"].apply(lambda uri: isinstance(uri, str) and bool(uri))
+                 if "evidence_uri" in result else pd.Series(False, index=result.index))
+    if evidence == EVIDENCE_FILTERS[1]:
+        result = result[has_image]
+    elif evidence == EVIDENCE_FILTERS[2]:
+        result = result[~has_image]
+    if sort == SORT_ORDERS[1]:
+        return result.sort_values(["timestamp", "tenant_id", "event_id"], kind="stable")
+    if sort == SORT_ORDERS[2]:
+        rank = result["severity"].map({sev: i for i, sev in enumerate(SEVERITY_ORDER)}).fillna(len(SEVERITY_ORDER))
+        return ordered_incidents(result).assign(_rank=rank).sort_values("_rank", kind="stable").drop(columns="_rank")
+    return ordered_incidents(result)
+
+
+def incident_table(frame: pd.DataFrame) -> pd.DataFrame:
+    column = lambda name, default="": frame[name] if name in frame else pd.Series(default, index=frame.index)
+    return pd.DataFrame({
+        "Time (UTC)": frame["timestamp"],
+        "Severity": frame["severity"].map(lambda sev: f"{SEVERITY_ICONS.get(str(sev).lower(), '○')} {str(sev).upper()}"),
+        "Event ID": frame["event_id"],
+        "Analytics": frame["analytics_type"].map(analytics_name),
+        "Event": column("event_type"),
+        "Tenant": frame["tenant_id"],
+        "Site": column("site_id"),
+        "Camera": column("source_id"),
+        "Purpose": column("event_purpose", "incident").fillna("incident").map(lambda p: f"TEST · {p}" if is_test_purpose(p) else "Incident"),
+        "Evidence": column("evidence_uri", None).map(lambda uri: isinstance(uri, str) and bool(uri)),
+    })
+
+
+CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def incidents_csv(frame: pd.DataFrame) -> bytes:
+    """CSV export with spreadsheet formula injection neutralised."""
+    def safe(value):
+        return "'" + value if isinstance(value, str) and value.startswith(CSV_FORMULA_PREFIXES) else value
+    export = frame.drop(columns=[c for c in ("_rid", "_self", "_etag", "_attachments", "_ts") if c in frame])
+    # Element-wise, whatever dtype pandas inferred for a text column.
+    return export.map(safe).to_csv(index=False).encode("utf-8")
+
+
+def render_incident_detail(row: pd.Series) -> None:
+    with st.container(border=True):
+        image_col, detail_col = st.columns([1, 2])
+        uri = row.get("evidence_uri")
+        image = load_evidence(uri) if isinstance(uri, str) and uri else None
+        with image_col:
+            if image:
+                st.image(image, width="stretch")
+                if st.button("Expand image", key=f"detail_{row['tenant_id']}_{row['event_id']}"):
+                    _evidence_detail_dialog(row, image)
+            else:
+                st.caption("Evidence unavailable" if uri else "No evidence image")
+        with detail_col:
+            st.markdown(severity_badge(row["severity"]), unsafe_allow_html=True)
+            st.markdown(f"**{escape(str(row['event_id']))}** · {escape(analytics_name(row['analytics_type']))} · {escape(str(row.get('event_type', '')))}")
+            if isinstance(row.get("description"), str):
+                st.text(row["description"])
+            st.caption(f"Tenant {row['tenant_id']} · Site {row.get('site_id', '')} · Camera/source {row.get('source_id', 'Unavailable')}")
+            st.caption(row["timestamp"].strftime("%Y-%m-%d %H:%M:%S UTC") + f" · {relative_time(row['timestamp'])}")
+
+
 def render_all_incidents(filtered: pd.DataFrame) -> None:
-    require_operator()
+    context = require_operator()
     st.subheader("All incidents")
-    st.caption(f"{len(filtered)} incidents match the current filters.")
-    st.dataframe(
-        ordered_incidents(filtered),
-        width="stretch",
-        hide_index=True,
+    search_col, severity_col = st.columns([2, 2])
+    with search_col:
+        query = st.text_input("Search", placeholder="Event ID, site, camera, analytics or event type",
+                              max_chars=MAX_SEARCH_LENGTH, key="incident_search")
+    with severity_col:
+        present = [sev for sev in SEVERITY_ORDER if sev in set(filtered["severity"])]
+        severities = st.multiselect("Severity", present, default=present, key="incident_severity",
+                                    format_func=lambda sev: f"{SEVERITY_ICONS.get(sev, '○')} {sev.title()}")
+    purpose_col, evidence_col, sort_col = st.columns(3)
+    with purpose_col:
+        purpose = st.selectbox("Purpose", PURPOSE_FILTERS, key="incident_purpose")
+    with evidence_col:
+        evidence = st.selectbox("Evidence", EVIDENCE_FILTERS, key="incident_evidence")
+    with sort_col:
+        sort = st.selectbox("Sort", SORT_ORDERS, key="incident_sort")
+
+    matches = filter_incidents(filtered, query, severities, purpose, evidence, sort)
+    counts = matches["severity"].value_counts()
+    st.markdown('<div class="sev-summary">' + "".join(
+        severity_badge(sev, int(counts.get(sev, 0))) for sev in SEVERITY_ORDER
+    ) + '</div>', unsafe_allow_html=True)
+    st.caption(f"{len(matches)} of {len(filtered)} incidents match. Select a row to see its details and evidence.")
+
+    selection = st.dataframe(
+        incident_table(matches), width="stretch", hide_index=True, height=min(560, 38 + 35 * max(len(matches), 1)),
+        on_select="rerun", selection_mode="single-row", key="incident_table",
+        column_config={
+            "Time (UTC)": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm:ss"),
+            "Evidence": st.column_config.CheckboxColumn(help="Incident references an evidence image"),
+        },
     )
+    rows = getattr(getattr(selection, "selection", None), "rows", None) or []
+    if rows and rows[0] < len(matches):
+        render_incident_detail(matches.iloc[rows[0]])
+
+    if getattr(context, "can_export", False):
+        st.download_button(
+            "Export matching incidents (CSV)", incidents_csv(matches),
+            file_name=f"incidents-{datetime.now(timezone.utc):%Y%m%d-%H%M}.csv", mime="text/csv",
+            disabled=matches.empty,
+        )
+    else:
+        st.caption("CSV export is available to Admins.")
 
 
 @st.dialog("Evidence", width="large")
@@ -688,7 +943,7 @@ def render_simulator() -> None:
     if not context.can_simulate:
         st.error("Simulation permission is required.")
         return
-    st.subheader("Controlled Event Simulator")
+    st.subheader("Simulate Event")
     st.caption("TEST event · single submission · existing API event-purpose routing applies.")
     enabled = os.environ.get("ENABLE_EVENT_SIMULATOR", "").lower() == "true"
     verified = os.environ.get("SIMULATOR_AUTH_VERIFIED", "").lower() == "true"
@@ -741,13 +996,100 @@ def render_simulator() -> None:
             st.rerun()
 
 
+ROLE_MATRIX = pd.DataFrame(
+    [
+        ("View Overview, All incidents and Evidence", True, True),
+        ("Search and filter incidents", True, True),
+        ("Open Platform Observability (Grafana)", True, True),
+        ("Export incidents as CSV", True, False),
+        ("Simulate Event (when enabled)", True, False),
+        ("Administration console", True, False),
+    ],
+    columns=["Capability", "Admin", "Viewer"],
+)
+
+
+def render_admin_console() -> None:
+    context = require_operator()
+    # Checked here as well as in navigation: a page must never rely on being hidden.
+    if not getattr(context, "is_admin", False):
+        st.error("Administrator role is required.")
+        return
+    mode = os.environ.get("DASHBOARD_AUTH_MODE", "oidc")
+    st.subheader("Administration")
+    st.caption("Read-only view of how access works in this deployment. No setting can be changed from here.")
+
+    session_col, scope_col = st.columns(2)
+    with session_col:
+        with st.container(border=True):
+            st.markdown("**Your session**")
+            st.text(f"User: {operator_display_name(context)}")
+            st.text(f"Role: {getattr(context, 'role', '') or 'Unassigned'}")
+            st.text(f"Sign-in: {'Local username and password' if mode == 'local' else 'Microsoft Entra ID'}")
+            if mode == "local":
+                st.caption(f"Sessions end after {local_auth.IDLE_SECONDS // 60} idle minutes or "
+                           f"{local_auth.ABSOLUTE_SECONDS // 3600} hours, and on sign out.")
+    with scope_col:
+        with st.container(border=True):
+            st.markdown("**Data scope**")
+            st.text(f"Tenants: {', '.join(context.tenants)}")
+            st.text("Cosmos DB: read-only managed identity")
+            st.text("Evidence: private Blob container, managed identity")
+
+    st.markdown("**Roles and capabilities**")
+    st.dataframe(ROLE_MATRIX, hide_index=True, width="stretch", column_config={
+        "Admin": st.column_config.CheckboxColumn(), "Viewer": st.column_config.CheckboxColumn(),
+    })
+
+    if mode == "local":
+        st.markdown("**Configured accounts**")
+        try:
+            accounts = local_auth.load_credentials().accounts.values()
+        except local_auth.LocalAuthUnavailable:
+            st.error("The sign-in file could not be read.")
+        else:
+            # Usernames and roles only; password hashes never leave the server.
+            st.dataframe(pd.DataFrame([(a.username, LOCAL_ROLE_NAMES[a.role]) for a in accounts],
+                                      columns=["Username", "Role"]), hide_index=True, width="stretch")
+            st.caption("Accounts live in the Key Vault secret mounted into this revision; "
+                       "change them with tools/make_password_hash.py and a new secret version.")
+
+
+GRAFANA_DASHBOARD_URL = ("https://incident-grafana.calmmushroom-4789bfc0.malaysiawest.azurecontainerapps.io"
+                         "/d/incident-platform-ops/incident-platform-7c-operations")
+
+
+def render_header(context, refreshed_at: str) -> None:
+    role = getattr(context, "role", "") or "Unassigned"
+    role_class = "role-admin" if getattr(context, "is_admin", False) else "role-viewer"
+    try:
+        refreshed = datetime.fromisoformat(refreshed_at).strftime("%Y-%m-%d %H:%M UTC")
+    except (TypeError, ValueError):
+        refreshed = "Unavailable"
+    st.markdown(
+        '<div class="soc-header"><div>'
+        '<div class="soc-eyebrow">Smart Incident Monitoring Platform</div>'
+        '<div class="soc-title">Security Operations Center</div></div>'
+        '<div class="soc-chips">'
+        f'<span class="chip {role_class}">{escape(role.upper())}</span>'
+        f'<span class="chip">{escape(operator_display_name(context))}</span>'
+        f'<span class="chip"><span class="live"></span>Cosmos refreshed {escape(refreshed)}</span>'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def main() -> None:
-    st.set_page_config(page_title="Incident Business Dashboard", layout="wide")
+    st.set_page_config(page_title="SOC · Smart Incident Monitoring", page_icon="🛡️", layout="wide")
     inject_css()
     context = require_operator()
+    mode = os.environ.get("DASHBOARD_AUTH_MODE", "oidc")
     with st.sidebar:
-        st.caption("Authenticated operator · authorized tenant scope enforced")
-        mode = os.environ.get("DASHBOARD_AUTH_MODE", "oidc")
+        st.markdown(
+            f'<div class="user-card"><div class="u">{escape(operator_display_name(context))}</div>'
+            f'<div class="m">{escape(getattr(context, "role", "") or "Unassigned")} · tenant scope enforced</div></div>',
+            unsafe_allow_html=True,
+        )
         if mode == "easyauth":
             st.link_button("Sign out", "/.auth/logout")
         elif mode == "local":
@@ -768,7 +1110,7 @@ def main() -> None:
         now = time.monotonic()
         last = st.session_state.get("soc_refresh_tick", now)
         st.session_state.setdefault("soc_refresh_tick", now)
-        manual = st.button("Refresh incidents")
+        manual = st.button("Refresh incidents", icon=":material/refresh:", width="stretch")
         if manual and now - st.session_state.get("soc_last_manual_refresh", -60) < 60:
             st.info("Wait one minute between manual data refreshes.")
             return
@@ -778,14 +1120,12 @@ def main() -> None:
         if manual or (interval and now - last >= interval):
             st.session_state["soc_refresh_tick"] = now
             st.rerun()
-    refresh_clock()
+    with st.sidebar:
+        refresh_clock()
     df = load_incidents()
 
     with st.sidebar:
-        st.link_button(
-            "Platform Observability",
-            "https://incident-grafana.calmmushroom-4789bfc0.malaysiawest.azurecontainerapps.io/d/incident-platform-ops/incident-platform-7c-operations",
-        )
+        st.link_button("Platform Observability", GRAFANA_DASHBOARD_URL, icon=":material/monitoring:", width="stretch")
 
         st.header("Filters")
 
@@ -839,32 +1179,41 @@ def main() -> None:
         & (dim_filtered["timestamp"].dt.date <= prev_end)
     ]
 
-    overview_page = st.Page(
-        lambda: render_overview(filtered, previous),
-        title="Overview", icon="📊", default=True, url_path="overview",
-    )
-    incidents_page = st.Page(
-        lambda: render_all_incidents(filtered),
-        title="All incidents", icon="📄", url_path="all-incidents",
-    )
-    evidence_page = st.Page(
-        lambda: render_evidence(filtered),
-        title="Evidence", icon="🖼️", url_path="evidence",
-    )
-    simulator_page = st.Page(render_simulator, title="Controlled Event Simulator", icon="🧪", url_path="simulator")
-    pages = [overview_page, incidents_page, evidence_page]
-    pages.append(st.Page(lambda: render_account_setup(require_operator, delegated_api_token), title="Account Setup", icon="👤", url_path="account-setup"))
-    if getattr(context,'can_manage_access',False):
-        pages.append(st.Page(lambda: render_admin_access(require_operator, delegated_api_token),title="Admin Access Management",icon="🔐",url_path="admin-access"))
+    # Only pages this role may use are registered, so a hidden page's URL falls
+    # back to the default page; each page also re-checks its own permission.
+    sections = {"Monitor": [
+        st.Page(lambda: render_overview(filtered, previous), title="Overview", icon=":material/dashboard:",
+                default=True, url_path="overview"),
+        st.Page(lambda: render_all_incidents(filtered), title="All incidents", icon=":material/table_rows:",
+                url_path="all-incidents"),
+        st.Page(lambda: render_evidence(filtered), title="Evidence", icon=":material/photo_library:",
+                url_path="evidence"),
+    ]}
     if context.can_simulate:
-        pages.append(simulator_page)
-    pg = st.navigation(pages)
+        sections["Operations"] = [st.Page(render_simulator, title="Simulate Event", icon=":material/science:",
+                                          url_path="simulator")]
+    admin_pages = []
+    if getattr(context, "is_admin", False):
+        admin_pages.append(st.Page(render_admin_console, title="Administration", icon=":material/admin_panel_settings:",
+                                   url_path="administration"))
+    if getattr(context, 'can_manage_access', False):
+        admin_pages.append(st.Page(lambda: render_admin_access(require_operator, delegated_api_token),
+                                   title="Admin Access Management", icon=":material/lock_person:", url_path="admin-access"))
+    if admin_pages:
+        sections["Admin"] = admin_pages
+    if mode != "local":
+        # Account Setup acts for the person through their Entra token, which local sign-in does not have.
+        sections["Account"] = [st.Page(lambda: render_account_setup(require_operator, delegated_api_token),
+                                       title="Account Setup", icon=":material/person:", url_path="account-setup")]
+    pg = st.navigation(sections)
 
-    st.title("Security Operations Center")
-    st.caption("Scalable Incident Platform · Business Dashboard")
-    st.text(f"Active tenants: {', '.join(tenant_filter) or 'None'}")
-    st.caption(f"Analytics: {', '.join(analytics_filter) or 'None'} · Severity: {', '.join(severity_filter) or 'None'} · {start_date} to {end_date} (UTC)")
-    st.caption(f"Last successful Cosmos refresh: {df.attrs.get('refreshed_at', 'Unavailable')}")
+    render_header(context, df.attrs.get("refreshed_at", ""))
+    st.markdown(
+        f'<div class="soc-filters">Tenants: {escape(", ".join(tenant_filter) or "None")} · '
+        f'Analytics: {escape(", ".join(analytics_name(a) for a in analytics_filter) or "None")} · '
+        f'Severity: {escape(", ".join(severity_filter) or "None")} · {start_date} to {end_date} (UTC)</div>',
+        unsafe_allow_html=True,
+    )
     pg.run()
 
 

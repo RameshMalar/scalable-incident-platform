@@ -10,7 +10,7 @@ Exit 0: usable. Exit 1: not usable.
 
 Inputs (all non-secret, from the Container App):
   DASHBOARD_AUTH_MODE            oidc (default) | easyauth | local
-  DASHBOARD_LOCAL_AUTH_FILE      local mode: mounted TOML with username + scrypt hash
+  DASHBOARD_LOCAL_AUTH_FILE      local mode: mounted TOML with accounts (username, scrypt hash, role)
   DASHBOARD_AUTH_CLIENT_ID       login app registration client ID
   DASHBOARD_EXPECTED_REDIRECT_URI  the exact callback this revision serves
   STREAMLIT_SECRETS_FILES        mounted secrets.toml (Key Vault reference)
@@ -92,18 +92,20 @@ WEAK_PASSWORDS = ("admin123!", "admin123", "admin", "password", "Password1!", "c
 
 
 def check_local(env):
-    """Local sign-in: a strong, deployable hash and no Entra-only features."""
+    """Local sign-in: strong, deployable hashes and no Entra-only features."""
     import local_auth  # only needed in this mode
 
     failures = [f"entra_only_feature_enabled:{name}" for name in local_auth.entra_only_flags_enabled(env)]
     try:
-        username, password_hash, testing_only = local_auth.load_credentials(env.get("DASHBOARD_LOCAL_AUTH_FILE", ""))
+        credentials = local_auth.load_credentials(env.get("DASHBOARD_LOCAL_AUTH_FILE", ""))
     except local_auth.LocalAuthUnavailable:
         return failures + ["local_auth_file"]
-    if testing_only:
+    if credentials.testing_only:
         failures.append("local_auth_testing_only_hash")
-    if any(local_auth.verify_password(password_hash, weak) for weak in WEAK_PASSWORDS):
-        failures.append("local_auth_weak_password")
+    # Usernames are not secret; naming the account tells the operator which to fix.
+    for account in credentials.accounts.values():
+        if any(local_auth.verify_password(account.password_hash, weak) for weak in WEAK_PASSWORDS):
+            failures.append(f"local_auth_weak_password:{account.username}")
     return failures
 
 
