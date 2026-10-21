@@ -389,7 +389,7 @@ def test_demo_mode_is_the_default_and_clearly_labelled(demo):
     assert simulator.demo_mode({}) and not simulator.demo_mode({"DASHBOARD_SIMULATOR_MODE": "live"})
     at = page()
     assert not at.exception
-    assert any("DEMO MODE" in m.value for m in at.markdown)
+    assert not any("DEMO MODE" in m.value for m in at.markdown)
     assert any("never sent to ingestion or stored in Cosmos DB" in c.value for c in at.caption)
 
 

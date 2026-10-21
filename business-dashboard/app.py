@@ -742,12 +742,7 @@ def render_latest_overview(filtered: pd.DataFrame) -> None:
 
 def render_overview(filtered: pd.DataFrame, previous: pd.DataFrame, simulate_page=None) -> None:
     require_operator()
-    if simulate_page is not None:
-        title_col, button_col = st.columns([4, 1], vertical_alignment="center")
-        with title_col:
-            st.subheader("Overview")
-        with button_col:
-            st.link_button("Simulate Event", INGESTION_SIMULATOR_URL, type="primary", icon=":material/open_in_new:", width="stretch")
+    st.subheader("Overview")
     cards = overview_kpis(filtered, previous)
     st.markdown('<div class="soc-kpis">' + ''.join(cards) + '</div>', unsafe_allow_html=True)
     st.caption("Selected operational range · SGT · trends compare equal periods, with a previous count of at least 10.")
@@ -1119,7 +1114,6 @@ def render_simulator() -> None:
     demo = simulator.demo_mode()
     st.subheader("Simulate Event")
     if demo:
-        st.markdown('<span class="chip demo-chip">DEMO MODE</span>', unsafe_allow_html=True)
         st.caption("Creates a TEST incident in your signed-in session only. It appears on every page marked DEMO, "
                    "is never sent to ingestion or stored in Cosmos DB, and no Telegram message is sent.")
         config, tenant = None, demo_tenant(context)
@@ -1414,9 +1408,6 @@ def render_header(context, refreshed_at: str) -> None:
         refreshed = "Unavailable"
     emblem = _image_data_uri(str(EMBLEM))
     emblem_img = f'<img class="brand-emblem" src="{emblem}" alt="{PRODUCT_NAME} emblem">' if emblem else ""
-    count = len(demo_incidents())
-    demo_chip = (f'<span class="chip demo-chip">DEMO MODE · {count} session incident{"" if count == 1 else "s"}</span>'
-                 if simulator.demo_mode() else "")
     st.markdown(
         '<div class="soc-header"><div class="brand">'
         f'{emblem_img}'
@@ -1530,18 +1521,14 @@ def main() -> None:
 
     # Only pages this role may use are registered, so a hidden page's URL falls
     # back to the default page; each page also re-checks its own permission.
-    simulate_page = (st.Page(render_ingestion_launcher, title="Simulate Event", icon=":material/science:", url_path="simulator")
-                     if context.can_simulate else None)
     pages = [
-        st.Page(lambda: render_overview(filtered, previous, simulate_page), title="Overview",
+        st.Page(lambda: render_overview(filtered, previous), title="Overview",
                 icon=":material/dashboard:", default=True, url_path="overview"),
         st.Page(lambda: render_all_incidents(filtered), title="All Incidents", icon=":material/table_rows:",
                 url_path="all-incidents"),
         st.Page(lambda: render_evidence(filtered), title="Evidence Gallery", icon=":material/photo_library:",
                 url_path="evidence"),
     ]
-    if simulate_page is not None:
-        pages.append(simulate_page)
     if getattr(context, "is_admin", False):
         pages.append(st.Page(render_telegram_subscribers, title="Telegram Subscriptions",
                              icon=":material/notifications_active:", url_path="telegram"))
@@ -1557,11 +1544,10 @@ def main() -> None:
         for page in monitor_pages:
             st.page_link(page)
         st.caption("OPERATIONS")
+        if context.can_simulate:
+            st.link_button("Simulate Event", INGESTION_SIMULATOR_URL, icon=":material/science:")
         for page in operation_pages:
-            if page is simulate_page:
-                st.link_button("Simulate Event", INGESTION_SIMULATOR_URL, icon=":material/science:")
-            else:
-                st.page_link(page)
+            st.page_link(page)
         st.link_button("Platform Observability", GRAFANA_DASHBOARD_URL, icon=":material/monitoring:", width="stretch")
     with st.sidebar.container(key="sentinel_signout"):
         if mode == "easyauth":

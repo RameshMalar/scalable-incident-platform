@@ -1,0 +1,20 @@
+name: Observability configuration
+on:
+  pull_request:
+    paths: ['grafana/**', 'business-dashboard/app.py', '.github/workflows/observability.yml']
+  push:
+    branches: ['feat/grafana-workbook-consolidation']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install PyYAML==6.0.3 pytest==8.4.2
+      - run: python grafana/validate.py
+      - run: python -m pytest grafana/tests -q
+      - run: python -m py_compile business-dashboard/app.py

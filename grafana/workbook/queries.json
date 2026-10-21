@@ -1,0 +1,96 @@
+{
+  "query - container apps inventory": {
+    "version": "KqlItem/1.0",
+    "query": "Resources\n| where resourceGroup =~ '{ResourceGroup}'\n| where type =~ 'microsoft.app/containerapps'\n| project name, location, runningStatus = tostring(properties.runningStatus), latestRevisionName = tostring(properties.latestRevisionName)",
+    "queryType": 1,
+    "resourceType": "microsoft.resourcegraph/resources"
+  },
+  "query - container apps replicas": {
+    "version": "KqlItem/1.0",
+    "query": "AzureMetrics\n| where TimeGenerated > ago(7d)\n| where ResourceGroup =~ '{ResourceGroup}'\n| where ResourceProvider == \"MICROSOFT.APP\"\n| where MetricName == \"Replicas\"\n| summarize CurrentValue = toreal(max(Maximum)) by Resource\n| project Resource, CurrentReplicas = CurrentValue\n| sort by Resource asc",
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "crossComponentResources": [
+      "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.OperationalInsights/workspaces/incident-logs"
+    ],
+    "gridSettings": {
+      "formatters": [
+        {
+          "columnMatch": "CurrentValue",
+          "formatter": 4,
+          "formatOptions": {
+            "palette": "blue"
+          }
+        }
+      ]
+    }
+  },
+  "query - container apps cpu and memory": {
+    "version": "KqlItem/1.0",
+    "query": "AzureMetrics\n| where TimeGenerated > ago(7d)\n| where ResourceGroup =~ '{ResourceGroup}'\n| where ResourceProvider == \"MICROSOFT.APP\"\n| where MetricName in (\"CpuPercentage\", \"MemoryPercentage\")\n| summarize AvgPercent = avg(Average), MaxPercent = max(Maximum), P95Percent = percentile(Maximum, 95) by Resource, MetricName\n| project Resource, Metric = MetricName, AvgPercent = round(AvgPercent, 1), MaxPercent = round(MaxPercent, 1), P95Percent = round(P95Percent, 1)\n| sort by Resource asc",
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "crossComponentResources": [
+      "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.OperationalInsights/workspaces/incident-logs"
+    ]
+  },
+  "query - container apps environment status": {
+    "version": "KqlItem/1.0",
+    "query": "Resources\n| where resourceGroup =~ '{ResourceGroup}'\n| where type =~ 'microsoft.app/managedenvironments'\n| project name, location, provisioningState = tostring(properties.provisioningState)",
+    "queryType": 1,
+    "resourceType": "microsoft.resourcegraph/resources"
+  },
+  "query - cosmos db inventory": {
+    "version": "KqlItem/1.0",
+    "query": "Resources\n| where resourceGroup =~ '{ResourceGroup}'\n| where type =~ 'microsoft.documentdb/databaseaccounts'\n| project name, location, provisioningState = tostring(properties.provisioningState), throughputLimit = tostring(properties.capacity.totalThroughputLimit)",
+    "queryType": 1,
+    "resourceType": "microsoft.resourcegraph/resources"
+  },
+  "query - cosmos db consumed ru": {
+    "version": "KqlItem/1.0",
+    "query": "AzureMetrics\n| where TimeGenerated > ago(7d)\n| where ResourceGroup =~ '{ResourceGroup}'\n| where ResourceProvider == \"MICROSOFT.DOCUMENTDB\"\n| where MetricName == \"TotalRequestUnits\" or MetricName == \"ProvisionedThroughput\"\n| summarize AvgConsumed = avg(iff(MetricName == \"TotalRequestUnits\", Total, real(0))), PeakConsumed = max(iff(MetricName == \"TotalRequestUnits\", Total, real(0))), AvgProvisioned = avg(iff(MetricName == \"ProvisionedThroughput\", Average, real(0))) by Resource\n| project Resource, AvgConsumedRU = round(AvgConsumed, 1), PeakConsumedRU = round(PeakConsumed, 1), ProvisionedRU = round(AvgProvisioned, 1)",
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "crossComponentResources": [
+      "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.OperationalInsights/workspaces/incident-logs"
+    ],
+    "gridSettings": {
+      "formatters": [
+        {
+          "columnMatch": "PeakConsumedRU",
+          "formatter": 4,
+          "formatOptions": {
+            "palette": "redGreen"
+          }
+        }
+      ]
+    }
+  },
+  "query - cosmos db latency": {
+    "version": "KqlItem/1.0",
+    "query": "AzureMetrics\n| where TimeGenerated > ago(7d)\n| where ResourceGroup =~ '{ResourceGroup}'\n| where ResourceProvider == \"MICROSOFT.DOCUMENTDB\"\n| where MetricName == \"ServerSideLatency\"\n| summarize AvgLatency = avg(Average), P95Latency = percentile(Maximum, 95), MaxLatency = max(Maximum) by Resource\n| project Resource, AvgLatency = round(AvgLatency, 2), P95Latency = round(P95Latency, 2), MaxLatency = round(MaxLatency, 2)",
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "crossComponentResources": [
+      "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.OperationalInsights/workspaces/incident-logs"
+    ]
+  },
+  "query - cosmos db ru utilization": {
+    "version": "KqlItem/1.0",
+    "query": "AzureMetrics\n| where TimeGenerated > ago(7d)\n| where ResourceGroup =~ '{ResourceGroup}'\n| where ResourceProvider == \"MICROSOFT.DOCUMENTDB\"\n| where MetricName == \"NormalizedRUConsumption\"\n| summarize AvgNormalizedRUConsumption = avg(Average), MaxNormalizedRUConsumption = max(Maximum), P95NormalizedRUConsumption = percentile(Maximum, 95) by Resource\n| project Resource, AvgNormalizedRUConsumption = round(AvgNormalizedRUConsumption, 2), MaxNormalizedRUConsumption = round(MaxNormalizedRUConsumption, 2), P95NormalizedRUConsumption = round(P95NormalizedRUConsumption, 2)",
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "crossComponentResources": [
+      "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.OperationalInsights/workspaces/incident-logs"
+    ]
+  },
+  "query - cosmos db storage": {
+    "version": "KqlItem/1.0",
+    "query": "AzureMetrics\n| where TimeGenerated > ago(7d)\n| where ResourceGroup =~ '{ResourceGroup}'\n| where ResourceProvider == \"MICROSOFT.DOCUMENTDB\"\n| where MetricName in (\"DataUsage\", \"DocumentQuota\")\n| summarize CurrentGB = max(Maximum) / 1024 / 1024 / 1024 by Resource, MetricName\n| project Resource, Metric = MetricName, CurrentGB = round(CurrentGB, 3)",
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "crossComponentResources": [
+      "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.OperationalInsights/workspaces/incident-logs"
+    ]
+  }
+}

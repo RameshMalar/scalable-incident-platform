@@ -12,6 +12,3 @@ COPY --chown=472:0 dashboards/ /var/lib/grafana/dashboards/
 
 # Grafana listens on port 3000.
 EXPOSE 3000
-
-
-

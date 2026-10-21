@@ -13,10 +13,13 @@ from streamlit.testing.v1 import AppTest
 
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
-spec = importlib.util.spec_from_file_location('soc_dashboard', ROOT / 'app.py')
-dashboard = importlib.util.module_from_spec(spec)
-sys.modules['soc_dashboard'] = dashboard
-spec.loader.exec_module(dashboard)
+if 'soc_dashboard' in sys.modules:
+    dashboard = sys.modules['soc_dashboard']
+else:
+    spec = importlib.util.spec_from_file_location('soc_dashboard', ROOT / 'app.py')
+    dashboard = importlib.util.module_from_spec(spec)
+    sys.modules['soc_dashboard'] = dashboard
+    spec.loader.exec_module(dashboard)
 
 
 @pytest.fixture

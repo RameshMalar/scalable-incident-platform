@@ -119,7 +119,7 @@ def test_admin_and_viewer_see_different_navigation(two_roles, monkeypatch, recor
     sections = capture_navigation(monkeypatch)
     at = tla.sign_in(tla.run_app(), "admin", PASSWORD)
     assert not at.exception
-    assert sections["pages"] == ["Overview", "All Incidents", "Evidence Gallery", "Simulate Event",
+    assert sections["pages"] == ["Overview", "All Incidents", "Evidence Gallery",
                                  "Telegram Subscriptions"]
     markup = " ".join(m.value for m in at.markdown)
     assert "ADMIN" not in markup and "Administration" not in sections["pages"]  # no admin badge or page
@@ -133,10 +133,10 @@ def test_role_change_takes_effect_on_the_next_request(two_roles, monkeypatch, re
     monkeypatch.setattr(dashboard, "load_incidents", Mock(return_value=records))
     sections = capture_navigation(monkeypatch)
     at = tla.sign_in(tla.run_app(), "admin", PASSWORD)
-    assert "Simulate Event" in sections["pages"]
+    assert any(b.proto.label == "Simulate Event" for b in at.get("link_button"))
     write_accounts(two_roles, [("admin", PASSWORD, "viewer")])
     at.run(timeout=20)
-    assert "Simulate Event" not in sections["pages"] and "Telegram Subscriptions" not in sections["pages"]
+    assert not any(b.proto.label == "Simulate Event" for b in at.get("link_button")) and "Telegram Subscriptions" not in sections["pages"]
     write_accounts(two_roles, [("someone-else", PASSWORD, "admin")])
     at.run(timeout=20)
     assert [b.label for b in at.button] == ["Sign in"]
