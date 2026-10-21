@@ -17,8 +17,9 @@ their own `az login` (Cosmos DB Data Contributor on the account).
     python scripts/telegram-demo-subscribers.py list --tenant TENANT-01
 
     # Stop alerts to one chat (identified by the last digits list shows).
-    # Reversible: records are disabled, not deleted.
-    python scripts/telegram-demo-subscribers.py remove --tenant TENANT-01 --chat-suffix 508
+    # Reversible: records are disabled, not deleted, and --backup saves them first.
+    python scripts/telegram-demo-subscribers.py remove --tenant TENANT-01 --chat-suffix 508 --backup group-508.json
+    python scripts/telegram-demo-subscribers.py restore --from group-508.json
 
 The bot token is read from Key Vault into memory and never printed. Chat IDs
 are printed masked. Nothing is written until ownership is proven.
@@ -177,11 +178,32 @@ def remove(args) -> None:
     chats = {r["telegram_chat_id"] for r in matches} | {r["telegram_chat_id"] for r in sub_rows}
     if len(chats) != 1:
         raise SystemExit(f"--chat-suffix must match exactly one chat in {args.tenant}; it matched {len(chats)}.")
+    if args.backup:
+        # The exact records as they are now, so `restore` can put them back unchanged.
+        clean = lambda row: {k: v for k, v in row.items() if not k.startswith("_")}
+        with open(args.backup, "x", encoding="utf-8") as handle:
+            json.dump({"tenant_id": args.tenant, "approved-destinations": [clean(r) for r in matches],
+                       "subscriptions": [clean(r) for r in sub_rows]}, handle, indent=2)
     for row in matches:
         approvals.upsert_item({**{k: v for k, v in row.items() if not k.startswith("_")}, "enabled": False})
     for row in sub_rows:
         subs.upsert_item({**{k: v for k, v in row.items() if not k.startswith("_")}, "enabled": False, "updated_at": now_iso()})
     print(f"Disabled chat {mask(chats.pop())}: {len(matches)} approval(s), {len(sub_rows)} subscription(s). Re-run enrol to restore.")
+
+
+def restore(args) -> None:
+    with open(args.source, encoding="utf-8") as handle:
+        saved = json.load(handle)
+    tenant = saved["tenant_id"]
+    db = database()
+    for name in ("approved-destinations", "subscriptions"):
+        rows = saved[name]
+        if any(row.get("tenant_id") != tenant for row in rows):
+            raise SystemExit("Backup mixes tenants; nothing restored.")
+        container = db.get_container_client(name)
+        for row in rows:
+            container.upsert_item(row)
+    print(f"Restored {len(saved['approved-destinations'])} approval(s) and {len(saved['subscriptions'])} subscription(s) in {tenant}.")
 
 
 def main(argv=None) -> int:
@@ -191,9 +213,11 @@ def main(argv=None) -> int:
     p.add_argument("--events", required=True); p.set_defaults(func=enrol)
     p = sub.add_parser("list"); p.add_argument("--tenant", required=True); p.set_defaults(func=list_subscribers)
     p = sub.add_parser("remove"); p.add_argument("--tenant", required=True)
-    p.add_argument("--chat-suffix", required=True); p.set_defaults(func=remove)
+    p.add_argument("--chat-suffix", required=True); p.add_argument("--backup", help="save the records here first")
+    p.set_defaults(func=remove)
+    p = sub.add_parser("restore"); p.add_argument("--from", dest="source", required=True); p.set_defaults(func=restore)
     args = parser.parse_args(argv)
-    if not TENANT.fullmatch(args.tenant):
+    if getattr(args, "tenant", None) is not None and not TENANT.fullmatch(args.tenant):
         parser.error("--tenant must look like TENANT-01")
     if getattr(args, "label", None) is not None and not LABEL.fullmatch(args.label):
         parser.error("--label must be a short name (letters, spaces, . ' -)")

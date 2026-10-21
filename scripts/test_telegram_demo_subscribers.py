@@ -124,3 +124,25 @@ def test_remove_disables_exactly_one_chat(monkeypatch):
     assert approval["enabled"] is False and "_etag" not in approval
     with pytest.raises(SystemExit, match="exactly one chat"):
         tool.main(["remove", "--tenant", "TENANT-01", "--chat-suffix", "999"])
+
+
+def test_remove_with_backup_then_restore_puts_the_exact_records_back(monkeypatch, tmp_path):
+    original = {"approved-destinations": [{"id": "telegram:-4800000508", "tenant_id": "TENANT-01", "channel": "telegram",
+                                           "telegram_chat_id": "-4800000508", "enabled": True, "_etag": "x"}],
+                "subscriptions": [{"id": "SUB-1", "tenant_id": "TENANT-01", "event_type": "fire_detected", "channel": "telegram",
+                                   "telegram_chat_id": "-4800000508", "enabled": True, "created_at": "c", "updated_at": "u",
+                                   "owner_object_id": None, "_rid": "r"}]}
+    containers = {name: Mock(**{"query_items.return_value": rows}) for name, rows in original.items()}
+    monkeypatch.setattr(tool, "database", lambda: SimpleNamespace(get_container_client=containers.__getitem__))
+    backup = tmp_path / "group.json"
+    tool.main(["remove", "--tenant", "TENANT-01", "--chat-suffix", "508", "--backup", str(backup)])
+    assert containers["subscriptions"].upsert_item.call_args.args[0]["enabled"] is False
+    with pytest.raises(FileExistsError):  # never overwrite an earlier backup
+        tool.main(["remove", "--tenant", "TENANT-01", "--chat-suffix", "508", "--backup", str(backup)])
+    for c in containers.values():
+        c.reset_mock()
+    tool.main(["restore", "--from", str(backup)])
+    restored_sub = containers["subscriptions"].upsert_item.call_args.args[0]
+    restored_dest = containers["approved-destinations"].upsert_item.call_args.args[0]
+    assert restored_sub == {k: v for k, v in original["subscriptions"][0].items() if not k.startswith("_")}
+    assert restored_dest["enabled"] is True and "_etag" not in restored_dest
