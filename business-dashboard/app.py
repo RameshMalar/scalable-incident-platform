@@ -808,7 +808,7 @@ def _evidence_detail_dialog(row: pd.Series, image: bytes) -> None:
     st.image(full or image, width="stretch")
     st.markdown(f"**{row['event_id']}**")
     st.caption(
-        f"{row['analytics_type']} · {row['severity']} · "
+        f"{analytics_name(row['analytics_type'])} · {row['severity']} · "
         f"{relative_time(row['timestamp'])} · tenant {row['tenant_id']} · "
         f"site {row['site_id']}"
     )
@@ -852,7 +852,7 @@ def _render_evidence_grid(
             st.image(
                 image,
                 caption=(
-                    f"{row['event_id']} · {row['analytics_type']} · "
+                    f"{row['event_id']} · {analytics_name(row['analytics_type'])} · "
                     f"{row['severity']} · {relative_time(row['timestamp'])} · "
                     + ("TEST" if row.get("event_purpose") in ("e2e_test", "load_test") else "Incident")
                 ),
@@ -904,7 +904,8 @@ def render_evidence(filtered: pd.DataFrame, page_size: int = 12) -> None:
 
     # Render only the chosen category; Streamlit tabs would eagerly load every grid.
     categories = sorted(with_evidence["analytics_type"].dropna().unique().tolist())
-    category = st.selectbox("Analytics category", ["All"] + categories)
+    category = st.selectbox("Analytics category", ["All"] + categories,
+                            format_func=lambda value: value if value == "All" else analytics_name(value))
     subset = with_evidence if category == "All" else with_evidence[with_evidence["analytics_type"] == category]
     _render_evidence_grid(subset, len(filtered), page_size, state_key=category)
 

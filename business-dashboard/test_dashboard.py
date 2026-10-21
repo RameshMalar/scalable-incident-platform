@@ -109,7 +109,7 @@ def test_gallery_only_selected_category(monkeypatch, records):
     monkeypatch.setattr(dashboard, '_render_evidence_grid', grid)
     at = run_ui('app.render_evidence(app.test_records)')
     assert not at.exception
-    assert at.selectbox[0].options == ['All', 'intrusion_detection', 'people_counting']
+    assert at.selectbox[0].options == ['All', 'Intrusion Detection', 'People Counting']  # labels; values stay stored types
     assert grid.call_count == 1
     at.selectbox[0].select('people_counting').run()
     assert grid.call_args.args[0]['event_id'].tolist() == ['NEW']
