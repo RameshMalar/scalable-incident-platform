@@ -7,3 +7,7 @@ backgroundColor = "#001227"
 secondaryBackgroundColor = "#082039"
 textColor = "#edf5ff"
 font = "sans serif"
+
+[client]
+# No developer menu or "Deploy" button for viewers, wherever the app is served.
+toolbarMode = "viewer"
