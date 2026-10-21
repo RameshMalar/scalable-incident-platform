@@ -1,0 +1,180 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.47.16.16243",
+      "templateHash": "6380306706828551113"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "malaysiawest",
+      "metadata": {
+        "description": "Azure region."
+      }
+    },
+    "environmentId": {
+      "type": "string",
+      "metadata": {
+        "description": "Existing Azure Container Apps environment resource ID."
+      }
+    },
+    "identityId": {
+      "type": "string",
+      "metadata": {
+        "description": "Grafana managed identity resource ID."
+      }
+    },
+    "identityClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Grafana managed identity client ID."
+      }
+    },
+    "image": {
+      "type": "string",
+      "metadata": {
+        "description": "Grafana container image in Azure Container Registry."
+      }
+    },
+    "minReplicas": {
+      "type": "int",
+      "defaultValue": 0,
+      "minValue": 0,
+      "maxValue": 1,
+      "metadata": {
+        "description": "Minimum Grafana replicas."
+      }
+    },
+    "maxReplicas": {
+      "type": "int",
+      "defaultValue": 1,
+      "minValue": 1,
+      "maxValue": 1,
+      "metadata": {
+        "description": "Maximum Grafana replicas."
+      }
+    },
+    "grafanaAdminPassword": {
+      "type": "securestring"
+    }
+  },
+  "variables": {
+    "registryServer": "[split(parameters('image'), '/')[0]]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "incident-grafana",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', parameters('identityId'))]": {}
+        }
+      },
+      "properties": {
+        "managedEnvironmentId": "[parameters('environmentId')]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "secrets": [
+            {
+              "name": "grafana-admin-password",
+              "value": "[parameters('grafanaAdminPassword')]"
+            }
+          ],
+          "ingress": {
+            "external": true,
+            "targetPort": 3000,
+            "transport": "auto",
+            "allowInsecure": false
+          },
+          "registries": [
+            {
+              "server": "[variables('registryServer')]",
+              "identity": "[parameters('identityId')]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "grafana",
+              "image": "[parameters('image')]",
+              "resources": {
+                "cpu": "[json('0.5')]",
+                "memory": "1Gi"
+              },
+              "env": [
+                {
+                  "name": "GF_SECURITY_ADMIN_USER",
+                  "value": "admin"
+                },
+                {
+                  "name": "GF_SECURITY_ADMIN_PASSWORD",
+                  "secretRef": "grafana-admin-password"
+                },
+                {
+                  "name": "GF_AZURE_MANAGED_IDENTITY_ENABLED",
+                  "value": "true"
+                },
+                {
+                  "name": "GF_AZURE_MANAGED_IDENTITY_CLIENT_ID",
+                  "value": "[parameters('identityClientId')]"
+                },
+                {
+                  "name": "GF_AUTH_ANONYMOUS_ENABLED",
+                  "value": "false"
+                },
+                {
+                  "name": "GF_USERS_ALLOW_SIGN_UP",
+                  "value": "false"
+                }
+              ],
+              "probes": [
+                {
+                  "type": "Liveness",
+                  "httpGet": {
+                    "path": "/api/health",
+                    "port": 3000
+                  },
+                  "initialDelaySeconds": 20,
+                  "periodSeconds": 30,
+                  "failureThreshold": 3
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": "[parameters('minReplicas')]",
+            "maxReplicas": "[parameters('maxReplicas')]",
+            "rules": [
+              {
+                "name": "http-concurrency",
+                "http": {
+                  "metadata": {
+                    "concurrentRequests": "10"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "grafanaAppName": {
+      "type": "string",
+      "value": "incident-grafana"
+    },
+    "grafanaUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', 'incident-grafana'), '2024-03-01').configuration.ingress.fqdn)]"
+    }
+  }
+}

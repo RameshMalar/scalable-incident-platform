@@ -1,0 +1,376 @@
+diff --git a/ingestion-service/API.md b/ingestion-service/API.md
+index d3c3692..66780ff 100644
+--- a/ingestion-service/API.md
++++ b/ingestion-service/API.md
+@@ -148,6 +148,18 @@ Generated samples carry `event_purpose: "e2e_test"`, so they intentionally
+ exercise the real notification path and are visibly labelled as tests in
+ Telegram.
+ 
++**Authorization.** In the deployed service (`AUTH_MODE=entra`) this route and
++`GET /api/v1/simulation/capabilities` answer 404 unless
++`ENABLE_EVENT_SIMULATOR=true`. Even then, only a person can call them: a
++delegated user token from a client in `SIMULATION_CLIENT_IDS`, whose fresh
++Subscription API grant (`SUBSCRIPTION_API_ORIGIN` + `/api/v1/access/me`) is
++active and includes `Incidents.Simulate` for `?tenant_id=`. Application tokens,
++including producers with `Incidents.Write`, are refused, and the event is
++published for that tenant. With authentication off (local `docker-compose`)
++it stays open for `TENANT-01` as before, and capabilities report
++`local-open`. The Business Dashboard's Controlled Event Simulator is the
++supported way to use it in Azure; this page's buttons then show that message.
++
+ ```bash
+ curl -X POST http://localhost:8000/api/v1/simulate/intrusion
+ ```
+diff --git a/ingestion-service/app/main.py b/ingestion-service/app/main.py
+index 4e2540d..89888db 100644
+--- a/ingestion-service/app/main.py
++++ b/ingestion-service/app/main.py
+@@ -13,6 +13,8 @@ from fastapi.staticfiles import StaticFiles
+ 
+ from common_event_model import IncidentEvent
+ 
++from app.simulation_auth import SimulationContext, require_simulation
++
+ from app.auth import (
+     Producer,
+     auth_mode,
+@@ -247,6 +249,14 @@ def _simulated_evidence(
+     return evidence["source_id"], f"{endpoint}/{container}/{evidence['blob']}"
+ 
+ 
++@app.get("/api/v1/simulation/capabilities")
++async def simulation_capabilities(operator: SimulationContext = Depends(require_simulation)):
++    # "local-open" when authentication is off, so the dashboard refuses it.
++    authorization = "local-open" if operator.user_id == "local-development" else "entra-user-v1"
++    return {"authorization": authorization, "tenant_id": operator.tenant_id,
++            "event_purpose": "e2e_test", "supported_types": ["intrusion", "ppe", "crowd", "fire", "smoke"]}
++
++
+ @app.post(
+     "/api/v1/simulate/{analytics_type}",
+     summary="Generate a sample incident (demo/dev only)",
+@@ -260,6 +270,7 @@ def _simulated_evidence(
+ )
+ async def simulate_event(
+     analytics_type: str,
++    operator: SimulationContext = Depends(require_simulation),
+     publisher: EventPublisher = Depends(get_publisher),
+ ):
+     analytics_samples = {
+@@ -313,7 +324,7 @@ async def simulate_event(
+ 
+     event = IncidentEvent(
+         event_id=f"EVT-{uuid.uuid4().hex[:8].upper()}",
+-        tenant_id="TENANT-01",
++        tenant_id=operator.tenant_id,
+         site_id="SITE-01",
+         source_id=source_id or f"CAM-{random.randint(1, 20):03}",
+         source_name="Demo Camera",
+diff --git a/ingestion-service/app/simulation_auth.py b/ingestion-service/app/simulation_auth.py
+new file mode 100644
+index 0000000..0191abc
+--- /dev/null
++++ b/ingestion-service/app/simulation_auth.py
+@@ -0,0 +1,147 @@
++"""Who may call the demo simulator, /api/v1/simulate and its capabilities.
++
++Every simulated incident is persisted and can page real Telegram subscribers,
++so in the deployed service (AUTH_MODE=entra) the simulator is:
++
++  * off (404) unless ENABLE_EVENT_SIMULATOR=true, and then
++  * only for a person -- a delegated Entra user token from an approved
++    dashboard client (SIMULATION_CLIENT_IDS), never an application token --
++  * whose fresh central-access grant (Subscription API /api/v1/access/me,
++    read on every call, never cached) is active and carries
++    Incidents.Simulate for the requested platform tenant.
++
++Producer clients holding Incidents.Write are not simulation operators. Roles
++are not interpreted here: the Subscription API computes `permissions`.
++
++With authentication switched off (local docker-compose; CD refuses that mode
++in production), the simulator stays open exactly as before so the built-in
++demo page at / keeps working, publishing for TENANT-01 unless asked otherwise.
++"""
++import json
++import os
++from dataclasses import dataclass
++from functools import lru_cache
++from urllib.error import HTTPError, URLError
++from urllib.parse import urlparse
++from urllib.request import HTTPRedirectHandler, Request, build_opener
++from uuid import UUID
++
++import jwt
++from fastapi import Depends, HTTPException, Query
++from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
++
++bearer = HTTPBearer(auto_error=False)
++LOCAL_TENANT = "TENANT-01"
++
++
++@dataclass(frozen=True)
++class SimulationContext:
++    user_id: str
++    tenant_id: str
++
++
++def denied():
++    return HTTPException(403, "simulation operator permission required")
++
++
++class SimulationVerifier:
++    def __init__(self, directory_id, audience, client_ids, registry, keys=None):
++        UUID(directory_id)
++        if not audience or not client_ids or not callable(registry):
++            raise ValueError("explicit simulation authorization configuration is required")
++        for client in client_ids:
++            UUID(client)
++        self.directory_id, self.audience = directory_id, audience
++        self.client_ids, self.registry = set(client_ids), registry
++        self.keys = keys or jwt.PyJWKClient(
++            f"https://login.microsoftonline.com/{directory_id}/discovery/v2.0/keys", cache_keys=True)
++
++    def verify(self, token, tenant_id=None):
++        try:
++            if not token or len(token) > 65536:
++                raise ValueError("invalid token")
++            signing_key = self.keys.get_signing_key_from_jwt(token)
++            claims = jwt.decode(
++                token, signing_key.key, algorithms=["RS256"],
++                audience=[self.audience, self.audience.removeprefix("api://")],
++                issuer=[f"https://login.microsoftonline.com/{self.directory_id}/v2.0",
++                        f"https://sts.windows.net/{self.directory_id}/"],
++                options={"require": ["exp", "iss", "aud", "tid", "oid"]})
++        except (jwt.PyJWTError, ValueError, TypeError, RecursionError):
++            raise HTTPException(401, "invalid or expired simulation access token") from None
++        scopes = claims.get("scp")
++        client = claims.get("azp") or claims.get("appid")
++        user = claims["oid"]
++        # A service principal with Incidents.Write is not an interactive operator.
++        if (claims["tid"] != self.directory_id or client not in self.client_ids or claims.get("idtyp") == "app"
++                or not isinstance(scopes, str) or "user_impersonation" not in scopes.split() or not isinstance(user, str)):
++            raise denied()
++        try:
++            UUID(user)
++        except ValueError:
++            raise denied() from None
++        # Fresh authoritative grant on every call; never token roles or a cache.
++        grant = self.registry(token)
++        tenants, permissions = grant.get("tenants"), grant.get("permissions")
++        if (grant.get("contract") != "central-access-v1" or grant.get("directory_id") != self.directory_id
++                or grant.get("object_id") != user or grant.get("status") != "active"
++                or not isinstance(permissions, list) or "Incidents.Simulate" not in permissions
++                or not isinstance(tenants, list) or not tenants or not all(isinstance(t, str) for t in tenants)):
++            raise denied()
++        if tenant_id is None:
++            if len(tenants) != 1:
++                raise HTTPException(422, "select an authorized platform tenant")
++            tenant_id = tenants[0]
++        if tenant_id not in tenants:
++            raise HTTPException(403, "platform tenant not authorized")
++        return SimulationContext(user, tenant_id)
++
++
++class NoRedirect(HTTPRedirectHandler):
++    def redirect_request(self, req, fp, code, msg, headers, newurl):
++        return None
++
++
++def central_grant(token):
++    origin = os.environ.get("SUBSCRIPTION_API_ORIGIN", "")
++    parsed = urlparse(origin)
++    if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
++            or parsed.path not in ("", "/") or parsed.query or parsed.fragment):
++        raise HTTPException(503, "central authorization unavailable")
++    request = Request(origin.rstrip("/") + "/api/v1/access/me", headers={"Authorization": "Bearer " + token})
++    try:
++        with build_opener(NoRedirect()).open(request, timeout=10) as response:
++            value = json.loads(response.read(65536))
++            if response.status != 200 or not isinstance(value, dict):
++                raise ValueError("invalid registry response")
++            return value
++    except HTTPError as error:
++        if error.code in (401, 403):
++            raise HTTPException(error.code, "operator access denied") from None
++        raise HTTPException(503, "central authorization unavailable") from None
++    except (URLError, OSError, ValueError):
++        raise HTTPException(503, "central authorization unavailable") from None
++
++
++@lru_cache(maxsize=1)
++def simulation_verifier():
++    return SimulationVerifier(
++        os.environ.get("AUTH_TENANT_ID", ""), os.environ.get("AUTH_AUDIENCE", ""),
++        [value.strip() for value in os.environ.get("SIMULATION_CLIENT_IDS", "").split(",") if value.strip()],
++        central_grant)
++
++
++def require_simulation(tenant_id: str | None = Query(None, max_length=64),
++                       credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
++    if os.environ.get("AUTH_MODE") != "entra":
++        # Authentication is off for the whole service (local only).
++        return SimulationContext("local-development", tenant_id or LOCAL_TENANT)
++    if os.environ.get("ENABLE_EVENT_SIMULATOR", "").lower() != "true":
++        raise HTTPException(404, "simulation disabled")
++    if credentials is None:
++        raise HTTPException(401, "bearer token required", headers={"WWW-Authenticate": "Bearer"})
++    try:
++        verifier = simulation_verifier()
++    except (ValueError, TypeError):
++        raise HTTPException(503, "simulation authorization unavailable") from None
++    return verifier.verify(credentials.credentials, tenant_id)
+diff --git a/ingestion-service/app/templates/dashboard.html b/ingestion-service/app/templates/dashboard.html
+index cec85fb..5c3ae71 100644
+--- a/ingestion-service/app/templates/dashboard.html
++++ b/ingestion-service/app/templates/dashboard.html
+@@ -328,9 +328,12 @@ async function simulateEvent(analyticsType) {
+ 
+         else {
+ 
++            // In the deployed service the simulator is off, or needs an
++            // authorized Business Dashboard sign-in this page cannot provide.
+             statusElement.textContent =
+-                data.message ||
+-                "Unable to generate event";
++                [401, 403, 404].includes(response.status)
++                    ? "Simulation is available only to authorized operators through the Business Dashboard"
++                    : data.message || "Unable to generate event";
+ 
+         }
+ 
+diff --git a/ingestion-service/tests/test_simulation_authorization.py b/ingestion-service/tests/test_simulation_authorization.py
+new file mode 100644
+index 0000000..68bb4b4
+--- /dev/null
++++ b/ingestion-service/tests/test_simulation_authorization.py
+@@ -0,0 +1,130 @@
++"""Simulator authorization. No publisher, Entra or registry network calls."""
++import time
++from types import SimpleNamespace
++from unittest.mock import AsyncMock, Mock
++
++import jwt
++import pytest
++from cryptography.hazmat.primitives.asymmetric import rsa
++from fastapi import HTTPException
++from fastapi.testclient import TestClient
++
++from app.main import app, get_publisher
++from app.simulation_auth import SimulationVerifier
++
++DIRECTORY = "00000000-0000-4000-8000-000000000001"
++CLIENT = "00000000-0000-4000-8000-000000000002"
++USER = "00000000-0000-4000-8000-000000000003"
++
++
++@pytest.fixture
++def security():
++    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
++    keys = Mock(get_signing_key_from_jwt=Mock(return_value=SimpleNamespace(key=private.public_key())))
++    registry = Mock(return_value=dict(contract="central-access-v1", directory_id=DIRECTORY, object_id=USER,
++                                      role="SOC Operator", status="active", tenants=["TENANT-01"],
++                                      permissions=["Dashboard.Read", "Incidents.Simulate", "Subscriptions.SelfManage"]))
++    verifier = SimulationVerifier(DIRECTORY, "api://test-api", [CLIENT], registry, keys)
++
++    def token(**changes):
++        claims = dict(iss=f"https://login.microsoftonline.com/{DIRECTORY}/v2.0", aud="api://test-api",
++                      exp=int(time.time()) + 300, tid=DIRECTORY, oid=USER, azp=CLIENT, scp="user_impersonation")
++        claims.update(changes)
++        return jwt.encode({k: v for k, v in claims.items() if v is not None}, private, algorithm="RS256")
++    return verifier, token
++
++
++@pytest.fixture
++def publisher():
++    fake = SimpleNamespace(publish=AsyncMock())
++    app.dependency_overrides[get_publisher] = lambda: fake
++    yield fake
++    app.dependency_overrides.pop(get_publisher, None)
++
++
++@pytest.mark.parametrize("changes,status", [
++    ({"scp": None}, 403), ({"scp": "Incidents.Write"}, 403), ({"idtyp": "app"}, 403),
++    ({"oid": "unknown"}, 403), ({"azp": "unapproved-client"}, 403), ({"tid": "foreign"}, 403),
++    ({"aud": "wrong-api"}, 401), ({"exp": 1}, 401), ({"iss": "https://evil.example"}, 401),
++])
++def test_denies_invalid_or_unapproved_operator(security, changes, status):
++    verifier, token = security
++    with pytest.raises(HTTPException) as error:
++        verifier.verify(token(**changes), "TENANT-01")
++    assert error.value.status_code == status
++
++
++@pytest.mark.parametrize("change", [
++    {"permissions": ["Dashboard.Read", "Subscriptions.SelfManage"]},  # SOC Viewer
++    {"permissions": "Incidents.Simulate"}, {"status": "revoked"}, {"status": "disabled"},
++    {"object_id": "another-user"}, {"directory_id": "other"}, {"tenants": []}, {"contract": "old-api"},
++])
++def test_registry_denial_overrides_any_token(security, change):
++    verifier, token = security
++    verifier.registry.return_value.update(change)
++    with pytest.raises(HTTPException) as error:
++        verifier.verify(token(roles=["Incidents.Simulate"]), "TENANT-01")
++    assert error.value.status_code == 403
++
++
++def test_every_call_rechecks_registry_without_fallback(security):
++    verifier, token = security
++    verifier.verify(token(), "TENANT-01")
++    verifier.registry.side_effect = HTTPException(503, "registry unavailable")
++    with pytest.raises(HTTPException) as error:
++        verifier.verify(token(), "TENANT-01")
++    assert error.value.status_code == 503 and verifier.registry.call_count == 2
++
++
++def test_operator_cannot_select_another_platform_tenant(security):
++    verifier, token = security
++    assert verifier.verify(token(), "TENANT-01").tenant_id == "TENANT-01"
++    with pytest.raises(HTTPException) as error:
++        verifier.verify(token(), "TENANT-02")
++    assert error.value.status_code == 403
++
++
++def test_deployed_service_disables_simulation_by_default(monkeypatch, publisher):
++    monkeypatch.setenv("AUTH_MODE", "entra")
++    monkeypatch.delenv("ENABLE_EVENT_SIMULATOR", raising=False)
++    client = TestClient(app)
++    assert client.post("/api/v1/simulate/intrusion").status_code == 404
++    assert client.get("/api/v1/simulation/capabilities").status_code == 404
++    publisher.publish.assert_not_awaited()
++
++
++def test_enabled_simulation_requires_operator_and_binds_tenant(monkeypatch, security, publisher):
++    verifier, token = security
++    monkeypatch.setenv("AUTH_MODE", "entra")
++    monkeypatch.setenv("ENABLE_EVENT_SIMULATOR", "true")
++    monkeypatch.setattr("app.simulation_auth.simulation_verifier", lambda: verifier)
++    client = TestClient(app)
++    assert client.post("/api/v1/simulate/intrusion").status_code == 401
++    headers = {"Authorization": "Bearer " + token()}
++    assert client.post("/api/v1/simulate/intrusion?tenant_id=TENANT-02", headers=headers).status_code == 403
++    publisher.publish.assert_not_awaited()
++    capability = client.get("/api/v1/simulation/capabilities?tenant_id=TENANT-01", headers=headers).json()
++    assert capability["authorization"] == "entra-user-v1" and capability["tenant_id"] == "TENANT-01"
++    assert client.post("/api/v1/simulate/intrusion?tenant_id=TENANT-01", headers=headers).json()["status"] == "accepted"
++    event = publisher.publish.await_args.args[0]
++    assert event.tenant_id == "TENANT-01" and event.event_purpose == "e2e_test"
++
++
++def test_local_auth_off_mode_keeps_the_demo_page_working(monkeypatch, publisher):
++    monkeypatch.delenv("AUTH_MODE", raising=False)
++    monkeypatch.delenv("ENABLE_EVENT_SIMULATOR", raising=False)
++    client = TestClient(app)
++    response = client.post("/api/v1/simulate/crowd")
++    assert response.json()["status"] == "accepted"
++    assert publisher.publish.await_args.args[0].tenant_id == "TENANT-01"
++    # Truthful about having no authorization, so the dashboard refuses it.
++    assert client.get("/api/v1/simulation/capabilities").json()["authorization"] == "local-open"
++
++
++def test_missing_configuration_fails_closed(monkeypatch, publisher):
++    monkeypatch.setenv("AUTH_MODE", "entra")
++    monkeypatch.setenv("ENABLE_EVENT_SIMULATOR", "true")
++    monkeypatch.setattr("app.simulation_auth.simulation_verifier", Mock(side_effect=ValueError("unset")))
++    response = TestClient(app).post("/api/v1/simulate/intrusion", headers={"Authorization": "Bearer x"})
++    assert response.status_code == 503
++    publisher.publish.assert_not_awaited()

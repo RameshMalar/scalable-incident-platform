@@ -4,6 +4,7 @@ import os
 import signal
 
 from app.consumer import NotificationConsumer
+from app.delivery_eligibility import build_eligibility
 from app.evidence import EvidenceStore
 from app.notifier import MockNotifier
 from app.processor import NotificationProcessor
@@ -40,7 +41,8 @@ async def run() -> None:
             pass
 
     notifier = build_notifier()
-    processor = NotificationProcessor(notifier)
+    eligibility = build_eligibility()
+    processor = NotificationProcessor(notifier, eligibility=eligibility)
 
     consumer = NotificationConsumer(processor=processor)
 
@@ -57,6 +59,8 @@ async def run() -> None:
     finally:
         await consumer.close()
         await notifier.close()
+        if eligibility is not None:
+            await eligibility.close()
 
         logger.info("notification service stopped")
 

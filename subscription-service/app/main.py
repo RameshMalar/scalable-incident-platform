@@ -11,21 +11,28 @@ from app.auth import TenantContext, build_verifier, require_read, require_write
 from app.models import Subscription, SubscriptionCreate, SubscriptionPage, SubscriptionPatch
 from app.store import SubscriptionStore, build_store
 from app.destination_policy import CosmosDestinationPolicy, PolicyUnavailable
+from app.account_routes import build_account_features, register_account_routes
 
 logger = logging.getLogger("app.main")
 MAX_SUBSCRIPTION_OFFSET = 10000
+# The legacy client contract predates account ownership; keep its responses
+# unchanged and never disclose a person's object ID to a client application.
+HIDE_OWNER = {"owner_object_id"}
 
 
 def get_store(request: Request) -> SubscriptionStore:
     return request.app.state.store
 
 
-def create_app(store=None, verifier=None, policy=None) -> FastAPI:
+def create_app(store=None, verifier=None, policy=None, account=None) -> FastAPI:
+    """account: injected (user_verifier, registry, telegram) for tests; else from env."""
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.verifier = verifier if verifier is not None else build_verifier()
         app.state.store = store if store is not None else build_store()
         app.state.policy = policy if policy is not None else CosmosDestinationPolicy()
+        app.state.user_verifier, app.state.registry, app.state.telegram = (
+            account if account is not None else build_account_features(app.state.store, app.state.policy))
         try:
             await app.state.store.start()
             yield
@@ -67,7 +74,7 @@ def create_app(store=None, verifier=None, policy=None) -> FastAPI:
             response.status_code = 503
         return {"status": "ready" if available else "not-ready", "service": "subscription-service", "store": store.mode}
 
-    @app.post("/api/v1/subscriptions", response_model=Subscription, status_code=201)
+    @app.post("/api/v1/subscriptions", response_model=Subscription, response_model_exclude=HIDE_OWNER, status_code=201)
     async def create_subscription(payload: SubscriptionCreate, response: Response, context: TenantContext = Depends(require_write), store: SubscriptionStore = Depends(get_store)):
         now = datetime.now(timezone.utc)
         subscription = Subscription(**payload.model_dump(), id=f"SUB-{uuid4()}", tenant_id=context.tenant_id, created_at=now, updated_at=now)
@@ -76,7 +83,7 @@ def create_app(store=None, verifier=None, policy=None) -> FastAPI:
         response.headers["Location"] = f"/api/v1/subscriptions/{result.id}"
         return result
 
-    @app.get("/api/v1/subscriptions", response_model=SubscriptionPage)
+    @app.get("/api/v1/subscriptions", response_model=SubscriptionPage, response_model_exclude={"items": {"__all__": HIDE_OWNER}})
     async def list_subscriptions(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0, le=MAX_SUBSCRIPTION_OFFSET), context: TenantContext = Depends(require_read), store: SubscriptionStore = Depends(get_store)):
         items = await store.list(context.tenant_id, limit + 1, offset)
         next_offset = offset + limit
@@ -84,18 +91,22 @@ def create_app(store=None, verifier=None, policy=None) -> FastAPI:
         has_next_page = len(items) > limit and next_offset <= MAX_SUBSCRIPTION_OFFSET
         return SubscriptionPage(items=items[:limit], next_offset=next_offset if has_next_page else None)
 
-    @app.get("/api/v1/subscriptions/{subscription_id}", response_model=Subscription)
+    @app.get("/api/v1/subscriptions/{subscription_id}", response_model=Subscription, response_model_exclude=HIDE_OWNER)
     async def get_subscription(subscription_id: str, context: TenantContext = Depends(require_read), store: SubscriptionStore = Depends(get_store)):
         result = await store.get(context.tenant_id, subscription_id)
         if result is None:
             raise HTTPException(404, "subscription not found")
         return result
 
-    @app.patch("/api/v1/subscriptions/{subscription_id}", response_model=Subscription)
+    @app.patch("/api/v1/subscriptions/{subscription_id}", response_model=Subscription, response_model_exclude=HIDE_OWNER)
     async def patch_subscription(subscription_id: str, payload: SubscriptionPatch, context: TenantContext = Depends(require_write), store: SubscriptionStore = Depends(get_store)):
         existing = await store.get(context.tenant_id, subscription_id)
         if existing is None:
             raise HTTPException(404, "subscription not found")
+        if existing.owner_object_id is not None:
+            # Repointing or re-enabling a person's subscription would bypass
+            # their verified ownership and consent. Deleting stays allowed.
+            raise HTTPException(403, "subscription is managed by its owner through account setup")
         updated = existing.model_copy(update={**payload.model_dump(exclude_unset=True), "updated_at": datetime.now(timezone.utc)})
         await authorize(updated, context.tenant_id)
         result = await store.replace(updated)
@@ -109,6 +120,7 @@ def create_app(store=None, verifier=None, policy=None) -> FastAPI:
             raise HTTPException(404, "subscription not found")
         return Response(status_code=204)
 
+    register_account_routes(app)
     return app
 
 

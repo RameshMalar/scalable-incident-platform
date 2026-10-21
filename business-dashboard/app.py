@@ -10,30 +10,42 @@ Data Contributor role -- a dashboard never needs to write). Locally that's
 identity with the same role.
 """
 
+import json
+import time
+from html import escape
+from urllib.parse import urlparse, urlencode
+from urllib.request import Request, build_opener, HTTPRedirectHandler
+from urllib.error import URLError
+
 import logging
 import os
+from io import BytesIO
+from pathlib import Path
+from PIL import Image, UnidentifiedImageError
 from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from azure.cosmos import CosmosClient
 from azure.identity import DefaultAzureCredential
 
 from evidence import EvidenceStore, EvidenceUnavailable
+from dashboard_security import AccessDenied, OperatorContext, OperatorVerifier, access_token, id_token
+from account_setup import render_account_setup
+from access_api import AccessAPIUnavailable, current_grant
+from access_roles import InvalidAccess
+from admin_access import render_admin_access
+import local_auth
 
 logger = logging.getLogger("dashboard")
 
-# Categorical slots from the platform's validated dark-mode palette, in fixed
-# hue order (blue, orange, aqua, yellow, violet) -- never cycled. Green/red are
-# reserved for the severity status palette below, so they're skipped here to
-# avoid a categorical series impersonating a status color.
-SERIES_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#9085e9"]
+# Consistent categorical accents on navy surfaces. Severity always includes text.
+SERIES_COLORS = ["#38bdf8", "#818cf8", "#22d3ee", "#fbbf24", "#c084fc"]
 # Severity is a state, not an identity, so it takes the fixed dark-surface
 # status palette instead of the categorical one.
-SEVERITY_COLORS = {"low": "#0ca30c", "medium": "#fab219", "high": "#d03b3b"}
-SEVERITY_ORDER = ["low", "medium", "high"]
+SEVERITY_COLORS = {"low": "#67e8f9", "medium": "#fbbf24", "high": "#fda4af", "critical": "#f0abfc"}
+SEVERITY_ORDER = ["critical", "high", "medium", "low"]
 
 DATE_RANGE_PRESETS = {
     "Last 7 days": 7,
@@ -43,11 +55,15 @@ DATE_RANGE_PRESETS = {
     "Last year": 365,
 }
 
-PAGE_BG = "#0d0d0d"
-SURFACE = "#1a1a19"
-GRIDLINE = "#2c2c2a"
-INK_SECONDARY = "#c3c2b7"
-INK_MUTED = "#898781"
+PAGE_BG = "#081222"
+SURFACE = "#111f35"
+GRIDLINE = "#263b56"
+# Matches .streamlit/config.toml textColor. The custom panels always draw a
+# dark background, so they also set their own text colour rather than
+# inheriting it from whatever Streamlit theme is active.
+INK_PRIMARY = "#edf5ff"
+INK_SECONDARY = "#d0dceb"
+INK_MUTED = "#9bafc7"
 
 
 @st.cache_resource
@@ -68,25 +84,96 @@ def get_container():
     return client.get_database_client(database_name).get_container_client(container_name)
 
 
-@st.cache_data(ttl=60)
-def load_incidents() -> pd.DataFrame:
-    container = get_container()
-    items = list(
-        container.query_items(
-            query="SELECT * FROM c",
-            enable_cross_partition_query=True,
-        )
-    )
-    if not items:
-        return pd.DataFrame(
-            columns=[
-                "event_id", "tenant_id", "site_id", "analytics_type",
-                "event_type", "severity", "timestamp",
-            ]
-        )
+@st.cache_resource
+def get_operator_verifier():
+    return OperatorVerifier.from_env()
 
-    df = pd.DataFrame(items)
+
+def operator_tokens():
+    mode = os.environ.get("DASHBOARD_AUTH_MODE", "oidc")
+    if mode == "oidc":
+        return st.user.tokens if getattr(st.user, "is_logged_in", False) else {}
+    if mode == "easyauth":
+        return None
+    # Local sign-in has no Entra token, so nothing can act for a user upstream.
+    raise AccessDenied("Unsupported authentication mode")
+
+
+def local_operator_context(username: str) -> OperatorContext:
+    """Read-only access to the approved Admin's platform tenants, nothing more."""
+    policy = json.loads((Path(__file__).with_name("access-policy.json")).read_text(encoding="utf-8"))
+    tenants = sorted({tenant for entry in policy["users"].values() for tenant in entry["tenants"]})
+    return OperatorContext(f"local:{username}", policy["directory_id"], tuple(tenants),
+                           frozenset({"Dashboard.Read"}), int(time.time()) + local_auth.IDLE_SECONDS, "SOC Viewer")
+
+
+def delegated_api_token():
+    require_operator()
+    return access_token(st.context.headers, operator_tokens())
+
+
+def require_operator():
+    if os.environ.get("DASHBOARD_AUTH_MODE", "oidc") == "local":
+        # Draws the sign-in form and stops the page until signed in.
+        return local_operator_context(local_auth.require_signed_in(st.context.headers))
+    try:
+        verifier=get_operator_verifier()
+        tokens=operator_tokens()
+        identity_token=id_token(st.context.headers,tokens)
+        if os.environ.get('ENABLE_CENTRAL_ACCESS','').lower() == 'true':
+            identity=verifier.verify_identity(identity_token)
+            # Fresh authoritative access on every protected operation, including
+            # cache hits. Registry failure never falls back to packaged grants.
+            grant=current_grant(identity,access_token(st.context.headers,tokens),verifier.approved_tenants)
+            return OperatorContext(identity.user_id,identity.directory_id,grant.tenants,grant.permissions,identity.expires_at,grant.role.value)
+        return verifier.verify(identity_token)
+    except (AccessDenied, AccessAPIUnavailable, InvalidAccess, ValueError, TypeError, OSError, KeyError):
+        st.title("Smart Incident Monitoring Platform")
+        st.info("Sign in with your authorized Microsoft account. Access is denied until your identity and platform tenant permissions are verified.")
+        if os.environ.get("DASHBOARD_AUTH_MODE", "oidc") == "easyauth":
+            st.link_button("Sign in with Microsoft", "/.auth/login/aad")
+        else:
+            try:
+                configured = "auth" in st.secrets and "microsoft" in st.secrets["auth"]
+            except (FileNotFoundError, KeyError):
+                configured = False
+            if configured and st.button("Sign in with Microsoft"):
+                st.login("microsoft")
+        st.stop()
+
+
+def ordered_incidents(frame: pd.DataFrame) -> pd.DataFrame:
+    return frame.sort_values(["timestamp", "tenant_id", "event_id"], ascending=[False, True, True], kind="stable")
+
+
+def load_incidents() -> pd.DataFrame:
+    # Authentication runs even on cache hits. The tenant tuple is a cache key.
+    return _load_incidents(require_operator().tenants)
+
+
+@st.cache_resource(ttl=300, max_entries=2)
+def _load_incidents(tenants: tuple[str, ...]) -> pd.DataFrame:
+    # Shared read-only snapshots avoid repeatedly unpickling the full tenant
+    # dataset for each evidence check. Callers never mutate this DataFrame.
+    container = get_container()
+    items = []
+    for tenant in tenants:
+        # Consume all continuation pages; no TOP/LIMIT silently changes KPI totals.
+        items.extend(container.query_items(
+            query="SELECT * FROM c WHERE c.tenant_id = @tenant",
+            parameters=[{"name": "@tenant", "value": tenant}],
+            partition_key=tenant,
+        ))
+    refreshed_at = datetime.now(timezone.utc).isoformat()
+    if not items:
+        df = pd.DataFrame(columns=["event_id", "tenant_id", "site_id", "analytics_type", "event_type", "severity", "timestamp", "evidence_uri"])
+    else:
+        df = pd.DataFrame(items)
+        if not df["tenant_id"].isin(tenants).all():
+            raise AccessDenied("Unexpected foreign-tenant incident data")
     df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601", utc=True)
+    df = ordered_incidents(df)
+    df.attrs["refreshed_at"] = refreshed_at
     return df
 
 
@@ -95,22 +182,55 @@ def get_evidence_store() -> EvidenceStore | None:
     return EvidenceStore.from_env()
 
 
-@st.cache_data(ttl=600, show_spinner=False)
-def load_evidence(evidence_uri: str) -> bytes | None:
-    """Fetch one evidence image, or None when it cannot be shown.
+def load_evidence(evidence_uri: str, thumbnail: bool = True) -> bytes | None:
+    context = require_operator()
+    if get_evidence_store() is None:
+        return None
+    records = _load_incidents(context.tenants)
+    if (not isinstance(evidence_uri, str) or "evidence_uri" not in records
+            or not records["evidence_uri"].eq(evidence_uri).any()):
+        return None
+    return (_load_preview if thumbnail else _load_original)(context.tenants, evidence_uri)
 
-    Cached per URI because Streamlit re-runs this script on every widget
-    interaction, and an image that is already on the page has not changed.
-    """
+
+@st.cache_data(ttl=60, max_entries=2, show_spinner=False)
+def _load_original(tenant_scope: tuple[str, ...], evidence_uri: str) -> bytes | None:
     store = get_evidence_store()
-
     if store is None:
         return None
-
     try:
-        return store.fetch(evidence_uri).data
-    except EvidenceUnavailable as exc:
-        logger.warning("evidence not shown: %s", exc)
+        data = store.fetch(evidence_uri).data
+    except EvidenceUnavailable:
+        logger.warning("Evidence unavailable; rendering incident without image")
+        return None
+    # The detail dialog hands these bytes straight to st.image, so a corrupt or
+    # mislabelled blob must become "no image" here rather than a page error.
+    try:
+        with Image.open(BytesIO(data)) as image:
+            image.verify()
+    except (UnidentifiedImageError, OSError, SyntaxError, ValueError, Image.DecompressionBombError):
+        logger.warning("Evidence image could not be decoded")
+        return None
+    return data
+
+
+@st.cache_data(ttl=600, max_entries=48, show_spinner=False)
+def _load_preview(tenant_scope: tuple[str, ...], evidence_uri: str) -> bytes | None:
+    # The full Blob is downloaded on a cache miss, but only the preview remains
+    # in the long-lived cache. Originals have a separate two-entry cache.
+    data = _load_original(tenant_scope, evidence_uri)
+    if not data:
+        return None
+    try:
+        with Image.open(BytesIO(data)) as image:
+            if image.width * image.height > 16_000_000:
+                return None
+            image.thumbnail((640, 360))
+            output = BytesIO()
+            image.convert("RGB").save(output, format="JPEG", quality=80)
+            return output.getvalue()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        logger.warning("Evidence image could not be decoded")
         return None
 
 
@@ -118,10 +238,17 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        .block-container {{ padding-top: 2rem; max-width: 1280px; }}
+        .block-container {{ padding-top: 2rem; max-width: 1600px; }}
+        .stApp {{ background: {PAGE_BG}; }}
+        h1, h2, h3 {{ letter-spacing: -0.02em; }}
+        .soc-kpis {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }}
+        .soc-kpis .kpi-card {{ border-top:3px solid var(--accent); min-height:145px; }}
+        .kpi-value {{ overflow-wrap:anywhere; }}
+        @media(max-width:1100px) {{ .soc-kpis {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
+        @media(max-width:600px) {{ .soc-kpis {{ grid-template-columns:1fr; }} }}
 
         .kpi-card {{
-            background: {SURFACE}; border: 1px solid rgba(255,255,255,0.10);
+            background: {SURFACE}; color: {INK_PRIMARY}; border: 1px solid rgba(255,255,255,0.10);
             border-radius: 12px; padding: 16px;
         }}
         .kpi-top {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }}
@@ -137,10 +264,10 @@ def inject_css() -> None:
         .kpi-value {{ font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }}
 
         .panel {{
-            background: {SURFACE}; border: 1px solid rgba(255,255,255,0.10);
+            background: {SURFACE}; color: {INK_PRIMARY}; border: 1px solid rgba(255,255,255,0.10);
             border-radius: 12px; padding: 18px 18px 6px;
         }}
-        .panel h3 {{ margin: 0 0 16px; font-size: 15px; }}
+        .panel h3 {{ margin: 0 0 16px; font-size: 15px; color: {INK_PRIMARY}; }}
 
         .bar-row {{ display: flex; align-items: center; gap: 10px; font-size: 13.5px; margin-bottom: 12px; }}
         .bar-row .name {{ width: 110px; color: {INK_SECONDARY}; flex-shrink: 0; }}
@@ -177,15 +304,15 @@ def kpi_card(label: str, value: str, icon: str, color: str, delta: float | None)
         trend_html = f'<span class="kpi-trend {cls}">{arrow} {abs(delta):.0f}%</span>'
 
     return f"""
-    <div class="kpi-card">
+    <div class="kpi-card" style="--accent:{color}">
       <div class="kpi-top">
         <div class="kpi-icon" style="background:{color}26; color:{color}">{icon}</div>
         {trend_html}
       </div>
-      <div class="kpi-label">{label}</div>
-      <div class="kpi-value">{value}</div>
+      <div class="kpi-label">{escape(label)}</div>
+      <div class="kpi-value">{escape(value)}</div>
     </div>
-    """
+    """.strip()
 
 
 def pct_change(current: int, previous: int) -> float | None:
@@ -201,11 +328,11 @@ def bar_panel(title: str, counts: pd.Series, color_map: dict) -> str:
         width = int(count / max_count * 100) if max_count else 0
         color = color_map.get(name, SERIES_COLORS[0])
         rows += (
-            f'<div class="bar-row"><span class="name">{name}</span>'
+            f'<div class="bar-row"><span class="name">{escape(str(name))}</span>'
             f'<div class="bar-track"><div class="bar-fill" style="width:{width}%; background:{color}"></div></div>'
             f'<span class="count">{int(count)}</span></div>'
         )
-    return f'<div class="panel"><h3>{title}</h3>{rows}</div>'
+    return f'<div class="panel"><h3>{escape(title)}</h3>{rows}</div>'
 
 
 def relative_time(ts: pd.Timestamp) -> str:
@@ -220,23 +347,35 @@ def relative_time(ts: pd.Timestamp) -> str:
     return f"{int(seconds // 86400)}d ago"
 
 
-def recent_incidents_panel(filtered: pd.DataFrame, limit: int = 8) -> str:
-    rows = ""
-    for _, row in filtered.sort_values("timestamp", ascending=False).head(limit).iterrows():
-        color = SEVERITY_COLORS.get(row["severity"], INK_MUTED)
-        rows += (
-            '<div class="incident-row">'
-            f'<span class="sev-dot" style="background:{color}"></span>'
-            '<div class="desc">'
-            f'<span class="t">{row["analytics_type"]} — {row["event_type"]}</span>'
-            f'<span class="m">{row["tenant_id"]} · {row["site_id"]}</span>'
-            "</div>"
-            f'<span class="ago">{relative_time(row["timestamp"])}</span>'
-            "</div>"
-        )
-    if not rows:
-        rows = '<p style="color:#898781; font-size:13px;">No incidents in range.</p>'
-    return f'<div class="panel"><h3>Recent incidents</h3>{rows}</div>'
+def render_latest_incidents(filtered: pd.DataFrame, limit: int = 8) -> None:
+    require_operator()
+    st.subheader("Latest persisted incidents")
+    st.caption("Newest event timestamps first · Cosmos DB records only · all times UTC")
+    if filtered.empty:
+        st.info("No persisted incidents match these filters.")
+        return
+    for position, (_, row) in enumerate(ordered_incidents(filtered).head(limit).iterrows()):
+        with st.container(border=True):
+            image_col, detail_col = st.columns([1, 3])
+            uri = row.get("evidence_uri")
+            image = load_evidence(uri) if isinstance(uri, str) and uri else None
+            with image_col:
+                if image:
+                    st.image(image, width="stretch")
+                    if st.button("Expand image", key=f"feed_{position}_{row['tenant_id']}_{row['event_id']}"):
+                        _evidence_detail_dialog(row, image)
+                else:
+                    st.caption("Evidence unavailable" if uri else "No evidence image")
+            with detail_col:
+                severity = str(row["severity"])
+                color = SEVERITY_COLORS.get(severity, INK_SECONDARY)
+                st.markdown(f'<span style="color:{color};font-weight:700">{escape(severity.upper())}</span>', unsafe_allow_html=True)
+                st.text(f"{row['event_type']} · {row['analytics_type']}")
+                st.caption(f"Tenant {row['tenant_id']} · Site {row['site_id']} · Camera/source {row.get('source_id', 'Unavailable')}")
+                st.caption(row["timestamp"].strftime("%Y-%m-%d %H:%M:%S UTC"))
+                purpose = row.get("event_purpose", "incident")
+                st.caption(f"TEST · {purpose}" if purpose in ("e2e_test", "load_test") else "Purpose: incident")
+                st.text(f"Event ID: {row['event_id']}")
 
 
 def key_insights_panel(filtered: pd.DataFrame, previous: pd.DataFrame) -> str:
@@ -273,15 +412,16 @@ def key_insights_panel(filtered: pd.DataFrame, previous: pd.DataFrame) -> str:
 
     rows = "".join(
         f'<div class="insight-row"><span class="insight-dot" style="background:{color}"></span>'
-        f'<div><div class="t">{title}</div><div class="d">{detail}</div></div></div>'
+        f'<div><div class="t">{escape(title)}</div><div class="d">{escape(detail)}</div></div></div>'
         for color, title, detail in insights
     )
     if not rows:
-        rows = '<p style="color:#898781; font-size:13px;">Not enough data for insights.</p>'
+        rows = '<p style="color:#9bafc7; font-size:13px;">Not enough data for insights.</p>'
     return f'<div class="panel"><h3>Key insights</h3>{rows}</div>'
 
 
 def render_overview(filtered: pd.DataFrame, previous: pd.DataFrame) -> None:
+    require_operator()
     total = len(filtered)
     high = int((filtered["severity"] == "high").sum())
     medium = int((filtered["severity"] == "medium").sum())
@@ -291,26 +431,24 @@ def render_overview(filtered: pd.DataFrame, previous: pd.DataFrame) -> None:
 
     prev_total = len(previous)
     prev_high = int((previous["severity"] == "high").sum())
-    prev_medium = int((previous["severity"] == "medium").sum())
-    prev_sites = previous["site_id"].nunique()
-    prev_tenants = previous["tenant_id"].nunique()
-    prev_types = previous["analytics_type"].nunique()
 
+    critical = int((filtered["severity"] == "critical").sum())
+    latest = filtered["timestamp"].max()
     cards = [
-        ("Total incidents", total, prev_total, "◆", SERIES_COLORS[0]),
-        ("High severity", high, prev_high, "▲", SEVERITY_COLORS["high"]),
-        ("Medium severity", medium, prev_medium, "●", SEVERITY_COLORS["medium"]),
-        ("Sites affected", sites, prev_sites, "◈", SERIES_COLORS[2]),
-        ("Tenants affected", tenants, prev_tenants, "⬡", SERIES_COLORS[4]),
-        ("Analytics types", types, prev_types, "◷", SERIES_COLORS[1]),
+        ("Total incidents", str(total), "◆", SERIES_COLORS[0], pct_change(total, prev_total)),
+        ("Critical incidents", str(critical), "!", SEVERITY_COLORS["critical"], None),
+        ("High-severity incidents", str(high), "▲", SEVERITY_COLORS["high"], pct_change(high, prev_high)),
+        ("Latest incident · UTC", latest.strftime("%d %b %Y %H:%M:%S") if pd.notna(latest) else "No incidents", "◷", SERIES_COLORS[4], None),
     ]
-    cols = st.columns(len(cards))
-    for col, (label, value, prev_value, icon, color) in zip(cols, cards):
-        with col:
-            st.markdown(
-                kpi_card(label, str(value), icon, color, pct_change(value, prev_value)),
-                unsafe_allow_html=True,
-            )
+    st.markdown('<div class="soc-kpis">' + ''.join(kpi_card(*card) for card in cards) + '</div>', unsafe_allow_html=True)
+    secondary_cards = [
+        ("Medium severity", medium, int((previous["severity"] == "medium").sum()), SEVERITY_COLORS["medium"]),
+        ("Sites affected", sites, previous["site_id"].nunique(), SERIES_COLORS[2]),
+        ("Tenants affected", tenants, previous["tenant_id"].nunique(), SERIES_COLORS[4]),
+        ("Analytics types", types, previous["analytics_type"].nunique(), SERIES_COLORS[1]),
+    ]
+    st.markdown('<div class="soc-kpis">' + ''.join(kpi_card(label, str(value), "·", color, pct_change(value, prev)) for label, value, prev, color in secondary_cards) + '</div>', unsafe_allow_html=True)
+    st.caption(f"{medium} medium severity · {sites} sites · {tenants} tenants · {types} analytics types. Counts include all persisted event purposes within current filters.")
 
     st.write("")
 
@@ -350,51 +488,63 @@ def render_overview(filtered: pd.DataFrame, previous: pd.DataFrame) -> None:
         xaxis=dict(gridcolor=GRIDLINE, showgrid=False),
         yaxis=dict(gridcolor=GRIDLINE),
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
     st.write("")
 
     lower_left, lower_right = st.columns([1.3, 1])
     with lower_left:
-        st.markdown(recent_incidents_panel(filtered), unsafe_allow_html=True)
+        render_latest_incidents(filtered)
     with lower_right:
         st.markdown(key_insights_panel(filtered, previous), unsafe_allow_html=True)
 
 
 def render_all_incidents(filtered: pd.DataFrame) -> None:
+    require_operator()
     st.subheader("All incidents")
     st.caption(f"{len(filtered)} incidents match the current filters.")
     st.dataframe(
-        filtered.sort_values("timestamp", ascending=False),
-        use_container_width=True,
+        ordered_incidents(filtered),
+        width="stretch",
         hide_index=True,
     )
 
 
 @st.dialog("Evidence", width="large")
 def _evidence_detail_dialog(row: pd.Series, image: bytes) -> None:
-    st.image(image, width="stretch")
+    require_operator()
+    full = load_evidence(row["evidence_uri"], thumbnail=False)
+    st.image(full or image, width="stretch")
     st.markdown(f"**{row['event_id']}**")
     st.caption(
         f"{row['analytics_type']} · {row['severity']} · "
         f"{relative_time(row['timestamp'])} · tenant {row['tenant_id']} · "
         f"site {row['site_id']}"
     )
+    purpose = row.get("event_purpose", "incident")
+    if purpose in ("e2e_test", "load_test"):
+        st.caption(f"TEST evidence · {purpose}")
 
 
 def _render_evidence_grid(
     subset: pd.DataFrame, total_in_range: int, page_size: int, state_key: str
 ) -> None:
+    signature_key = f"evidence_snapshot_{state_key}"
+    signature = int(pd.util.hash_pandas_object(ordered_incidents(subset)[["timestamp", "tenant_id", "event_id"]], index=False).sum())
     shown_key = f"evidence_shown_{state_key}"
+    if st.session_state.get(signature_key) != signature:
+        st.session_state[signature_key] = signature
+        st.session_state[shown_key] = page_size
     if shown_key not in st.session_state:
         st.session_state[shown_key] = page_size
 
-    shown = st.session_state[shown_key]
-    newest = subset.sort_values("timestamp", ascending=False).head(shown)
+    shown = min(st.session_state[shown_key], max(page_size, ((len(subset) + page_size - 1) // page_size) * page_size))
+    st.session_state[shown_key] = shown
+    newest = ordered_incidents(subset).iloc[max(0, shown - page_size):shown]
 
     st.caption(
         f"{len(subset)} of {total_in_range} incidents in range reference "
-        "an image." + (f" Showing the {shown} most recent." if len(subset) > shown else "")
+        "an image." + (f" Page ending at incident {min(shown, len(subset))}." if len(subset) > shown else "")
     )
 
     # Three across keeps a camera still legible without making the page a scroll
@@ -412,23 +562,30 @@ def _render_evidence_grid(
                 image,
                 caption=(
                     f"{row['event_id']} · {row['analytics_type']} · "
-                    f"{row['severity']} · {relative_time(row['timestamp'])}"
+                    f"{row['severity']} · {relative_time(row['timestamp'])} · "
+                    + ("TEST" if row.get("event_purpose") in ("e2e_test", "load_test") else "Incident")
                 ),
                 width="stretch",
             )
             if st.button(
-                "Expand", key=f"expand_{state_key}_{row['event_id']}", use_container_width=True
+                "Expand", key=f"expand_{state_key}_{row['tenant_id']}_{row['event_id']}", width="stretch"
             ):
                 _evidence_detail_dialog(row, image)
 
+    def change_page(offset: int) -> None:
+        st.session_state[shown_key] = max(page_size, shown + offset)
+
+    if shown > page_size:
+        st.button("Previous page", key=f"previous_{state_key}", on_click=change_page, args=(-page_size,))
+
     if len(subset) > shown:
-        if st.button("Load more", key=f"more_{state_key}"):
-            st.session_state[shown_key] += page_size
-            st.rerun()
+        st.button("Next page", key=f"more_{state_key}", on_click=change_page, args=(page_size,))
 
 
-def render_evidence(filtered: pd.DataFrame, page_size: int = 24) -> None:
-    st.subheader("Evidence")
+def render_evidence(filtered: pd.DataFrame, page_size: int = 12) -> None:
+    require_operator()
+    st.subheader("AI Analytics Evidence Gallery")
+    st.caption("Stored incident evidence · these images are not live video or proof of a live inference pipeline.")
 
     store = get_evidence_store()
 
@@ -443,7 +600,7 @@ def render_evidence(filtered: pd.DataFrame, page_size: int = 24) -> None:
         st.info("No incident in the store carries an evidence reference.")
         return
 
-    with_evidence = filtered[filtered["evidence_uri"].apply(store.describes_evidence)]
+    with_evidence = filtered[filtered["evidence_uri"].apply(lambda uri: isinstance(uri, str) and store.describes_evidence(uri))]
 
     if with_evidence.empty:
         st.info(
@@ -454,19 +611,11 @@ def render_evidence(filtered: pd.DataFrame, page_size: int = 24) -> None:
         )
         return
 
-    # Tabs facet the grid by analytics type so a growing evidence set stays
-    # browsable instead of one long mixed feed; each tab keeps its own
-    # page-size cursor via the state_key passed to _render_evidence_grid.
+    # Render only the chosen category; Streamlit tabs would eagerly load every grid.
     categories = sorted(with_evidence["analytics_type"].dropna().unique().tolist())
-    tabs = st.tabs(["All"] + categories)
-
-    with tabs[0]:
-        _render_evidence_grid(with_evidence, len(filtered), page_size, state_key="all")
-
-    for category, tab in zip(categories, tabs[1:]):
-        with tab:
-            subset = with_evidence[with_evidence["analytics_type"] == category]
-            _render_evidence_grid(subset, len(filtered), page_size, state_key=category)
+    category = st.selectbox("Analytics category", ["All"] + categories)
+    subset = with_evidence if category == "All" else with_evidence[with_evidence["analytics_type"] == category]
+    _render_evidence_grid(subset, len(filtered), page_size, state_key=category)
 
 
 def checkbox_filter(label: str, options: list, key: str) -> list:
@@ -490,20 +639,154 @@ def checkbox_filter(label: str, options: list, key: str) -> list:
         for opt in options:
             st.checkbox(str(opt), key=opt_keys[opt])
 
-    return selected
+    return [opt for opt in options if st.session_state[opt_keys[opt]]]
+
+
+SIMULATOR_TYPES = ("intrusion", "ppe", "crowd", "fire", "smoke")
+
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def submit_single_event(base_url: str, analytics_type: str, token: str, authorized_tenants: tuple[str, ...], opener=None) -> str:
+    """One POST, no retries or redirects. Acceptance is never persistence."""
+    parsed = urlparse(base_url)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+            or parsed.password or parsed.query or parsed.fragment or parsed.path not in ("", "/")):
+        raise ValueError("Configure an HTTPS ingestion origin without a path or credentials.")
+    if analytics_type not in SIMULATOR_TYPES:
+        raise ValueError("Unsupported simulator analytics type.")
+    if not token or "\r" in token or "\n" in token:
+        raise ValueError("A delegated API token is required")
+    transport = opener or build_opener(NoRedirect())
+    if len(authorized_tenants) != 1:
+        raise ValueError("Select exactly one authorized tenant")
+    query = "?" + urlencode({"tenant_id": authorized_tenants[0]})
+    capability_request = Request(base_url.rstrip("/") + "/api/v1/simulation/capabilities" + query, headers={"Authorization": "Bearer " + token})
+    with transport.open(capability_request, timeout=10) as response:
+        capability = json.loads(response.read(65536))
+        if (response.status != 200 or not isinstance(capability, dict)
+                or capability.get("authorization") != "entra-user-v1"
+                or capability.get("tenant_id") not in authorized_tenants
+                or capability.get("event_purpose") != "e2e_test"):
+            raise ValueError("Backend authorization is not verified")
+    request = Request(base_url.rstrip("/") + "/api/v1/simulate/" + analytics_type + query, data=b"", method="POST", headers={"Authorization": "Bearer " + token})
+    # Never retry an ambiguous timeout: the service might already have published.
+    with transport.open(request, timeout=10) as response:
+        if response.status not in (200, 202):
+            raise ValueError("Ingestion did not accept the request.")
+        payload = json.loads(response.read(65536))
+    if not isinstance(payload, dict) or payload.get("status") != "accepted" or not isinstance(payload.get("event_id"), str) or not payload["event_id"]:
+        raise ValueError("Ingestion did not return an accepted event ID.")
+    return payload["event_id"]
+
+
+def render_simulator() -> None:
+    context = require_operator()
+    if not context.can_simulate:
+        st.error("Simulation permission is required.")
+        return
+    st.subheader("Controlled Event Simulator")
+    st.caption("TEST event · single submission · existing API event-purpose routing applies.")
+    enabled = os.environ.get("ENABLE_EVENT_SIMULATOR", "").lower() == "true"
+    verified = os.environ.get("SIMULATOR_AUTH_VERIFIED", "").lower() == "true"
+    endpoint = os.environ.get("SIMULATOR_INGESTION_ORIGIN", "")
+    if not enabled or not verified or not endpoint:
+        st.info("Simulation remains disabled until dashboard and backend authorization have been verified.")
+        return
+    try:
+        token = delegated_api_token()
+    except AccessDenied:
+        st.error("A delegated API token is unavailable. Simulation is disabled.")
+        return
+    st.warning("A confirmed test may send real notifications to eligible subscribers. The existing API determines severity and evidence for the selected type.")
+    with st.form("single_event", clear_on_submit=True):
+        selected_tenant = st.selectbox("Authorized test tenant", context.tenants)
+        analytics = st.selectbox("Demo analytics", SIMULATOR_TYPES)
+        acknowledged = st.checkbox("Submit exactly one test event and allow its eligible notifications.")
+        submitted = st.form_submit_button("Confirm one test event")
+    if submitted:
+        now = time.monotonic()
+        pending = st.session_state.get("simulator_pending")
+        if pending:
+            st.warning("Resolve the previous request before another submission.")
+        elif not acknowledged:
+            st.error("Explicit confirmation is required.")
+        elif now - st.session_state.get("simulator_last_attempt", -60) < 60:
+            st.warning("Wait 60 seconds between attempts.")
+        else:
+            st.session_state["simulator_last_attempt"] = now
+            # Retain an ambiguous outcome across reruns; never retry automatically.
+            st.session_state["simulator_pending"] = {"event_id": None, "state": "unknown"}
+            try:
+                event_id = submit_single_event(endpoint, analytics, token, (selected_tenant,))
+            except (ValueError, URLError, TimeoutError, OSError):
+                st.error("Acceptance is unknown. Check persisted incidents and backend logs before another attempt.")
+            else:
+                st.session_state["simulator_pending"] = {"event_id": event_id, "state": "accepted"}
+    pending = st.session_state.get("simulator_pending")
+    if pending:
+        event_id = pending["event_id"]
+        records = load_incidents()
+        if event_id and records["event_id"].eq(event_id).any():
+            st.success(f"Confirmed in Cosmos DB: {event_id}")
+        elif event_id:
+            st.info(f"API accepted {event_id}; Cosmos persistence is pending. Refresh incidents to check.")
+        else:
+            st.warning("Previous request outcome is unknown; no automatic retry will occur.")
+        if st.button("I reviewed the previous request; allow a new test"):
+            st.session_state.pop("simulator_pending", None)
+            st.rerun()
 
 
 def main() -> None:
     st.set_page_config(page_title="Incident Business Dashboard", layout="wide")
     inject_css()
-
-    df = load_incidents()
-    if df.empty:
-        st.title("Scalable Incident Platform — Business Dashboard")
-        st.info("No incidents found in the store yet.")
-        st.stop()
+    context = require_operator()
+    with st.sidebar:
+        st.caption("Authenticated operator · authorized tenant scope enforced")
+        mode = os.environ.get("DASHBOARD_AUTH_MODE", "oidc")
+        if mode == "easyauth":
+            st.link_button("Sign out", "/.auth/logout")
+        elif mode == "local":
+            if st.button("Sign out"):
+                local_auth.sign_out()
+                st.rerun()
+        elif st.button("Sign out"):
+            st.logout()
 
     with st.sidebar:
+        refresh = st.selectbox("Refresh interval", ["Manual", "5 minutes", "15 minutes"], index=0)
+        st.caption("Tenant snapshots are cached for five minutes. Manual refresh is limited to once per minute per session and never submits events.")
+    interval = {"Manual": None, "5 minutes": 300, "15 minutes": 900}[refresh]
+
+    @st.fragment(run_every=interval)
+    def refresh_clock():
+        require_operator()
+        now = time.monotonic()
+        last = st.session_state.get("soc_refresh_tick", now)
+        st.session_state.setdefault("soc_refresh_tick", now)
+        manual = st.button("Refresh incidents")
+        if manual and now - st.session_state.get("soc_last_manual_refresh", -60) < 60:
+            st.info("Wait one minute between manual data refreshes.")
+            return
+        if manual:
+            st.session_state["soc_last_manual_refresh"] = now
+            _load_incidents.clear()
+        if manual or (interval and now - last >= interval):
+            st.session_state["soc_refresh_tick"] = now
+            st.rerun()
+    refresh_clock()
+    df = load_incidents()
+
+    with st.sidebar:
+        st.link_button(
+            "Platform Observability",
+            "https://incident-grafana.calmmushroom-4789bfc0.malaysiawest.azurecontainerapps.io/d/incident-platform-ops/incident-platform-7c-operations",
+        )
+
         st.header("Filters")
 
         tenants = sorted(df["tenant_id"].unique())
@@ -512,11 +795,11 @@ def main() -> None:
         analytics_types = sorted(df["analytics_type"].unique())
         analytics_filter = checkbox_filter("Analytics type", analytics_types, "analytics")
 
-        severities = [s for s in SEVERITY_ORDER if s in df["severity"].unique()]
+        severities = [s for s in SEVERITY_ORDER if s in df["severity"].unique()] + sorted(set(df["severity"].dropna()) - set(SEVERITY_ORDER))
         severity_filter = checkbox_filter("Severity", severities, "severity")
 
-        min_date = df["timestamp"].min().date()
-        max_date = df["timestamp"].max().date()
+        min_date = df["timestamp"].min().date() if not df.empty else date.today()
+        max_date = df["timestamp"].max().date() if not df.empty else date.today()
 
         range_preset = st.selectbox(
             "Date range", list(DATE_RANGE_PRESETS) + ["Custom range"], index=1
@@ -568,10 +851,22 @@ def main() -> None:
         lambda: render_evidence(filtered),
         title="Evidence", icon="🖼️", url_path="evidence",
     )
-    pg = st.navigation([overview_page, incidents_page, evidence_page])
+    simulator_page = st.Page(render_simulator, title="Controlled Event Simulator", icon="🧪", url_path="simulator")
+    pages = [overview_page, incidents_page, evidence_page]
+    pages.append(st.Page(lambda: render_account_setup(require_operator, delegated_api_token), title="Account Setup", icon="👤", url_path="account-setup"))
+    if getattr(context,'can_manage_access',False):
+        pages.append(st.Page(lambda: render_admin_access(require_operator, delegated_api_token),title="Admin Access Management",icon="🔐",url_path="admin-access"))
+    if context.can_simulate:
+        pages.append(simulator_page)
+    pg = st.navigation(pages)
 
-    st.title("Scalable Incident Platform — Business Dashboard")
+    st.title("Security Operations Center")
+    st.caption("Scalable Incident Platform · Business Dashboard")
+    st.text(f"Active tenants: {', '.join(tenant_filter) or 'None'}")
+    st.caption(f"Analytics: {', '.join(analytics_filter) or 'None'} · Severity: {', '.join(severity_filter) or 'None'} · {start_date} to {end_date} (UTC)")
+    st.caption(f"Last successful Cosmos refresh: {df.attrs.get('refreshed_at', 'Unavailable')}")
     pg.run()
 
 
-main()
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,1244 @@
+{
+  "uid": "incident-platform-ops",
+  "title": "Platform Observability | Health & Performance",
+  "tags": [
+    "incident-platform",
+    "azure-monitor",
+    "observability"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 3,
+  "refresh": "5m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 7,
+      "title": "Incoming | Observed Total by Queue",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "IncomingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "incident-events"
+                ]
+              }
+            ],
+            "alias": "incident-events"
+          }
+        },
+        {
+          "refId": "B",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "IncomingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "notification-events"
+                ]
+              }
+            ],
+            "alias": "notification-events"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "seriesToRows",
+            "reducers": [
+              "sum",
+              "count"
+            ]
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "type": "include",
+            "match": "all",
+            "filters": [
+              {
+                "fieldName": "Count",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Count": true
+            },
+            "renameByName": {
+              "Field": "Queue",
+              "Total": "Messages"
+            }
+          }
+        }
+      ],
+      "description": "Observed message counts for each queue over the selected range: Azure Total per bucket, then Grafana sum of returned buckets. Not a lifetime total, a rate, unique incidents, or a combined pipeline total. Missing buckets make this a partial subtotal. All-null/empty series are excluded using Count > 0; real zeros remain zero. Azure telemetry may lag several minutes.",
+      "options": {
+        "reduceOptions": {
+          "values": true,
+          "fields": "/^Messages$/",
+          "calcs": []
+        },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 8,
+      "title": "Outgoing | Observed Total by Queue",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "OutgoingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "incident-events"
+                ]
+              }
+            ],
+            "alias": "incident-events"
+          }
+        },
+        {
+          "refId": "B",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "OutgoingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "notification-events"
+                ]
+              }
+            ],
+            "alias": "notification-events"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "seriesToRows",
+            "reducers": [
+              "sum",
+              "count"
+            ]
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "type": "include",
+            "match": "all",
+            "filters": [
+              {
+                "fieldName": "Count",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Count": true
+            },
+            "renameByName": {
+              "Field": "Queue",
+              "Total": "Messages"
+            }
+          }
+        }
+      ],
+      "description": "Observed message counts for each queue over the selected range: Azure Total per bucket, then Grafana sum of returned buckets. Not a lifetime total, a rate, unique incidents, or a combined pipeline total. Missing buckets make this a partial subtotal. All-null/empty series are excluded using Count > 0; real zeros remain zero. Azure telemetry may lag several minutes.",
+      "options": {
+        "reduceOptions": {
+          "values": true,
+          "fields": "/^Messages$/",
+          "calcs": []
+        },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 9,
+      "title": "Active | Last Reported Depth by Queue",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "ActiveMessages",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "incident-events"
+                ]
+              }
+            ],
+            "alias": "incident-events"
+          }
+        },
+        {
+          "refId": "B",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "ActiveMessages",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "notification-events"
+                ]
+              }
+            ],
+            "alias": "notification-events"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Last non-null interval Average for each queue within the selected range; not an instantaneous live count and never summed across time. May be stale if recent buckets are absent; inspect the queue-depth time series for timestamps/gaps. Missing series remain No data. No capacity percentage or health threshold is implied.",
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "fields": "",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 10,
+      "title": "Dead-Lettered | Last Reported Depth by Queue",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "DeadletteredMessages",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "incident-events"
+                ]
+              }
+            ],
+            "alias": "incident-events"
+          }
+        },
+        {
+          "refId": "B",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "DeadletteredMessages",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "notification-events"
+                ]
+              }
+            ],
+            "alias": "notification-events"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Last non-null interval Average for each queue within the selected range; not an instantaneous live count and never summed across time. May be stale if recent buckets are absent; inspect the queue-depth time series for timestamps/gaps. Missing series remain No data. No capacity percentage or health threshold is implied.",
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "fields": "",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 11,
+      "title": "Incoming | Observed Messages by Queue",
+      "type": "barchart",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "IncomingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "incident-events"
+                ]
+              }
+            ],
+            "alias": "incident-events"
+          }
+        },
+        {
+          "refId": "B",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "IncomingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "notification-events"
+                ]
+              }
+            ],
+            "alias": "notification-events"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "seriesToRows",
+            "reducers": [
+              "sum",
+              "count"
+            ]
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "type": "include",
+            "match": "all",
+            "filters": [
+              {
+                "fieldName": "Count",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Count": true
+            },
+            "renameByName": {
+              "Field": "Queue",
+              "Total": "Messages"
+            }
+          }
+        }
+      ],
+      "description": "Selected-range observed message totals by queue, not messages/second. Azure Total bucket values are summed once per queue; missing buckets make partial totals. Queues without any numeric observations are omitted, not treated as zero. Incoming/outgoing counts need not match; do not add them together as unique incidents.",
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Queue",
+        "showValue": "always",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.8,
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "Outgoing | Observed Messages by Queue",
+      "type": "barchart",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 6,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "OutgoingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "incident-events"
+                ]
+              }
+            ],
+            "alias": "incident-events"
+          }
+        },
+        {
+          "refId": "B",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "OutgoingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "notification-events"
+                ]
+              }
+            ],
+            "alias": "notification-events"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "seriesToRows",
+            "reducers": [
+              "sum",
+              "count"
+            ]
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "type": "include",
+            "match": "all",
+            "filters": [
+              {
+                "fieldName": "Count",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Count": true
+            },
+            "renameByName": {
+              "Field": "Queue",
+              "Total": "Messages"
+            }
+          }
+        }
+      ],
+      "description": "Selected-range observed message totals by queue, not messages/second. Azure Total bucket values are summed once per queue; missing buckets make partial totals. Queues without any numeric observations are omitted, not treated as zero. Incoming/outgoing counts need not match; do not add them together as unique incidents.",
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Queue",
+        "showValue": "always",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.8,
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "Incoming | Share of Observed Traffic",
+      "type": "piechart",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 6,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "IncomingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "incident-events"
+                ]
+              }
+            ],
+            "alias": "incident-events"
+          }
+        },
+        {
+          "refId": "B",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "IncomingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "notification-events"
+                ]
+              }
+            ],
+            "alias": "notification-events"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "seriesToRows",
+            "reducers": [
+              "sum",
+              "count"
+            ]
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "type": "include",
+            "match": "all",
+            "filters": [
+              {
+                "fieldName": "Count",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Count": true
+            },
+            "renameByName": {
+              "Field": "Queue",
+              "Total": "Messages"
+            }
+          }
+        }
+      ],
+      "description": "Donut segments compare observed incoming message totals per queue over the selected range. This is a share of returned traffic only, not capacity, utilization, unique incidents, or backlog. Missing queues/buckets make coverage incomplete; excluded queues are unknown, not zero. With all-zero traffic there is no meaningful distribution and no positive slices; consult the stat/bar values. Counts are shown instead of percentages.",
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "name",
+          "value"
+        ],
+        "reduceOptions": {
+          "values": true,
+          "fields": "/^Messages$/",
+          "calcs": []
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "values": [
+            "value"
+          ]
+        },
+        "tooltip": {
+          "mode": "single",
+          "hideZeros": false
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Service Bus | Incoming Messages (per interval)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "IncomingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "incident-events"
+                ]
+              }
+            ],
+            "alias": "incident-events"
+          }
+        },
+        {
+          "refId": "B",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "IncomingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "notification-events"
+                ]
+              }
+            ],
+            "alias": "notification-events"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data",
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "Total message count per Azure Monitor time bucket (not messages/second). Auto grain grows with the selected time range. Missing telemetry stays missing; incoming and outgoing counts need not match."
+    },
+    {
+      "id": 4,
+      "title": "Service Bus | Outgoing Messages (per interval)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "OutgoingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "incident-events"
+                ]
+              }
+            ],
+            "alias": "incident-events"
+          }
+        },
+        {
+          "refId": "B",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "OutgoingMessages",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "notification-events"
+                ]
+              }
+            ],
+            "alias": "notification-events"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data",
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "Total message count per Azure Monitor time bucket (not messages/second). Auto grain grows with the selected time range. Missing telemetry stays missing; incoming and outgoing counts need not match."
+    },
+    {
+      "id": 1,
+      "title": "Service Bus | Active Messages",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "ActiveMessages",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "incident-events"
+                ]
+              }
+            ],
+            "alias": "incident-events"
+          }
+        },
+        {
+          "refId": "B",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "ActiveMessages",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "notification-events"
+                ]
+              }
+            ],
+            "alias": "notification-events"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data",
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "Average point-in-time queue depth per interval. Flat zero can mean idle queues or fast consumption; a flat nonzero DLQ can mean retained messages. Missing data is not zero. Incoming/outgoing panels show traffic between depth samples."
+    },
+    {
+      "id": 2,
+      "title": "Service Bus | Dead-Lettered Messages",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "DeadletteredMessages",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "incident-events"
+                ]
+              }
+            ],
+            "alias": "incident-events"
+          }
+        },
+        {
+          "refId": "B",
+          "queryType": "Azure Monitor",
+          "azureMonitor": {
+            "resourceUri": "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.ServiceBus/namespaces/incident-bus-4pqaac2c4e4hs",
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "DeadletteredMessages",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "EntityName",
+                "operator": "eq",
+                "filters": [
+                  "notification-events"
+                ]
+              }
+            ],
+            "alias": "notification-events"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "No data",
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "Average point-in-time queue depth per interval. Flat zero can mean idle queues or fast consumption; a flat nonzero DLQ can mean retained messages. Missing data is not zero. Incoming/outgoing panels show traffic between depth samples."
+    },
+    {
+      "id": 5,
+      "title": "Container Apps | System Events by App and Severity",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 9
+      },
+      "description": "Existing ContainerAppSystemLogs_CL only. Counts log records, not failures, replicas, readiness or uptime. No events is not proof of health. A query error requires checking MSI workspace access; raw log messages are intentionally excluded.",
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "/subscriptions/a3bb9202-635d-4ab5-aaa4-5458f296b64e/resourceGroups/rg-incident-platform/providers/Microsoft.OperationalInsights/workspaces/incident-logs"
+            ],
+            "workspace": "c424063b-39b1-4ffc-bdf6-1d8e9b55c932",
+            "resultFormat": "time_series",
+            "query": "ContainerAppSystemLogs_CL\n| where $__timeFilter(TimeGenerated)\n| where EnvironmentName_s == 'incident-env'\n| where isnotempty(ContainerAppName_s)\n| summarize Events=count() by bin(TimeGenerated, $__interval), ContainerAppName_s, Type_s\n| order by TimeGenerated asc"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "noValue": "No events / no data",
+          "custom": {
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "How to Read This Dashboard",
+      "type": "text",
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Depth is not throughput.** Active and dead-lettered panels show average point-in-time queue depth. Flat zero can mean no traffic or messages consumed between samples. A flat nonzero DLQ can be retained messages; it is not a count of new failures. Use incoming/outgoing totals alongside depth.\n\n**Missing is not zero.** Gaps, No data, or query errors can mean absent telemetry, ingestion delay, wrong time range, or missing access. Check the last 6 hours, expand to 24 hours if needed, and inspect errors. Nulls are not connected or filled with zeros.\n\n**Container Apps:** system-event counts come from existing workspace logs. They do not prove readiness or uptime. Raw messages, synthetic traffic, new diagnostics and alert rules are not included. Managed-identity log-query access requires a Grafana runtime smoke check.\n\n**Cost:** 5-minute refresh; existing resources only. Grafana may scale to zero, so the first load can be slow. Log queries may incur existing workspace query charges depending on the table plan.\n\n**Overview analytics:** traffic cards/bars sum observed Azure Total buckets separately for each queue over the selected range. These are partial subtotals if telemetry is missing, not lifetime totals or unique incidents across pipeline stages. Count > 0 filtering suppresses empty/all-null totals; observed zero stays zero. Depth cards use the last reported interval Average, which may be stale; inspect time-series timestamps and gaps.\n\n**Circular indicator:** the donut compares only observed incoming traffic by queue. Zero traffic has no meaningful share; missing telemetry means incomplete coverage. No capacity, utilization, or failure percentage is inferred. Gauges are omitted because no verified limit/threshold exists.\n\n**Query cost:** added summary panels reuse the same metric definitions but issue additional read-only metric queries; refresh remains five minutes. No new log query or resource is introduced."
+      }
+    }
+  ],
+  "description": "Service Bus traffic and backlog, plus Container Apps system-event volume from the existing Azure Monitor datasource. Missing telemetry is not zero or proof of health."
+}

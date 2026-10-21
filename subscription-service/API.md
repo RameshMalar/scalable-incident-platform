@@ -199,3 +199,45 @@ Enabled subscription writes now require operator-approved tenant destinations.
 See [destination policy and migration](DESTINATION_POLICY.md). Unapproved
 subscriptions remain readable; disabling and deletion do not require approval.
 No policy records or Azure role assignments are provisioned automatically.
+
+## Central access and Telegram self-service (off by default)
+
+Person-facing routes for the Business Dashboard, in `app/account_routes.py`.
+With the flags unset every route below answers 404 and the API behaves exactly
+as before. They authenticate a **delegated user token** (`app/user_auth.py`):
+RS256, issuer/audience/expiry, `tid` = `AUTH_TENANT_ID`, an `oid`, the
+`USER_AUTH_SCOPE` (default `user_impersonation`) delegated scope, and an `azp`
+listed in `USER_AUTH_CLIENT_IDS`. Application-only tokens are refused. The
+legacy `TENANT_MAP` never authorizes a person.
+
+| Method and path | Behaviour |
+|---|---|
+| `GET /api/v1/access/me` | Fresh registry grant: `directory_id, object_id, role, tenants, status, version, permissions, contract:"central-access-v1"`. 403 unknown/inactive, 401 invalid token, 503 registry unavailable. No cache, no fallback. |
+| `POST /api/v1/access/identity-proof` | Records a 15-minute identity receipt for the caller. Grants nothing. |
+| `GET /api/v1/admin/access/users?cursor=&limit=` | `Access.Manage` only; OID-ordered pages (≤100). |
+| `POST /api/v1/admin/access/users` | Original approved Admin only; consumes the user's fresh receipt; `object_id, role, tenants, approval_reference`. Atomic with its audit record. |
+| `PATCH /api/v1/admin/access/users/{oid}` | `expected_version`, `reason`, and `role`/`tenants`/`status`. ETag-checked, audited; root immutable; revocation irreversible; only the original Admin may expand access. |
+| `GET /api/v1/me/telegram?tenant_id=` | `contract:"self-service-v1", tenant_id, verified, destination_approved, enabled, event_types, supported_event_types`. Never a chat ID or token. |
+| `POST /api/v1/me/telegram/challenges?tenant_id=` | One-time `https://t.me/<bot>?start=<token>` link, valid 5 minutes; a new link replaces the old one. |
+| `PUT /api/v1/me/telegram/preferences?tenant_id=` | `{enabled, event_types}` only. Enabling needs a verified binding **and** an operator-approved destination. Disabling always works. Idempotent. |
+| `POST /api/v1/telegram/webhook` | Telegram calls this with `X-Telegram-Bot-Api-Secret-Token`. A private `/start <token>` from a non-bot sender consumes the challenge and binds that account. Bodies are capped at 64 KB, and the route never replies to or messages the user. |
+
+Roles (`app/access_roles.py`, byte-identical to the dashboard copy): Platform
+Admin, SOC Operator and SOC Viewer, each limited to its assigned tenants.
+
+**Storage.** Grants, audits, receipts, challenges and Telegram bindings live in
+the reserved `__platform_access__` partition of the existing subscriptions
+container; `TENANT_MAP` cannot name it. Preferences are ordinary subscriptions
+in the tenant partition with `owner_object_id`, which the legacy routes hide
+and cannot PATCH (DELETE remains allowed). The Worker routes such a
+subscription only while its owner's grant is active for the tenant and the
+binding matches the chat; with `NOTIFICATION_ELIGIBILITY=enforce` the
+Notification Service rechecks the same before each send.
+
+**Configuration.** `ENABLE_CENTRAL_ACCESS=true`, `ACCESS_DIRECTORY_ID` (=
+`AUTH_TENANT_ID`), `ACCESS_PLATFORM_TENANTS=TENANT-01,TENANT-02,TENANT-03`,
+`USER_AUTH_CLIENT_IDS=<dashboard login client>`. For Telegram also
+`ENABLE_TELEGRAM_SELF_SERVICE=true`, `TELEGRAM_BOT_USERNAME`,
+`TELEGRAM_WEBHOOK_SECRET` (a secret reference, ≥32 characters), and optionally
+`TELEGRAM_EVENT_TYPES`. Registering the webhook with Telegram (`setWebhook`) is
+a separate, manual step.

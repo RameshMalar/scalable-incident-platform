@@ -60,6 +60,16 @@ def validate(config, *, inputs_only=False):
         image = required(config, "ROLLBACK_WORKER_IMAGE")
         if not re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]+)?/incident-worker@sha256:[0-9a-f]{64}", image):
             raise ValueError("ROLLBACK_WORKER_IMAGE must be an immutable pre-routing Worker digest")
+    # The dashboard is only redeployed on request. "keep" (or absent) leaves
+    # the running dashboard exactly as it is, so a merge cannot lock anyone out.
+    release = config.get("DASHBOARD_RELEASE") or "keep"
+    if release not in {"keep", "signin-test", "promote"}:
+        raise ValueError("DASHBOARD_RELEASE must be keep, signin-test or promote")
+    if release != "keep":
+        directory_id(config, "DASHBOARD_AUTH_CLIENT_ID")
+    if release == "promote":
+        # Promotion only after a person signed in on the labelled test revision.
+        required(config, "DASHBOARD_SIGNIN_REFERENCE")
     if inputs_only:
         return
     for name in ["AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID"]:

@@ -45,6 +45,9 @@ class SubscriptionRecord(BaseModel):
     channel: Literal["telegram"]
     telegram_chat_id: TelegramChatId
     enabled: StrictBool
+    # Present only on subscriptions created through account setup; such routes
+    # also require app.owner_eligibility. Absent/null keeps legacy behaviour.
+    owner_object_id: NonEmpty | None = None
 
 
 class NotificationEnvelope(BaseModel):

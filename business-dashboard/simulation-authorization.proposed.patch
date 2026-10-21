@@ -1,0 +1,298 @@
+--- a/ingestion-service/app/main.py
++++ b/ingestion-service/app/main.py
+@@ -12,6 +12,8 @@
+ from fastapi.staticfiles import StaticFiles
+ 
+ from common_event_model import IncidentEvent
++
++from app.simulation_auth import SimulationContext, require_simulation
+ 
+ from app.auth import (
+     Producer,
+@@ -247,6 +249,12 @@
+     return evidence["source_id"], f"{endpoint}/{container}/{evidence['blob']}"
+ 
+ 
++@app.get("/api/v1/simulation/capabilities")
++async def simulation_capabilities(operator: SimulationContext = Depends(require_simulation)):
++    return {"authorization": "entra-user-v1", "tenant_id": operator.tenant_id,
++            "event_purpose": "e2e_test", "supported_types": ["intrusion", "ppe", "crowd", "fire", "smoke"]}
++
++
+ @app.post(
+     "/api/v1/simulate/{analytics_type}",
+     summary="Generate a sample incident (demo/dev only)",
+@@ -260,6 +268,7 @@
+ )
+ async def simulate_event(
+     analytics_type: str,
++    operator: SimulationContext = Depends(require_simulation),
+     publisher: EventPublisher = Depends(get_publisher),
+ ):
+     analytics_samples = {
+@@ -313,7 +322,7 @@
+ 
+     event = IncidentEvent(
+         event_id=f"EVT-{uuid.uuid4().hex[:8].upper()}",
+-        tenant_id="TENANT-01",
++        tenant_id=operator.tenant_id,
+         site_id="SITE-01",
+         source_id=source_id or f"CAM-{random.randint(1, 20):03}",
+         source_name="Demo Camera",
+--- /dev/null
++++ b/ingestion-service/app/simulation_auth.py
+@@ -0,0 +1,115 @@
++"""PROPOSED: explicit delegated-user authorization for demo endpoints only."""
++from dataclasses import dataclass
++from functools import lru_cache
++import os
++import json
++from urllib.error import HTTPError, URLError
++from urllib.parse import urlparse
++from urllib.request import Request, build_opener, HTTPRedirectHandler
++from uuid import UUID
++
++from fastapi import Depends, HTTPException
++from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
++import jwt
++
++bearer = HTTPBearer(auto_error=False)
++
++
++@dataclass(frozen=True)
++class SimulationContext:
++    user_id: str
++    tenant_id: str
++
++
++class SimulationVerifier:
++    def __init__(self, directory_id, audience, client_ids, registry, keys=None):
++        UUID(directory_id)
++        if not audience or not client_ids or not callable(registry):
++            raise ValueError('Explicit simulation authorization configuration is required')
++        for client in client_ids:
++            UUID(client)
++        self.directory_id, self.audience = directory_id, audience
++        self.client_ids, self.registry = set(client_ids), registry
++        self.keys = keys or jwt.PyJWKClient(f'https://login.microsoftonline.com/{directory_id}/discovery/v2.0/keys', cache_keys=True)
++
++    def verify(self, token, tenant_id=None):
++        try:
++            if not token or len(token) > 65536:
++                raise ValueError('invalid token')
++            signing_key = self.keys.get_signing_key_from_jwt(token)
++            audiences = [self.audience, self.audience.removeprefix('api://')]
++            claims = jwt.decode(token, signing_key.key, algorithms=['RS256'], audience=audiences,
++                issuer=[f'https://login.microsoftonline.com/{self.directory_id}/v2.0', f'https://sts.windows.net/{self.directory_id}/'],
++                options={'require': ['exp', 'iss', 'aud', 'tid', 'oid']})
++        except (jwt.PyJWTError, ValueError, TypeError, RecursionError):
++            raise HTTPException(401, 'invalid or expired simulation access token') from None
++        roles, scopes = claims.get('roles', []), claims.get('scp', '')
++        if not isinstance(roles, list) or not isinstance(scopes, str) or any(not isinstance(role, str) for role in roles):
++            raise HTTPException(403, 'simulation operator permission required')
++        client = claims.get('azp') or claims.get('appid')
++        user = claims['oid']
++        # A service principal with Incidents.Write is not an interactive operator.
++        if (claims['tid'] != self.directory_id or client not in self.client_ids
++                or claims.get('idtyp') == 'app' or 'user_impersonation' not in scopes.split()
++                or not isinstance(user, str)):
++            raise HTTPException(403, 'simulation operator permission required')
++        try:UUID(user)
++        except ValueError:raise HTTPException(403,'simulation operator permission required') from None
++        # Fresh authoritative registry for every POST and capability check.
++        # Never fall back to token roles, an ingestion user map or cached grants.
++        grant=self.registry(token)
++        if (grant.get('contract')!='central-access-v1' or grant.get('directory_id')!=self.directory_id
++                or grant.get('object_id')!=user or grant.get('status')!='active'
++                or grant.get('role') not in ('Platform Admin','SOC Operator')):
++            raise HTTPException(403,'simulation operator permission required')
++        allowed=grant.get('tenants')
++        if (not isinstance(allowed,list) or not allowed or not set(allowed).issubset({'TENANT-01','TENANT-02','TENANT-03'})):
++            raise HTTPException(403,'platform tenant not authorized')
++        if tenant_id is None:
++            if len(allowed) != 1:
++                raise HTTPException(422, 'select an authorized platform tenant')
++            tenant_id = allowed[0]
++        if tenant_id not in allowed:
++            raise HTTPException(403, 'platform tenant not authorized')
++        return SimulationContext(user, tenant_id)
++
++
++class NoRedirect(HTTPRedirectHandler):
++    def redirect_request(self,req,fp,code,msg,headers,newurl):return None
++
++
++def central_grant(token):
++    origin=os.environ.get('SUBSCRIPTION_API_ORIGIN','')
++    parsed=urlparse(origin)
++    if (parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password
++            or parsed.path not in ('','/') or parsed.query or parsed.fragment):
++        raise HTTPException(503,'central authorization unavailable')
++    request=Request(origin.rstrip('/')+'/api/v1/access/me',headers={'Authorization':'Bearer '+token})
++    try:
++        with build_opener(NoRedirect()).open(request,timeout=10) as response:
++            value=json.loads(response.read(65536))
++            if response.status!=200 or not isinstance(value,dict):raise ValueError('invalid registry response')
++            return value
++    except HTTPError as error:
++        if error.code in (401,403):raise HTTPException(error.code,'operator access denied') from None
++        raise HTTPException(503,'central authorization unavailable') from None
++    except (URLError,OSError,ValueError):raise HTTPException(503,'central authorization unavailable') from None
++
++
++@lru_cache(maxsize=1)
++def simulation_verifier():
++    return SimulationVerifier(os.environ.get('AUTH_TENANT_ID', ''), os.environ.get('AUTH_AUDIENCE', ''),
++        [value.strip() for value in os.environ.get('SIMULATION_CLIENT_IDS', '').split(',') if value.strip()],
++        central_grant)
++
++
++def require_simulation(tenant_id: str | None = None, credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
++    if os.environ.get('ENABLE_EVENT_SIMULATOR', '').lower() != 'true' or os.environ.get('AUTH_MODE') != 'entra':
++        raise HTTPException(404, 'simulation disabled')
++    if credentials is None:
++        raise HTTPException(401, 'bearer token required', headers={'WWW-Authenticate': 'Bearer'})
++    try:
++        verifier = simulation_verifier()
++    except (ValueError, TypeError):
++        raise HTTPException(503, 'simulation authorization unavailable') from None
++    return verifier.verify(credentials.credentials, tenant_id)
+--- a/ingestion-service/tests/test_ingestion.py
++++ b/ingestion-service/tests/test_ingestion.py
+@@ -13,6 +13,7 @@
+     app,
+     get_publisher,
+ )
++from app.simulation_auth import SimulationContext, require_simulation
+ from app.publisher import MockEventPublisher, ServiceBusEventPublisher
+ 
+ MANIFEST = (
+@@ -37,10 +38,14 @@
+ 
+ @pytest.fixture(autouse=True)
+ def mock_publisher():
++    # Existing behavioral tests inject an explicitly authorized test operator.
++    # Endpoint denial tests run separately without this override.
++    app.dependency_overrides[require_simulation] = lambda: SimulationContext("test-operator", "TENANT-01")
+     publisher = MockEventPublisher()
+     app.dependency_overrides[get_publisher] = lambda: publisher
+     yield publisher
+     app.dependency_overrides.pop(get_publisher, None)
++    app.dependency_overrides.pop(require_simulation, None)
+ 
+ 
+ def sample_event(**overrides):
+--- /dev/null
++++ b/ingestion-service/tests/test_simulation_authorization.py
+@@ -0,0 +1,111 @@
++"""Proposed tests; no publisher or Entra network operations are performed."""
++import time
++from types import SimpleNamespace
++from unittest.mock import Mock, AsyncMock
++
++import jwt
++import pytest
++from cryptography.hazmat.primitives.asymmetric import rsa
++from fastapi import HTTPException
++from fastapi.testclient import TestClient
++
++from app.main import app, get_publisher
++from app.simulation_auth import SimulationVerifier, simulation_verifier
++
++DIRECTORY='00000000-0000-0000-0000-000000000001'
++CLIENT='00000000-0000-0000-0000-000000000002'
++USER='00000000-0000-0000-0000-000000000003'
++
++
++@pytest.fixture
++def security():
++    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
++    keys=Mock(get_signing_key_from_jwt=Mock(return_value=SimpleNamespace(key=private.public_key())))
++    registry=Mock(return_value=dict(contract='central-access-v1',directory_id=DIRECTORY,object_id=USER,
++        role='SOC Operator',status='active',tenants=['TENANT-01']))
++    verifier=SimulationVerifier(DIRECTORY,'api://test-api',[CLIENT],registry,keys)
++    def token(**changes):
++        claims=dict(iss=f'https://login.microsoftonline.com/{DIRECTORY}/v2.0',aud='api://test-api',exp=int(time.time())+300,
++                    tid=DIRECTORY,oid=USER,azp=CLIENT,scp='user_impersonation',roles=['Incidents.Simulate'])
++        claims.update(changes)
++        return jwt.encode(claims,private,algorithm='RS256')
++    return verifier,token
++
++
++@pytest.mark.parametrize('changes,status',[
++    ({'scp':''},403),({'idtyp':'app'},403),
++    ({'oid':'unknown'},403),({'azp':'unapproved-client'},403),({'tid':'foreign'},403),
++    ({'aud':'wrong-api'},401),({'exp':1},401),({'iss':'https://evil.example'},401),
++])
++def test_denies_invalid_or_unapproved_operator(security,changes,status):
++    verifier,token=security
++    with pytest.raises(HTTPException) as error:
++        verifier.verify(token(**changes),'TENANT-01')
++    assert error.value.status_code==status
++
++
++@pytest.mark.parametrize('change',[{'role':'SOC Viewer'},{'status':'revoked'},{'status':'disabled'},
++    {'object_id':'another-user'},{'tenants':['TENANT-DEV']},{'contract':'old-api'}])
++def test_registry_denial_overrides_stale_signed_roles(security,change):
++    verifier,token=security
++    verifier.registry.return_value.update(change)
++    with pytest.raises(HTTPException) as error:verifier.verify(token(),'TENANT-01')
++    assert error.value.status_code==403
++
++
++def test_each_post_rechecks_registry_without_fallback(security):
++    verifier,token=security
++    verifier.verify(token(),'TENANT-01')
++    verifier.registry.side_effect=HTTPException(503,'registry unavailable')
++    with pytest.raises(HTTPException) as error:verifier.verify(token(),'TENANT-01')
++    assert error.value.status_code==503 and verifier.registry.call_count==2
++
++
++def test_no_per_user_entra_role_is_needed_when_registry_explicitly_approves(security):
++    verifier,token=security
++    assert verifier.verify(token(roles=[]),'TENANT-01').user_id==USER
++
++
++def test_authorized_user_cannot_select_another_platform_tenant(security):
++    verifier,token=security
++    assert verifier.verify(token(),'TENANT-01').user_id==USER
++    with pytest.raises(HTTPException) as error:
++        verifier.verify(token(),'TENANT-02')
++    assert error.value.status_code==403
++
++
++def test_both_routes_disabled_by_default(monkeypatch):
++    monkeypatch.delenv('ENABLE_EVENT_SIMULATOR',raising=False)
++    publisher=SimpleNamespace(publish=AsyncMock())
++    app.dependency_overrides[get_publisher]=lambda:publisher
++    try:
++        client=TestClient(app)
++        assert client.post('/api/v1/simulate/intrusion').status_code==404
++        assert client.get('/api/v1/simulation/capabilities').status_code==404
++        publisher.publish.assert_not_awaited()
++    finally:
++        app.dependency_overrides.pop(get_publisher,None)
++
++
++def test_routes_require_token_and_bind_published_tenant(monkeypatch,security):
++    verifier,token=security
++    monkeypatch.setenv('ENABLE_EVENT_SIMULATOR','true')
++    monkeypatch.setenv('AUTH_MODE','entra')
++    monkeypatch.setattr('app.simulation_auth.simulation_verifier',lambda:verifier)
++    publisher=SimpleNamespace(publish=AsyncMock())
++    app.dependency_overrides[get_publisher]=lambda:publisher
++    try:
++        client=TestClient(app)
++        assert client.post('/api/v1/simulate/intrusion').status_code==401
++        headers={'Authorization':'Bearer '+token()}
++        assert client.post('/api/v1/simulate/intrusion?tenant_id=TENANT-02',headers=headers).status_code==403
++        publisher.publish.assert_not_awaited()
++        metadata=client.get('/api/v1/simulation/capabilities?tenant_id=TENANT-01',headers=headers)
++        assert metadata.json()['authorization']=='entra-user-v1'
++        response=client.post('/api/v1/simulate/intrusion?tenant_id=TENANT-01',headers=headers)
++        assert response.json()['status']=='accepted'
++        publisher.publish.assert_awaited_once()
++        event=publisher.publish.await_args.args[0]
++        assert event.tenant_id=='TENANT-01' and event.event_purpose=='e2e_test'
++    finally:
++        app.dependency_overrides.pop(get_publisher,None)
