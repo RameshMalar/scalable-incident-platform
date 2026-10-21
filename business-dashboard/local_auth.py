@@ -49,6 +49,7 @@ ENTRA_ONLY_FLAGS = ("ENABLE_CENTRAL_ACCESS", "ENABLE_TELEGRAM_ONBOARDING", "ENAB
 ADMIN, VIEWER = "admin", "viewer"
 ROLES = (ADMIN, VIEWER)
 MAX_ACCOUNTS = 20
+ACADEMIC_TITLE = "Scalable and Secure Incident Monitoring and Management Platform for AI Video Analytics"
 
 
 class LocalAuthUnavailable(Exception):
@@ -253,7 +254,7 @@ def require_signed_in(headers, banner=None):
     try:
         credentials = load_credentials()
     except LocalAuthUnavailable:
-        st.title("Smart Incident Monitoring Platform")
+        st.subheader(ACADEMIC_TITLE)
         st.error("Sign-in is not configured. Access is denied.")
         st.stop()
     username = current_session()
@@ -268,7 +269,7 @@ def require_signed_in(headers, banner=None):
         _, middle, _ = st.columns([1, 2, 1])
         with middle:
             st.image(banner, width="stretch")
-    st.title("Smart Incident Monitoring Platform")
+    st.subheader(ACADEMIC_TITLE)
     st.caption("Security Operations Center · sign in")
     client = client_address(headers)
     with st.form("local_sign_in", clear_on_submit=True):

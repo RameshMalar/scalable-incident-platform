@@ -17,6 +17,7 @@ from test_dashboard import dashboard, offline, operator  # noqa: F401 (autouse o
 ROOT = Path(__file__).parent
 # Taken before the autouse guard replaces it, for the test of publish itself.
 REAL_PUBLISH = simulator.publish
+REAL_REQUIRE_OPERATOR = dashboard.require_operator
 SCOPE = "api://fbbe63e1-1f8f-4d4d-b695-0f9982842081/.default"
 ENV = {"ENABLE_DASHBOARD_SIMULATOR": "true", "SIMULATOR_INGESTION_ORIGIN": "https://ingestion.example",
        "SIMULATOR_API_SCOPE": SCOPE, "SIMULATOR_TENANT": "TENANT-01"}
@@ -293,3 +294,64 @@ def test_telegram_page_is_admin_only_and_masks_chats(monkeypatch):
     monkeypatch.setattr(dashboard, "require_operator", lambda: operator("viewer"))
     at = AppTest.from_string("import soc_dashboard as app\napp.render_telegram_subscribers()").run(timeout=20)
     assert any("Administrator role is required" in e.value for e in at.error) and not at.dataframe
+
+
+# --- demo guarantees ------------------------------------------------------------------------
+
+def test_custom_analytics_event_passes_the_common_event_model():
+    common = pytest.importorskip("common_event_model")
+    event = simulator.build_event(analytics_type="vehicle_wrong_way_detection", event_type="wrong_way_driving",
+                                  severity="high", description="Wrong Way Driving detected in monitored area",
+                                  tenant_id="TENANT-01", site_id="SITE-03", evidence_pool=None,
+                                  evidence_endpoint="", evidence_container="evidence")
+    parsed = common.IncidentEvent.model_validate(event)
+    assert parsed.event_purpose == "e2e_test" and parsed.analytics_type == "vehicle_wrong_way_detection"
+
+
+def test_the_dashboard_never_writes_to_cosmos(monkeypatch):
+    # Only reads exist on this fake; any write attribute would raise.
+    container = Mock(spec=["read_item", "query_items"])
+    monkeypatch.setattr(dashboard, "get_container", lambda: container)
+    assert dashboard.incident_persisted("EVT-SIM-1", "TENANT-01") is True
+    container.read_item.assert_called_once_with(item="EVT-SIM-1", partition_key="TENANT-01")
+    container.read_item.side_effect = Exception("404")
+    assert dashboard.incident_persisted("EVT-SIM-2", "TENANT-01") is False
+
+
+def test_display_names_never_change_stored_values(monkeypatch):
+    import pandas as pd
+    records = pd.DataFrame([dict(event_id="E1", tenant_id="TENANT-01", site_id="SITE-01", source_id="CAM-1",
+                                 analytics_type="ppe_detection", event_type="vest_missing", severity="medium",
+                                 timestamp=pd.Timestamp("2026-10-20T10:00:00Z"), evidence_uri=None)])
+    before = records.copy(deep=True)
+    monkeypatch.setattr(dashboard, "test_records", records, raising=False)
+    at = AppTest.from_string("import soc_dashboard as app\napp.render_all_incidents(app.test_records)").run(timeout=20)
+    assert not at.exception
+    assert at.dataframe[0].value["Analytics"].tolist() == ["PPE Compliance"]
+    assert at.dataframe[0].value["Event"].tolist() == ["Safety vest missing"]
+    pd.testing.assert_frame_equal(records, before)  # stored values untouched
+
+
+def test_three_team_members_share_the_existing_login_concurrently(monkeypatch, tmp_path):
+    import pandas as pd
+    import local_auth
+    import test_local_auth as tla
+    monkeypatch.setattr(dashboard, "require_operator", REAL_REQUIRE_OPERATOR)
+    for name in local_auth.ENTRA_ONLY_FLAGS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("DASHBOARD_AUTH_MODE", "local")
+    # The one existing single-account secret, exactly as deployed today.
+    monkeypatch.setenv("DASHBOARD_LOCAL_AUTH_FILE", str(tla.write_credentials(tmp_path / "team.toml")))
+    monkeypatch.setattr(local_auth, "LIMITER", local_auth.AttemptLimiter())
+    df = pd.DataFrame([dict(event_id="E1", tenant_id="TENANT-01", site_id="SITE-01", source_id="CAM-1",
+                            analytics_type="intrusion_detection", event_type="intrusion_detected", severity="high",
+                            timestamp=pd.Timestamp("2026-10-20T10:00:00Z"), evidence_uri=None)])
+    df.attrs["refreshed_at"] = "2026-10-20T10:01:00+00:00"
+    monkeypatch.setattr(dashboard, "load_incidents", Mock(return_value=df))
+    sessions = [tla.sign_in(tla.run_app(), "admin", tla.PASSWORD) for _ in range(3)]
+    for at in sessions:
+        assert not at.exception and any('chip role-admin">ADMIN<' in m.value for m in at.markdown)
+    next(b for b in sessions[0].button if b.label == "Sign out").click().run(timeout=20)
+    assert [b.label for b in sessions[0].button] == ["Sign in"]
+    sessions[1].run(timeout=20)
+    assert any('chip role-admin">ADMIN<' in m.value for m in sessions[1].markdown)  # the others stay signed in

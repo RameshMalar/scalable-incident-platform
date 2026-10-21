@@ -55,3 +55,20 @@ async def test_without_a_global_chat_an_unrouted_send_is_refused_before_any_requ
     assert session.requests == []
     await notifier.notify(make_event(), telegram_chat_id="555000111")
     assert len(session.requests) == 1
+
+
+@pytest.mark.parametrize("responses", [
+    [FakeResponse(200, '{"ok":true}')],
+    [FakeResponse(400, '{"ok":false,"description":"Bad Request: chat not found"}')],
+])
+async def test_send_logs_never_contain_the_bot_token_or_chat_id(caplog, responses):
+    session = FakeSession(responses)
+    clock = FakeClock()
+    notifier = TelegramNotifier(bot_token="123456789:SECRET-token-value", session_factory=lambda: session,
+                                sleep=clock.sleep, clock=clock, require_global_chat=False)
+    with caplog.at_level("DEBUG"):
+        try:
+            await notifier.notify(make_event(event_purpose="e2e_test"), telegram_chat_id="555000111")
+        except Exception:
+            pass  # the failure path is what is being checked
+    assert "SECRET-token-value" not in caplog.text and "555000111" not in caplog.text

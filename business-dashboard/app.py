@@ -47,7 +47,7 @@ logger = logging.getLogger("dashboard")
 # LML SENTINEL brand, sampled from the artwork in assets/.
 PRODUCT_NAME = "LML SENTINEL"
 TAGLINE = "Always Watching. Always Ready."
-ACADEMIC_TITLE = "Smart Incident Monitoring Platform"
+ACADEMIC_TITLE = local_auth.ACADEMIC_TITLE
 BRAND_CYAN = "#0cf0fe"
 ASSETS = Path(__file__).with_name("assets")
 EMBLEM = ASSETS / "lml-sentinel-emblem.png"
@@ -161,7 +161,7 @@ def require_operator():
             return OperatorContext(identity.user_id,identity.directory_id,grant.tenants,grant.permissions,identity.expires_at,grant.role.value)
         return verifier.verify(identity_token)
     except (AccessDenied, AccessAPIUnavailable, InvalidAccess, ValueError, TypeError, OSError, KeyError):
-        st.title("Smart Incident Monitoring Platform")
+        st.subheader(ACADEMIC_TITLE)
         st.info("Sign in with your authorized Microsoft account. Access is denied until your identity and platform tenant permissions are verified.")
         if os.environ.get("DASHBOARD_AUTH_MODE", "oidc") == "easyauth":
             st.link_button("Sign in with Microsoft", "/.auth/login/aad")
@@ -1214,7 +1214,7 @@ def render_header(context, refreshed_at: str) -> None:
         + (f'<img class="brand-emblem" src="{emblem}" alt="{PRODUCT_NAME} emblem">' if emblem else "")
         + '<div><div class="brand-name">LML <span>SENTINEL</span></div>'
         f'<div class="brand-tagline">{TAGLINE}</div>'
-        f'<div class="soc-eyebrow">{ACADEMIC_TITLE} · Security Operations Center</div></div></div>'
+        f'<div class="soc-eyebrow">{ACADEMIC_TITLE}</div></div></div>'
         '<div class="soc-chips">'
         f'<span class="chip {role_class}">{escape(role.upper())}</span>'
         f'<span class="chip">{escape(operator_display_name(context))}</span>'
@@ -1225,7 +1225,7 @@ def render_header(context, refreshed_at: str) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title=f"{PRODUCT_NAME} · {ACADEMIC_TITLE}",
+    st.set_page_config(page_title=f"{PRODUCT_NAME} · Security Operations Center",
                        page_icon=str(FAVICON) if FAVICON.exists() else "🛡️", layout="wide")
     inject_css()
     context = require_operator()
