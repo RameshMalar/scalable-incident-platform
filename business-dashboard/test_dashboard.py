@@ -60,7 +60,7 @@ def test_kpi_rows_render_as_html_not_code_blocks(monkeypatch, records):
     at = run_ui('app.main()')
     assert not at.exception
     rows = [element.value for element in at.markdown if 'class="soc-kpis"' in element.value]
-    assert len(rows) == 2
+    assert len(rows) == 1
     assert sum(row.count('class="kpi-card"') for row in rows) == 8
     for row in rows:
         assert row.startswith('<div class="soc-kpis">') and '\n\n' not in row
@@ -71,21 +71,19 @@ def test_overview_and_filter_rerun(monkeypatch, records):
     at = run_ui('app.main()')
     assert not at.exception
     markup = '\n'.join(element.value for element in at.markdown)
-    assert 'Critical incidents' in markup and 'Latest incident' in markup
-    assert any(element.proto.label == 'Platform Observability' for element in at.get('link_button'))
-    assert 'Cosmos refreshed 2026-10-19 10:01 UTC' in markup
+    assert '>Critical<' in markup and 'Latest Incident' in markup
+    assert 'Azure Cosmos DB · refreshed 19 Oct 18:01 SGT' in markup  # stored UTC, shown in SGT
     tenant = next(element for element in at.checkbox if element.label == 'TENANT-02')
     tenant.uncheck().run()
     assert not at.exception
-    assert any(element.value.startswith('<div class="soc-filters">Tenants: TENANT-01 ·') for element in at.markdown)
+    assert any(element.value.startswith('<div class="soc-filters">Operational incidents · Tenants: TENANT-01 ·') for element in at.markdown)
 
 
 def test_empty_store_still_has_simulator_navigation(monkeypatch, records):
     monkeypatch.setattr(dashboard, 'load_incidents', Mock(return_value=records.iloc[:0]))
     at = run_ui('app.main()')
     assert not at.exception
-    assert any('No incidents match' in element.value for element in at.warning)
-    assert any(element.proto.label == 'Platform Observability' for element in at.get('link_button'))
+    assert any('No incidents match' in element.value for element in at.info)
 
 
 def test_feed_newest_first_and_metadata(monkeypatch, records):
@@ -97,7 +95,7 @@ def test_feed_newest_first_and_metadata(monkeypatch, records):
     ids = [element.value for element in at.text if element.value.startswith('Event ID:')]
     assert ids == ['Event ID: NEW', 'Event ID: OLD']
     assert any('CAM-2' in element.value and 'SITE-02' in element.value for element in at.caption)
-    assert any('2026-10-19 10:00:00 UTC' == element.value for element in at.caption)
+    assert any('2026-10-19 18:00:00 SGT' == element.value for element in at.caption)
     assert any('TEST · e2e_test' == element.value for element in at.caption)
 
 

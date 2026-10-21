@@ -54,7 +54,7 @@ def capture_navigation(monkeypatch):
 
     def navigation(pages, **kwargs):
         sections.clear()
-        sections.update({name: [page.title for page in group] for name, group in pages.items()})
+        sections["pages"] = [page.title for page in pages]
         return SimpleNamespace(run=lambda: None)
     monkeypatch.setattr(dashboard.st, "navigation", navigation)
     return sections
@@ -119,24 +119,24 @@ def test_admin_and_viewer_see_different_navigation(two_roles, monkeypatch, recor
     sections = capture_navigation(monkeypatch)
     at = tla.sign_in(tla.run_app(), "admin", PASSWORD)
     assert not at.exception
-    assert sections == {"Monitor": ["Overview", "All incidents", "Evidence"],
-                        "Operations": ["Simulate Event", "Telegram subscribers"], "Admin": ["Administration"]}
-    assert any('chip role-admin">ADMIN<' in m.value for m in at.markdown)
+    assert sections["pages"] == ["Overview", "All Incidents", "Evidence Gallery", "Simulate Event",
+                                 "Telegram Subscriptions"]
+    markup = " ".join(m.value for m in at.markdown)
+    assert "ADMIN" not in markup and "Administration" not in sections["pages"]  # no admin badge or page
 
     at = tla.sign_in(tla.run_app(), "soc-viewer", VIEWER_PASSWORD)
     assert not at.exception
-    assert sections == {"Monitor": ["Overview", "All incidents", "Evidence"]}
-    assert any('chip role-viewer">VIEWER<' in m.value for m in at.markdown)
+    assert sections["pages"] == ["Overview", "All Incidents", "Evidence Gallery"]
 
 
 def test_role_change_takes_effect_on_the_next_request(two_roles, monkeypatch, records):
     monkeypatch.setattr(dashboard, "load_incidents", Mock(return_value=records))
     sections = capture_navigation(monkeypatch)
     at = tla.sign_in(tla.run_app(), "admin", PASSWORD)
-    assert "Admin" in sections
+    assert "Simulate Event" in sections["pages"]
     write_accounts(two_roles, [("admin", PASSWORD, "viewer")])
     at.run(timeout=20)
-    assert "Admin" not in sections and "Operations" not in sections
+    assert "Simulate Event" not in sections["pages"] and "Telegram Subscriptions" not in sections["pages"]
     write_accounts(two_roles, [("someone-else", PASSWORD, "admin")])
     at.run(timeout=20)
     assert [b.label for b in at.button] == ["Sign in"]
@@ -207,11 +207,15 @@ def test_table_shows_severity_with_shape_and_label(records):
 # --- overview -----------------------------------------------------------------------------
 
 def test_eight_kpis_and_rising_incidents_read_as_worse(records):
+    import pandas as pd
     now = pd.Timestamp("2026-10-20T12:00:00Z").to_pydatetime()
-    cards = dashboard.overview_kpis(records, records.iloc[:1], now=now)
+    current, previous = pd.concat([records] * 10), pd.concat([records] * 4)
+    cards = dashboard.overview_kpis(current, previous, now=now)
     assert len(cards) == 8
-    assert dashboard.TREND_WORSE in cards[0]  # 3 incidents vs 1 before: up is bad
-    assert "Last 24 hours" in cards[4] and ">1<" in cards[4]
+    assert dashboard.TREND_WORSE in cards[0]  # 30 incidents vs 12 before: up is bad
+    assert "Last 24 hours" in cards[4] and ">10<" in cards[4]
+    # A percentage against fewer than MIN_TREND_BASE incidents is not shown.
+    assert dashboard.pct_change(42, 2) is None and dashboard.pct_change(20, 10) == 100
     falling = dashboard.kpi_card("Total incidents", "1", "◆", "#000", -50.0)
     assert dashboard.TREND_BETTER in falling
 
@@ -219,7 +223,7 @@ def test_eight_kpis_and_rising_incidents_read_as_worse(records):
 def test_overview_charts_render(monkeypatch, records):
     at = run_page(monkeypatch, "viewer", "app.render_overview(app.test_records, app.test_records.iloc[:0])", records)
     assert not at.exception
-    assert len(at.get("plotly_chart")) == 4
+    assert len(at.get("plotly_chart")) == 5
 
 
 def test_severity_palette_is_complete_and_badges_escape():

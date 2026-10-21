@@ -179,7 +179,6 @@ def test_sign_in_shows_dashboard_and_sign_out_returns_to_form(local_mode, monkey
     at = sign_in(run_app(), "admin", PASSWORD)
     assert not at.exception
     assert sum(m.value.count('class="kpi-card"') for m in at.markdown) == 8
-    assert any(b.proto.label == "Platform Observability" for b in at.get("link_button"))
     sign_out = next(b for b in at.button if b.label == "Sign out")
     sign_out.click().run(timeout=20)
     assert [b.label for b in at.button] == ["Sign in"]

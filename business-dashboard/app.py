@@ -304,11 +304,18 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        .block-container {{ padding-top: 3rem; max-width: 1600px; }}
+        .block-container {{ padding-top: 1.5rem; max-width: 1600px; }}
         .stApp {{ background: {PAGE_BG}; }}
         h1, h2, h3 {{ letter-spacing: -0.02em; }}
         [data-testid="stSidebar"] {{ border-right: 1px solid rgba(255,255,255,0.08); }}
+        [data-testid="stSidebarUserContent"] > [data-testid="stVerticalBlock"] {{ min-height:calc(100dvh - 110px); }}
+        .st-key-sentinel_signout {{ margin-top:auto; padding-top:24px; padding-bottom:8px; }}
 
+        [data-testid="stPlotlyChart"] {{ border:1px solid {GRIDLINE}; border-radius:10px; overflow:hidden; }}
+        @media(max-width:1000px) {{
+          .st-key-overview_analytics [data-testid="stHorizontalBlock"], .st-key-overview_operations > [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] {{ flex-wrap:wrap; }}
+          .st-key-overview_analytics [data-testid="stColumn"], .st-key-overview_operations > [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{ min-width:min(300px,100%); flex:1 1 300px; }}
+        }}
         .soc-header {{
             display:flex; flex-wrap:wrap; gap:12px 24px; align-items:flex-end; justify-content:space-between;
             padding: 4px 0 14px; margin-bottom: 14px; border-bottom: 1px solid {GRIDLINE};
@@ -336,12 +343,14 @@ def inject_css() -> None:
         .side-brand .brand-tagline {{ font-size:11.5px; color:{INK_MUTED}; }}
         @media(max-width:600px) {{ .brand-emblem {{ width:44px; }} .brand-name {{ font-size:20px; }} }}
 
-        .soc-kpis {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-bottom:14px; }}
-        .soc-kpis .kpi-card {{ border-top:3px solid var(--accent); min-height:132px; }}
-        @media(max-width:1100px) {{ .soc-kpis {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
+        .soc-kpis {{ display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); gap:10px; margin-bottom:12px; }}
+        .soc-kpis .kpi-card {{ border-top:3px solid var(--accent); min-height:116px; box-shadow:0 0 16px rgba(0,210,254,.07); }}
+        @media(max-width:1400px) {{ .soc-kpis {{ grid-template-columns:repeat(4,minmax(0,1fr)); }} }}
+        @media(max-width:900px) {{ .soc-kpis {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
         @media(max-width:600px) {{ .soc-kpis {{ grid-template-columns:1fr; }} .soc-title {{ font-size:22px; }} }}
 
         .kpi-card {{
+            min-width:0;
             background: {SURFACE}; color: {INK_PRIMARY}; border: 1px solid rgba(255,255,255,0.10);
             border-radius: 12px; padding: 14px 16px;
         }}
@@ -353,7 +362,7 @@ def inject_css() -> None:
         .kpi-trend {{ font-size: 12px; font-variant-numeric: tabular-nums; font-weight:600; }}
         .kpi-trend.flat {{ color: {INK_MUTED}; font-weight:400; }}
         .kpi-label {{ font-size: 12.5px; color: {INK_SECONDARY}; margin-bottom: 2px; }}
-        .kpi-value {{ font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap:anywhere; }}
+        .kpi-value {{ font-size: clamp(16px,1.6vw,24px); font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap:anywhere; }}
         .kpi-sub {{ font-size: 11.5px; color: {INK_MUTED}; margin-top: 4px; }}
 
         .panel {{
@@ -382,6 +391,9 @@ def inject_css() -> None:
         .insight-row .t {{ font-size: 13.5px; margin-bottom: 2px; }}
         .insight-row .d {{ font-size: 12.5px; color: {INK_MUTED}; }}
 
+        .flow {{ display:inline-flex; flex-wrap:wrap; gap:6px; align-items:center; padding:8px 12px; border-radius:10px;
+                 background:{SURFACE}; border:1px solid rgba(255,255,255,0.10); color:{INK_PRIMARY}; font-weight:600; margin:2px 0 8px; }}
+        .flow span {{ color:{ACCENT}; }}
         .user-card {{ background:{SURFACE}; border:1px solid rgba(255,255,255,0.10); border-radius:10px; padding:10px 12px; margin-bottom:8px; }}
         .user-card .u {{ font-weight:650; color:{INK_PRIMARY}; overflow-wrap:anywhere; }}
         .user-card .m {{ font-size:12px; color:{INK_MUTED}; margin-top:2px; }}
@@ -440,8 +452,13 @@ def kpi_card(label: str, value: str, icon: str, color: str, delta: float | None,
     )
 
 
+# A percentage against a handful of incidents reads as alarming and means little;
+# below this base the card shows the previous count instead of a percentage.
+MIN_TREND_BASE = 10
+
+
 def pct_change(current: int, previous: int) -> float | None:
-    if previous == 0:
+    if previous < MIN_TREND_BASE:
         return None
     return (current - previous) / previous * 100
 
@@ -478,10 +495,45 @@ def is_test_purpose(value) -> bool:
     return value in TEST_PURPOSES
 
 
+# Stored timestamps stay UTC; people read Singapore time (no daylight saving).
+SGT = timezone(timedelta(hours=8), "SGT")
+DATASETS = ("Operational incidents", "Include load-test traffic")
+
+
+def fmt_time(ts, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
+    ts = pd.Timestamp(ts)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    return ts.tz_convert(SGT).strftime(fmt) + " SGT"
+
+
+def to_display_time(frame: pd.DataFrame) -> pd.DataFrame:
+    shown = frame.assign(timestamp=frame["timestamp"].dt.tz_convert(SGT))
+    shown.attrs = dict(frame.attrs)
+    return shown
+
+
+def load_test_mask(frame: pd.DataFrame) -> pd.Series:
+    """Load-test traffic, classified as the Worker and Notification service do:
+    event_purpose "load_test", or -- for events from before event_purpose
+    existed -- no purpose and an EVT-LOAD- event ID."""
+    purpose = frame["event_purpose"] if "event_purpose" in frame else pd.Series(None, index=frame.index, dtype=object)
+    legacy = purpose.isna() & frame["event_id"].astype(str).str.startswith("EVT-LOAD-")
+    return (purpose == "load_test") | legacy
+
+
+def purpose_label(purpose, event_id, demo=False) -> str:
+    if demo is True:
+        return "DEMO · session only"
+    if purpose == "load_test" or (not isinstance(purpose, str) and str(event_id).startswith("EVT-LOAD-")):
+        return "Load test"
+    return f"TEST · {purpose}" if is_test_purpose(purpose) else "Incident"
+
+
 def render_latest_incidents(filtered: pd.DataFrame, limit: int = 8) -> None:
     require_operator()
     st.subheader("Latest persisted incidents")
-    st.caption("Newest event timestamps first · Cosmos DB records only · all times UTC")
+    st.caption("Newest first · Azure Cosmos DB records, plus DEMO incidents from this session · times in SGT")
     if filtered.empty:
         st.info("No persisted incidents match these filters.")
         return
@@ -501,7 +553,7 @@ def render_latest_incidents(filtered: pd.DataFrame, limit: int = 8) -> None:
                 st.markdown(severity_badge(row["severity"]), unsafe_allow_html=True)
                 st.text(f"{event_name(row['event_type'])} · {analytics_name(row['analytics_type'])}")
                 st.caption(f"Tenant {row['tenant_id']} · Site {row['site_id']} · Camera/source {row.get('source_id', 'Unavailable')}")
-                st.caption(row["timestamp"].strftime("%Y-%m-%d %H:%M:%S UTC"))
+                st.caption(fmt_time(row["timestamp"]))
                 purpose = row.get("event_purpose", "incident")
                 st.caption("DEMO · this session only, not stored" if is_demo(row)
                            else f"TEST · {purpose}" if is_test_purpose(purpose) else "Purpose: incident")
@@ -573,9 +625,9 @@ def _style_figure(fig: go.Figure, title: str, height: int) -> go.Figure:
 
 
 def daily_severity_figure(filtered: pd.DataFrame) -> go.Figure:
-    days = filtered["timestamp"].dt.floor("D")
+    days = filtered["timestamp"].dt.tz_convert(SGT).dt.floor("D")
     counts = (filtered.assign(day=days).groupby(["day", "severity"]).size().unstack(fill_value=0))
-    full = pd.date_range(days.min(), days.max(), freq="D", tz="UTC")
+    full = pd.date_range(days.min(), days.max(), freq="D", tz=days.dt.tz)
     counts = counts.reindex(full, fill_value=0)
     fig = go.Figure()
     # Critical sits on the baseline, where it is easiest to compare day to day.
@@ -590,7 +642,7 @@ def daily_severity_figure(filtered: pd.DataFrame) -> go.Figure:
     fig.update_layout(barmode="stack", bargap=0.25, barcornerradius=4, hovermode="x unified",
                       legend_traceorder="normal")
     fig.update_xaxes(hoverformat="%a %d %b %Y")
-    return _style_figure(fig, "Incidents per day by severity (UTC)", 280)
+    return _style_figure(fig, "Incidents per day by severity (SGT)", 280)
 
 
 def ranked_bar_figure(counts: pd.Series, title: str, noun: str) -> go.Figure:
@@ -611,7 +663,7 @@ WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
 def activity_heatmap_figure(filtered: pd.DataFrame) -> go.Figure:
-    grid = (filtered.assign(weekday=filtered["timestamp"].dt.dayofweek, hour=filtered["timestamp"].dt.hour)
+    grid = (filtered.assign(weekday=filtered["timestamp"].dt.tz_convert(SGT).dt.dayofweek, hour=filtered["timestamp"].dt.tz_convert(SGT).dt.hour)
             .groupby(["weekday", "hour"]).size().unstack(fill_value=0)
             .reindex(index=range(7), columns=range(24), fill_value=0))
     fig = go.Figure(go.Heatmap(
@@ -619,11 +671,11 @@ def activity_heatmap_figure(filtered: pd.DataFrame) -> go.Figure:
         # One hue, dark (quiet) to bright (busy) on the dark surface.
         colorscale=[[0, "#0b2744"], [0.5, "#0a7fa8"], [1, "#5fe6ff"]],
         xgap=2, ygap=2, colorbar=dict(title=dict(text="Incidents", font=dict(color=INK_MUTED)), tickfont=dict(color=INK_MUTED), thickness=10),
-        hovertemplate="%{y} %{x}:00 UTC · %{z} incidents<extra></extra>",
+        hovertemplate="%{y} %{x}:00 SGT · %{z} incidents<extra></extra>",
     ))
     fig.update_yaxes(autorange="reversed", showgrid=False)
-    fig.update_xaxes(title=dict(text="Hour of day (UTC)", font=dict(color=INK_MUTED)))
-    return _style_figure(fig, "When incidents happen", 300)
+    fig.update_xaxes(title=dict(text="Hour of day (SGT)", font=dict(color=INK_MUTED)))
+    return _style_figure(fig, "Incident Heatmap (Hour × Weekday)", 300)
 
 
 def overview_kpis(filtered: pd.DataFrame, previous: pd.DataFrame, now: datetime | None = None) -> list[str]:
@@ -637,63 +689,93 @@ def overview_kpis(filtered: pd.DataFrame, previous: pd.DataFrame, now: datetime 
                         pct_change(value, prev_value) if prev_value is not None else None, sub)
 
     total = len(filtered)
-    last_day = int((filtered["timestamp"] > now - timedelta(hours=24)).sum())
+    last_day = int(((filtered["timestamp"] > now - timedelta(hours=24)) & (filtered["timestamp"] <= now)).sum())
     day_before = int(((filtered["timestamp"] > now - timedelta(hours=48))
                       & (filtered["timestamp"] <= now - timedelta(hours=24))).sum())
     latest = filtered["timestamp"].max()
     cameras = filtered["source_id"].nunique() if "source_id" in filtered else 0
     return [
-        card("Total incidents", total, len(previous), "◆", ACCENT, ""),
-        card("Critical incidents", count(filtered, "critical"), count(previous, "critical"), SEVERITY_ICONS["critical"], SEVERITY_COLORS["critical"], ""),
-        card("High severity", count(filtered, "high"), count(previous, "high"), SEVERITY_ICONS["high"], SEVERITY_COLORS["high"], ""),
-        card("Medium severity", count(filtered, "medium"), count(previous, "medium"), SEVERITY_ICONS["medium"], SEVERITY_COLORS["medium"], ""),
-        kpi_card("Last 24 hours", str(last_day), "◷", ACCENT, pct_change(last_day, day_before), f"{day_before} in the 24 hours before"),
-        kpi_card("Sites affected", str(filtered["site_id"].nunique()), "⌂", ACCENT,
+        card("Total Incidents", total, len(previous), "◆", ACCENT, ""),
+        card("Critical", count(filtered, "critical"), count(previous, "critical"), SEVERITY_ICONS["critical"], SEVERITY_COLORS["critical"], ""),
+        card("High", count(filtered, "high"), count(previous, "high"), SEVERITY_ICONS["high"], SEVERITY_COLORS["high"], ""),
+        card("Medium", count(filtered, "medium"), count(previous, "medium"), SEVERITY_ICONS["medium"], SEVERITY_COLORS["medium"], ""),
+        kpi_card("Last 24 hours", str(last_day), "◷", ACCENT, None, "within selected range · last 24 hours"),
+        kpi_card("Sites", str(filtered["site_id"].nunique()), "⌂", ACCENT,
                  pct_change(filtered["site_id"].nunique(), previous["site_id"].nunique()),
                  f"across {filtered['tenant_id'].nunique()} tenants"),
-        kpi_card("Cameras reporting", str(cameras), "◉", ACCENT, None, "distinct sources in range"),
-        kpi_card("Latest incident · UTC", latest.strftime("%d %b %H:%M") if pd.notna(latest) else "No incidents", "↻", ACCENT, None,
+        kpi_card("Cameras Reporting", str(cameras), "◉", ACCENT, None, "distinct sources in range"),
+        kpi_card("Latest Incident", fmt_time(latest, "%d %b %H:%M")[:-4] if pd.notna(latest) else "No incidents", "↻", ACCENT, None,
                  relative_time(latest) if pd.notna(latest) else "nothing in range"),
     ]
 
 
-def render_overview(filtered: pd.DataFrame, previous: pd.DataFrame) -> None:
+def severity_mix_figure(filtered: pd.DataFrame) -> go.Figure:
+    counts = filtered["severity"].value_counts()
+    order = [s for s in SEVERITY_ORDER if s in counts] + sorted(set(counts.index) - set(SEVERITY_ORDER))
+    fig = go.Figure(go.Pie(labels=[s.title() for s in order], values=[int(counts[s]) for s in order],
+                           hole=.68, sort=False, textinfo="percent", textposition="inside",
+                           marker=dict(colors=[SEVERITY_COLORS.get(s, INK_MUTED) for s in order]),
+                           hovertemplate="%{label}: %{value} (%{percent})<extra></extra>"))
+    fig.add_annotation(text=f"<b>{len(filtered):,}</b><br>Incidents", x=.5, y=.5, showarrow=False,
+                       font=dict(color=INK_PRIMARY, size=18))
+    return _style_figure(fig, "Severity Mix", 300)
+
+
+def render_latest_overview(filtered: pd.DataFrame) -> None:
+    st.markdown("**Latest Incidents**")
+    for position, (_, row) in enumerate(ordered_incidents(filtered).head(5).iterrows()):
+        image_col, text_col, action_col = st.columns([1, 4, 1])
+        uri = row.get("evidence_uri")
+        image = load_evidence(uri) if isinstance(uri, str) and uri else None
+        with image_col:
+            if image:
+                st.image(image, width="stretch")
+            else:
+                st.caption("No image")
+        with text_col:
+            st.markdown(f"{escape(analytics_name(row['analytics_type']))} {severity_badge(row['severity'])}", unsafe_allow_html=True)
+            st.caption(f"{row['site_id']} · {row.get('source_id', '—')} · {relative_time(row['timestamp'])}")
+        with action_col:
+            with st.popover("›", help="Incident details"):
+                render_incident_detail(row)
+
+
+def render_overview(filtered: pd.DataFrame, previous: pd.DataFrame, simulate_page=None) -> None:
     require_operator()
+    if simulate_page is not None:
+        title_col, button_col = st.columns([4, 1], vertical_alignment="center")
+        with title_col:
+            st.subheader("Overview")
+        with button_col:
+            st.link_button("Simulate Event", INGESTION_SIMULATOR_URL, type="primary", icon=":material/open_in_new:", width="stretch")
     cards = overview_kpis(filtered, previous)
-    st.markdown('<div class="soc-kpis">' + ''.join(cards[:4]) + '</div>', unsafe_allow_html=True)
-    st.markdown('<div class="soc-kpis">' + ''.join(cards[4:]) + '</div>', unsafe_allow_html=True)
-    st.caption("Trends compare with the previous period of equal length; for incident counts, ↑ is shown as worse. "
-               "Counts include every persisted event purpose within the current filters.")
-
+    st.markdown('<div class="soc-kpis">' + ''.join(cards) + '</div>', unsafe_allow_html=True)
+    st.caption("Selected operational range · SGT · trends compare equal periods, with a previous count of at least 10.")
     if filtered.empty:
-        st.warning("No incidents match the current filters.")
+        st.info("No incidents match the current filters.")
         return
-
-    st.plotly_chart(daily_severity_figure(filtered), width="stretch", config={"displayModeBar": False})
-
-    left, right = st.columns([1.2, 1])
-    with left:
-        by_type = filtered["analytics_type"].map(analytics_name).value_counts()
-        st.plotly_chart(ranked_bar_figure(by_type, "Incidents by analytics type", "incidents"),
-                        width="stretch", config={"displayModeBar": False})
-    with right:
-        by_severity = filtered["severity"].value_counts().reindex(SEVERITY_ORDER).dropna()
-        labels = {sev: f"{SEVERITY_ICONS[sev]} {sev.title()}" for sev in SEVERITY_ORDER}
-        st.markdown(bar_panel("Severity mix", by_severity.rename(index=labels),
-                              {labels[sev]: SEVERITY_COLORS[sev] for sev in SEVERITY_ORDER}), unsafe_allow_html=True)
-
-    left, right = st.columns([1.2, 1])
-    with left:
-        st.plotly_chart(activity_heatmap_figure(filtered), width="stretch", config={"displayModeBar": False})
-    with right:
-        st.plotly_chart(ranked_bar_figure(filtered["site_id"].value_counts().head(8), "Busiest sites", "incidents"),
-                        width="stretch", config={"displayModeBar": False})
-
-    lower_left, lower_right = st.columns([1.3, 1])
-    with lower_left:
-        render_latest_incidents(filtered)
-    with lower_right:
-        st.markdown(key_insights_panel(filtered, previous), unsafe_allow_html=True)
+    with st.container(key="overview_analytics"):
+        day_col, type_col, severity_col = st.columns([1.2, 1.1, 1], gap="small")
+        with day_col:
+            st.plotly_chart(daily_severity_figure(filtered), width="stretch", config={"displayModeBar": False})
+        with type_col:
+            by_type = filtered["analytics_type"].map(analytics_name).value_counts()
+            fig = ranked_bar_figure(by_type, "Incidents by Analytics Type", "incidents")
+            fig.update_layout(height=300)
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        with severity_col:
+            st.plotly_chart(severity_mix_figure(filtered), width="stretch", config={"displayModeBar": False})
+    with st.container(key="overview_operations"):
+        heat_col, site_col, latest_col = st.columns([1.2, 1, 1.2], gap="small")
+        with heat_col:
+            st.plotly_chart(activity_heatmap_figure(filtered), width="stretch", config={"displayModeBar": False})
+        with site_col:
+            fig = ranked_bar_figure(filtered["site_id"].value_counts().head(5), "Top 5 Sites by Incidents", "incidents")
+            fig.update_layout(height=300)
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        with latest_col:
+            with st.container(border=True, height=340):
+                render_latest_overview(filtered)
 
 
 PURPOSE_FILTERS = ("All purposes", "Real incidents", "Tests only")
@@ -721,10 +803,11 @@ def filter_incidents(frame: pd.DataFrame, query: str = "", severities=None, purp
     if severities is not None:
         result = result[result["severity"].isin(severities)]
     purposes = result["event_purpose"] if "event_purpose" in result else pd.Series("incident", index=result.index)
+    tests = purposes.isin(TEST_PURPOSES) | load_test_mask(result)
     if purpose == PURPOSE_FILTERS[1]:
-        result = result[~purposes.isin(TEST_PURPOSES)]
+        result = result[~tests]
     elif purpose == PURPOSE_FILTERS[2]:
-        result = result[purposes.isin(TEST_PURPOSES)]
+        result = result[tests]
     has_image = (result["evidence_uri"].apply(lambda uri: isinstance(uri, str) and bool(uri))
                  if "evidence_uri" in result else pd.Series(False, index=result.index))
     if evidence == EVIDENCE_FILTERS[1]:
@@ -742,7 +825,7 @@ def filter_incidents(frame: pd.DataFrame, query: str = "", severities=None, purp
 def incident_table(frame: pd.DataFrame) -> pd.DataFrame:
     column = lambda name, default="": frame[name] if name in frame else pd.Series(default, index=frame.index)
     return pd.DataFrame({
-        "Time (UTC)": frame["timestamp"],
+        "Time (SGT)": frame["timestamp"].dt.tz_convert(SGT).dt.tz_localize(None),
         "Severity": frame["severity"].map(lambda sev: f"{SEVERITY_ICONS.get(str(sev).lower(), '○')} {str(sev).upper()}"),
         "Event ID": frame["event_id"],
         "Analytics": frame["analytics_type"].map(analytics_name),
@@ -750,8 +833,7 @@ def incident_table(frame: pd.DataFrame) -> pd.DataFrame:
         "Tenant": frame["tenant_id"],
         "Site": column("site_id"),
         "Camera": column("source_id"),
-        "Purpose": [("DEMO · session only" if demo is True else f"TEST · {p}" if is_test_purpose(p) else "Incident")
-                    for p, demo in zip(column("event_purpose", "incident").fillna("incident"), column("demo", False))],
+        "Purpose": [purpose_label(p, e, d) for p, e, d in zip(column("event_purpose", None), frame["event_id"], column("demo", False))],
         "Evidence": column("evidence_uri", None).map(lambda uri: isinstance(uri, str) and bool(uri)),
     })
 
@@ -786,7 +868,7 @@ def render_incident_detail(row: pd.Series) -> None:
             if isinstance(row.get("description"), str):
                 st.text(row["description"])
             st.caption(f"Tenant {row['tenant_id']} · Site {row.get('site_id', '')} · Camera/source {row.get('source_id', 'Unavailable')}")
-            st.caption(row["timestamp"].strftime("%Y-%m-%d %H:%M:%S UTC") + f" · {relative_time(row['timestamp'])}")
+            st.caption(fmt_time(row["timestamp"]) + f" · {relative_time(row['timestamp'])}")
 
 
 def render_all_incidents(filtered: pd.DataFrame) -> None:
@@ -819,7 +901,7 @@ def render_all_incidents(filtered: pd.DataFrame) -> None:
         incident_table(matches), width="stretch", hide_index=True, height=min(560, 38 + 35 * max(len(matches), 1)),
         on_select="rerun", selection_mode="single-row", key="incident_table",
         column_config={
-            "Time (UTC)": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm:ss"),
+            "Time (SGT)": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm:ss"),
             "Evidence": st.column_config.CheckboxColumn(help="Incident references an evidence image"),
         },
     )
@@ -971,6 +1053,7 @@ def checkbox_filter(label: str, options: list, key: str) -> list:
 
 
 SIM_SITES = ("SITE-01", "SITE-02", "SITE-03")
+SIM_CAMERAS = ("CAM-SIM-01", "CAM-SIM-02", "CAM-SIM-03")
 CUSTOM_CHOICE = "Custom analytics…"
 SIM_MIN_INTERVAL_SECONDS = 30
 SIM_CHECK_INTERVAL_SECONDS = 5
@@ -1014,6 +1097,18 @@ DEMO_MIN_INTERVAL_SECONDS = 3
 def demo_tenant(context) -> str:
     preferred = os.environ.get("SIMULATOR_TENANT", "TENANT-01")
     return preferred if preferred in context.tenants else context.tenants[0]
+
+
+INGESTION_SIMULATOR_URL = "https://incident-ingestion.calmmushroom-4789bfc0.malaysiawest.azurecontainerapps.io/"
+
+
+def render_ingestion_launcher() -> None:
+    context = require_operator()
+    if not context.can_simulate:
+        st.error("Simulation permission is required.")
+        return
+    st.subheader("Simulate Event")
+    st.link_button("Open Simulate Event", INGESTION_SIMULATOR_URL, icon=":material/open_in_new:")
 
 
 def render_simulator() -> None:
@@ -1060,10 +1155,15 @@ def render_simulator() -> None:
             event = events[st.selectbox("Event", list(events), key=f"sim_event_{spec.type}")]
             analytics_type, event_type, default_severity = spec.type, event.type, event.severity
             description, pool, valid = event.description, event.evidence_pool, True
+        description = st.text_area("Description", value=description, max_chars=1000,
+                                   key=f"sim_description_{analytics_type}_{event_type}")
         severity = st.selectbox("Severity", SEVERITIES, index=SEVERITIES.index(default_severity),
                                 format_func=lambda sev: f"{SEVERITY_ICONS[sev]} {sev.title()}",
                                 key=f"sim_severity_{analytics_type}_{event_type}")
         site = st.selectbox("Site", SIM_SITES, key="sim_site")
+        pool_items = simulator.load_evidence_pools().get(pool) if pool else None
+        cameras = sorted({item["source_id"] for item in pool_items}) if pool_items else list(SIM_CAMERAS)
+        camera = st.selectbox("Camera / source", cameras, key=f"sim_camera_{pool or 'none'}")
         if choice == CUSTOM_CHOICE and (analytics_type or event_type) and not valid:
             st.error("Custom names use lowercase letters, digits and underscores: 3–48 characters, starting with a letter.")
 
@@ -1071,7 +1171,7 @@ def render_simulator() -> None:
     people = None
     with info_col:
         with st.container(border=True):
-            st.markdown("**Would be alerted on Telegram**" if demo else "**Who will be alerted**")
+            st.markdown("**Telegram**")
             subscribers = subscribers_for((tenant,))
             if subscribers is None:
                 st.warning("Subscriber list unavailable. Delivery is decided by the Worker's routing.")
@@ -1080,14 +1180,14 @@ def render_simulator() -> None:
             else:
                 people = telegram_subscribers.recipients(subscribers, tenant, event_type)
                 if people:
-                    st.success(f"{len(people)} Telegram subscriber{'s' if len(people) != 1 else ''}: {_recipient_names(people)}")
+                    st.success(f"Would notify {len(people)}: {_recipient_names(people)}")
                 else:
-                    st.info("No subscriber for this event type, so no Telegram alert would be sent.")
+                    st.info("No eligible subscribers for this event type.")
             if demo:
-                st.caption("Demo mode: this is the real routing data, but no message is sent.")
+                st.caption("From the real routing records. DEMO incidents are never delivered.")
             st.markdown("**Evidence**")
             if pool and pools.get(pool) and os.environ.get("EVIDENCE_BLOB_ENDPOINT"):
-                st.caption(f"A stored photograph from the {pool} set ({len(pools[pool])} images) is attached.")
+                st.caption(f"A stored photograph from {camera} ({pool} set) is attached.")
             else:
                 st.caption("No evidence image for this type; the alert is text only.")
             st.caption(f"Tenant {tenant} · purpose e2e_test · one incident per confirmation")
@@ -1117,7 +1217,7 @@ def render_simulator() -> None:
                 tenant_id=tenant, site_id=site, evidence_pool=pools.get(pool) if pool else None,
                 evidence_endpoint=os.environ.get("EVIDENCE_BLOB_ENDPOINT", ""),
                 evidence_container=os.environ.get("EVIDENCE_CONTAINER", "evidence"),
-                id_prefix=simulator.DEMO_PREFIX if demo else "EVT-SIM-")
+                id_prefix=simulator.DEMO_PREFIX if demo else "EVT-SIM-", source_id=camera)
             if demo:
                 incidents = demo_incidents()
                 incidents.insert(0, event)
@@ -1134,8 +1234,8 @@ def render_simulator() -> None:
         if last:
             st.success(f"DEMO incident {last['event_id']} created in this session. It now appears on Overview, "
                        "All incidents and Evidence, marked DEMO. Nothing was sent to ingestion or stored in Cosmos DB.")
-            st.info(f"Telegram (not sent in demo mode): would alert {last['alerted']}." if last["alerted"]
-                    else "Telegram (not sent in demo mode): no subscriber for this event type.")
+            st.info(f"Telegram: would notify {last['alerted']}. Not sent: DEMO incidents are never delivered."
+                    if last["alerted"] else "Telegram: no eligible subscribers for this event type. Nothing is sent in demo mode.")
         count = len(demo_incidents())
         if count and st.button(f"Clear {count} demo incident{'s' if count != 1 else ''}", key="sim_clear_demo"):
             st.session_state[DEMO_KEY] = []
@@ -1192,37 +1292,55 @@ def _send_live(config, event) -> None:
         logger.info("simulator event accepted event_id=%s", event["event_id"])
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_subscription_rows(tenants: tuple[str, ...]) -> list:
+    return telegram_subscribers.load_subscription_rows(get_database(), tenants)
+
+
+def subscription_rows_for(tenants) -> list | None:
+    try:
+        return _load_subscription_rows(tuple(tenants))
+    except Exception:  # read-only view; the Worker remains the authority
+        logger.warning("Telegram subscription data unavailable")
+        return None
+
+
 def render_telegram_subscribers() -> None:
     context = require_operator()
     if not getattr(context, "is_admin", False):
         st.error("Administrator role is required.")
         return
-    st.subheader("Telegram subscribers")
-    st.caption("Alerts are subscriber-only. An incident is sent to a chat only when that chat has an enabled "
-               "subscription for the incident's tenant and exact event type, and an operator has approved the chat "
-               "for that tenant. Load-test traffic is never sent. This page is read-only.")
-    subscribers = subscribers_for(context.tenants)
-    if subscribers is None:
-        st.error("Subscriber data could not be read.")
+    st.subheader("Telegram Subscriptions")
+    st.markdown(
+        '<div class="flow">Incident event <span>→</span> Subscription routing <span>→</span> Worker '
+        '<span>→</span> Telegram notification</div>', unsafe_allow_html=True)
+    st.caption("A notification is sent only for an enabled subscription that matches the incident's tenant and exact "
+               "event type, to a chat an operator has approved for that tenant. Load-test traffic is never sent. "
+               "These are the real routing records; this page is read-only and DEMO incidents are never delivered.")
+    rows = subscription_rows_for(context.tenants)
+    if rows is None:
+        st.error("Subscription data could not be read.")
         return
-    active = [s for s in subscribers if s.receives_alerts]
-    covered = sorted({event for s in active for event in s.event_types})
+    eligible = [r for r in rows if r.eligible]
     st.markdown('<div class="soc-kpis">' + "".join([
-        kpi_card("Receiving alerts", str(len(active)), "✓", ACCENT, None, "approved and subscribed"),
-        kpi_card("People", str(sum(s.kind == "Person" for s in active)), "◉", ACCENT, None, "private chats"),
-        kpi_card("Groups", str(sum(s.kind == "Group" for s in active)), "◎", ACCENT, None, "group chats"),
-        kpi_card("Event types covered", str(len(covered)), "◆", ACCENT, None, "with at least one subscriber"),
+        kpi_card("Subscriptions", str(len(rows)), "≡", ACCENT, None, "Telegram records in your tenants"),
+        kpi_card("Eligible", str(len(eligible)), "✓", ACCENT, None, "enabled and approved"),
+        kpi_card("Destinations", str(len({(r.tenant_id, r.chat) for r in eligible})), "◎", ACCENT, None, "chats that would be notified"),
+        kpi_card("Event types covered", str(len({r.event_type for r in eligible})), "◆", ACCENT, None, "with an eligible subscription"),
     ]) + '</div>', unsafe_allow_html=True)
-    if not subscribers:
-        st.info("No Telegram destination is configured for your tenants.")
+    if not rows:
+        st.info("No Telegram subscription exists for your tenants.")
         return
+    catalog = load_catalog()
     st.dataframe(pd.DataFrame([{
-        "Tenant": s.tenant_id, "Name": s.label or "—", "Chat": s.chat, "Type": s.kind, "Approved": s.approved,
-        "Alerts for": ", ".join(event_name(e) for e in s.event_types) or "—", "Receives alerts": s.receives_alerts,
-    } for s in subscribers]), hide_index=True, width="stretch", column_config={
-        "Approved": st.column_config.CheckboxColumn(), "Receives alerts": st.column_config.CheckboxColumn()})
-    st.caption("Chat IDs are masked. Members are added, changed or removed by an operator with "
-               "scripts/telegram-demo-subscribers.py; nothing here can change who is alerted.")
+        "Subscriber": f"{r.label or r.kind} ({r.chat})", "Tenant": r.tenant_id,
+        "Analytics": catalog.analytics_for_event(r.event_type), "Event type": event_name(r.event_type),
+        "Enabled": r.enabled, "Operator approved": r.approved,
+        "Notification": "Eligible" if r.eligible else "Ineligible",
+    } for r in rows]), hide_index=True, width="stretch", column_config={
+        "Enabled": st.column_config.CheckboxColumn(), "Operator approved": st.column_config.CheckboxColumn()})
+    st.caption("Chat IDs are masked. Subscriptions are managed through the Subscription API and operator approval, "
+               "not from this page.")
 
 
 ROLE_MATRIX = pd.DataFrame(
@@ -1290,10 +1408,8 @@ GRAFANA_DASHBOARD_URL = ("https://incident-grafana.calmmushroom-4789bfc0.malaysi
 
 
 def render_header(context, refreshed_at: str) -> None:
-    role = getattr(context, "role", "") or "Unassigned"
-    role_class = "role-admin" if getattr(context, "is_admin", False) else "role-viewer"
     try:
-        refreshed = datetime.fromisoformat(refreshed_at).strftime("%Y-%m-%d %H:%M UTC")
+        refreshed = fmt_time(pd.Timestamp(datetime.fromisoformat(refreshed_at)), "%d %b %H:%M")
     except (TypeError, ValueError):
         refreshed = "Unavailable"
     emblem = _image_data_uri(str(EMBLEM))
@@ -1308,10 +1424,7 @@ def render_header(context, refreshed_at: str) -> None:
         f'<div class="brand-tagline">{TAGLINE}</div>'
         f'<div class="soc-eyebrow">{ACADEMIC_TITLE}</div></div></div>'
         '<div class="soc-chips">'
-        f'<span class="chip {role_class}">{escape(role.upper())}</span>'
-        f'<span class="chip">{escape(operator_display_name(context))}</span>'
-        f'<span class="chip"><span class="live"></span>Cosmos refreshed {escape(refreshed)}</span>'
-        f'{demo_chip}'
+        f'<span class="chip"><span class="live"></span>Azure Cosmos DB · refreshed {escape(refreshed)}</span>'
         '</div></div>',
         unsafe_allow_html=True,
     )
@@ -1331,23 +1444,11 @@ def main() -> None:
             f'<div class="brand-tagline">{TAGLINE}</div></div>',
             unsafe_allow_html=True,
         )
-        st.markdown(
-            f'<div class="user-card"><div class="u">{escape(operator_display_name(context))}</div>'
-            f'<div class="m">{escape(getattr(context, "role", "") or "Unassigned")} · tenant scope enforced</div></div>',
-            unsafe_allow_html=True,
-        )
-        if mode == "easyauth":
-            st.link_button("Sign out", "/.auth/logout")
-        elif mode == "local":
-            if st.button("Sign out"):
-                local_auth.sign_out()
-                st.rerun()
-        elif st.button("Sign out"):
-            st.logout()
+
+    navigation_slot = st.sidebar.container(key="sentinel_navigation")
 
     with st.sidebar:
         refresh = st.selectbox("Refresh interval", ["Manual", "5 minutes", "15 minutes"], index=0)
-        st.caption("Tenant snapshots are cached for five minutes. Manual refresh is limited to once per minute per session and never submits events.")
     interval = {"Manual": None, "5 minutes": 300, "15 minutes": 900}[refresh]
 
     @st.fragment(run_every=interval)
@@ -1366,14 +1467,14 @@ def main() -> None:
         if manual or (interval and now - last >= interval):
             st.session_state["soc_refresh_tick"] = now
             st.rerun()
-    with st.sidebar:
-        refresh_clock()
-    df = with_demo_incidents(load_incidents())
+    # Real Cosmos incidents plus this session's DEMO incidents, shown in Singapore time.
+    df = to_display_time(with_demo_incidents(load_incidents()))
 
-    with st.sidebar:
-        st.link_button("Platform Observability", GRAFANA_DASHBOARD_URL, icon=":material/monitoring:", width="stretch")
-
-        st.header("Filters")
+    with st.sidebar.expander("Filters", expanded=False):
+        dataset = st.radio("Dataset", DATASETS, index=0, key="dataset",
+                           help="Excludes records marked load_test or carrying the legacy EVT-LOAD- event ID prefix.")
+        if dataset == DATASETS[0]:
+            df = df[~load_test_mask(df)]
 
         tenants = sorted(df["tenant_id"].unique())
         tenant_filter = checkbox_filter("Tenant", tenants, "tenant")
@@ -1385,11 +1486,12 @@ def main() -> None:
         severities = [s for s in SEVERITY_ORDER if s in df["severity"].unique()] + sorted(set(df["severity"].dropna()) - set(SEVERITY_ORDER))
         severity_filter = checkbox_filter("Severity", severities, "severity")
 
-        min_date = df["timestamp"].min().date() if not df.empty else date.today()
-        max_date = df["timestamp"].max().date() if not df.empty else date.today()
+        today = datetime.now(SGT).date()
+        min_date = df["timestamp"].min().date() if not df.empty else today
+        max_date = df["timestamp"].max().date() if not df.empty else today
 
         range_preset = st.selectbox(
-            "Date range", list(DATE_RANGE_PRESETS) + ["Custom range"], index=1
+            "Date range (SGT)", list(DATE_RANGE_PRESETS) + ["Custom range"], index=1
         )
 
         if range_preset == "Custom range":
@@ -1428,43 +1530,59 @@ def main() -> None:
 
     # Only pages this role may use are registered, so a hidden page's URL falls
     # back to the default page; each page also re-checks its own permission.
-    sections = {"Monitor": [
-        st.Page(lambda: render_overview(filtered, previous), title="Overview", icon=":material/dashboard:",
-                default=True, url_path="overview"),
-        st.Page(lambda: render_all_incidents(filtered), title="All incidents", icon=":material/table_rows:",
+    simulate_page = (st.Page(render_ingestion_launcher, title="Simulate Event", icon=":material/science:", url_path="simulator")
+                     if context.can_simulate else None)
+    pages = [
+        st.Page(lambda: render_overview(filtered, previous, simulate_page), title="Overview",
+                icon=":material/dashboard:", default=True, url_path="overview"),
+        st.Page(lambda: render_all_incidents(filtered), title="All Incidents", icon=":material/table_rows:",
                 url_path="all-incidents"),
-        st.Page(lambda: render_evidence(filtered), title="Evidence", icon=":material/photo_library:",
+        st.Page(lambda: render_evidence(filtered), title="Evidence Gallery", icon=":material/photo_library:",
                 url_path="evidence"),
-    ]}
-    operations = []
-    if context.can_simulate:
-        operations.append(st.Page(render_simulator, title="Simulate Event", icon=":material/science:",
-                                  url_path="simulator"))
+    ]
+    if simulate_page is not None:
+        pages.append(simulate_page)
     if getattr(context, "is_admin", False):
-        operations.append(st.Page(render_telegram_subscribers, title="Telegram subscribers",
-                                  icon=":material/notifications_active:", url_path="telegram"))
-    if operations:
-        sections["Operations"] = operations
-    admin_pages = []
-    if getattr(context, "is_admin", False):
-        admin_pages.append(st.Page(render_admin_console, title="Administration", icon=":material/admin_panel_settings:",
-                                   url_path="administration"))
-    if getattr(context, 'can_manage_access', False):
-        admin_pages.append(st.Page(lambda: render_admin_access(require_operator, delegated_api_token),
-                                   title="Admin Access Management", icon=":material/lock_person:", url_path="admin-access"))
-    if admin_pages:
-        sections["Admin"] = admin_pages
+        pages.append(st.Page(render_telegram_subscribers, title="Telegram Subscriptions",
+                             icon=":material/notifications_active:", url_path="telegram"))
     if mode != "local":
         # Account Setup acts for the person through their Entra token, which local sign-in does not have.
-        sections["Account"] = [st.Page(lambda: render_account_setup(require_operator, delegated_api_token),
-                                       title="Account Setup", icon=":material/person:", url_path="account-setup")]
-    pg = st.navigation(sections)
+        pages.append(st.Page(lambda: render_account_setup(require_operator, delegated_api_token),
+                             title="Account Setup", icon=":material/person:", url_path="account-setup"))
+    monitor_pages = pages[:3]
+    operation_pages = pages[3:]
+    pg = st.navigation(pages, position="hidden")
+    with navigation_slot:
+        st.caption("MONITOR")
+        for page in monitor_pages:
+            st.page_link(page)
+        st.caption("OPERATIONS")
+        for page in operation_pages:
+            if page is simulate_page:
+                st.link_button("Simulate Event", INGESTION_SIMULATOR_URL, icon=":material/science:")
+            else:
+                st.page_link(page)
+        st.link_button("Platform Observability", GRAFANA_DASHBOARD_URL, icon=":material/monitoring:", width="stretch")
+    with st.sidebar.container(key="sentinel_signout"):
+        if mode == "easyauth":
+            st.link_button("Sign out", "/.auth/logout", icon=":material/logout:", width="stretch")
+        elif mode == "local":
+            if st.button("Sign out", icon=":material/logout:", width="stretch"):
+                local_auth.sign_out()
+                st.rerun()
+        elif st.button("Sign out", icon=":material/logout:", width="stretch"):
+            st.logout()
 
-    render_header(context, df.attrs.get("refreshed_at", ""))
+
+    header_col, refresh_col = st.columns([6, 1], vertical_alignment="center")
+    with header_col:
+        render_header(context, df.attrs.get("refreshed_at", ""))
+    with refresh_col:
+        refresh_clock()
     st.markdown(
-        f'<div class="soc-filters">Tenants: {escape(", ".join(tenant_filter) or "None")} · '
+        f'<div class="soc-filters">{escape(dataset)} · Tenants: {escape(", ".join(tenant_filter) or "None")} · '
         f'Analytics: {escape(", ".join(analytics_filter) or "None")} · '
-        f'Severity: {escape(", ".join(severity_filter) or "None")} · {start_date} to {end_date} (UTC)</div>',
+        f'Severity: {escape(", ".join(severity_filter) or "None")} · {start_date} to {end_date} (SGT)</div>',
         unsafe_allow_html=True,
     )
     pg.run()

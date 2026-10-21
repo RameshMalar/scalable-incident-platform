@@ -74,3 +74,42 @@ def load_subscribers(database, tenants) -> list[Subscriber]:
 def recipients(subscribers, tenant_id: str, event_type: str) -> list[Subscriber]:
     """Who an event of this tenant and type would reach."""
     return [s for s in subscribers if s.tenant_id == tenant_id and s.approved and event_type in s.event_types]
+
+
+@dataclass(frozen=True)
+class SubscriptionRow:
+    tenant_id: str
+    chat: str       # masked
+    kind: str       # Person or Group
+    label: str
+    event_type: str
+    enabled: bool
+    approved: bool
+
+    @property
+    def eligible(self) -> bool:
+        # The Worker's rule: an enabled subscription to an approved destination.
+        return self.enabled and self.approved
+
+
+def load_subscription_rows(database, tenants) -> list[SubscriptionRow]:
+    """Every Telegram subscription record per tenant, enabled or not, read-only."""
+    subscriptions = database.get_container_client(SUBSCRIPTIONS)
+    destinations = database.get_container_client(DESTINATIONS)
+    rows = []
+    for tenant in tenants:
+        approved, labels = {}, {}
+        for row in _query(destinations, "SELECT c.telegram_chat_id, c.enabled, c.label FROM c WHERE c.tenant_id = @t", tenant):
+            chat = row.get("telegram_chat_id")
+            if isinstance(chat, str):
+                approved[chat] = row.get("enabled") is True
+                if isinstance(row.get("label"), str):
+                    labels[chat] = row["label"][:40]
+        for row in _query(subscriptions, "SELECT c.event_type, c.telegram_chat_id, c.enabled, c.channel FROM c "
+                                         "WHERE c.tenant_id = @t AND IS_DEFINED(c.event_type)", tenant):
+            chat = row.get("telegram_chat_id")
+            if row.get("channel") != "telegram" or not isinstance(chat, str):
+                continue
+            rows.append(SubscriptionRow(tenant, mask_chat(chat), chat_kind(chat), labels.get(chat, ""),
+                                        str(row.get("event_type")), row.get("enabled") is True, approved.get(chat, False)))
+    return sorted(rows, key=lambda r: (r.tenant_id, r.chat, r.event_type))

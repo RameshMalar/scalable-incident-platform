@@ -205,7 +205,7 @@ def test_page_shows_exactly_who_will_be_alerted(monkeypatch, enabled):
     ]))
     at = page()
     alerted = " ".join(s.value for s in at.success)
-    assert "1 Telegram subscriber: Malar (…333)" in alerted and "Lee" not in alerted and "Pending" not in alerted
+    assert "Would notify 1: Malar (…333)" in alerted and "Lee" not in alerted and "Pending" not in alerted
     assert "111222333" not in alerted
 
 
@@ -287,11 +287,17 @@ def test_subscribers_come_from_routing_data_and_are_masked():
 
 
 def test_telegram_page_is_admin_only_and_masks_chats(monkeypatch):
-    monkeypatch.setattr(dashboard, "subscribers_for", Mock(return_value=[person("Malar", "111222333", ["intrusion_detected"])]))
+    rows = [telegram_subscribers.SubscriptionRow("TENANT-01", "…508", "Group", "", "intrusion_detected", True, True),
+            telegram_subscribers.SubscriptionRow("TENANT-01", "…333", "Person", "Malar", "fire_detected", False, True),
+            telegram_subscribers.SubscriptionRow("TENANT-01", "…444", "Person", "", "smoke_detected", True, False)]
+    monkeypatch.setattr(dashboard, "subscription_rows_for", Mock(return_value=rows))
     at = AppTest.from_string("import soc_dashboard as app\napp.render_telegram_subscribers()").run(timeout=20)
     assert not at.exception
+    assert any("Incident event" in m.value and "Telegram notification" in m.value for m in at.markdown)
     table = at.dataframe[0].value
-    assert list(table["Chat"]) == ["…333"] and list(table["Alerts for"]) == ["Intrusion detected"]
+    assert list(table["Subscriber"]) == ["Group (…508)", "Malar (…333)", "Person (…444)"]
+    assert list(table["Analytics"]) == ["Intrusion Detection", "Fire & Smoke Detection", "Fire & Smoke Detection"]
+    assert list(table["Notification"]) == ["Eligible", "Ineligible", "Ineligible"]  # disabled; not approved
     monkeypatch.setattr(dashboard, "require_operator", lambda: operator("viewer"))
     at = AppTest.from_string("import soc_dashboard as app\napp.render_telegram_subscribers()").run(timeout=20)
     assert any("Administrator role is required" in e.value for e in at.error) and not at.dataframe
@@ -350,12 +356,13 @@ def test_three_team_members_share_the_existing_login_concurrently(monkeypatch, t
     df.attrs["refreshed_at"] = "2026-10-20T10:01:00+00:00"
     monkeypatch.setattr(dashboard, "load_incidents", Mock(return_value=df))
     sessions = [tla.sign_in(tla.run_app(), "admin", tla.PASSWORD) for _ in range(3)]
+    signed_in = lambda at: any("LML <span>SENTINEL" in m.value and "soc-header" in m.value for m in at.markdown)
     for at in sessions:
-        assert not at.exception and any('chip role-admin">ADMIN<' in m.value for m in at.markdown)
+        assert not at.exception and signed_in(at)
     next(b for b in sessions[0].button if b.label == "Sign out").click().run(timeout=20)
     assert [b.label for b in sessions[0].button] == ["Sign in"]
     sessions[1].run(timeout=20)
-    assert any('chip role-admin">ADMIN<' in m.value for m in sessions[1].markdown)  # the others stay signed in
+    assert signed_in(sessions[1])  # the others stay signed in
 
 
 # --- DEMO MODE (the default): session-only incidents, no ingestion, no Cosmos, no Telegram ---------
@@ -398,7 +405,7 @@ def test_demo_incident_stays_in_the_session_and_calls_nothing_real(monkeypatch, 
     assert event["event_id"].startswith("DEMO-") and event["event_purpose"] == "e2e_test"
     assert event["evidence_uri"].startswith(POOL_BLOB)
     assert any("created in this session" in s.value and event["event_id"] in s.value for s in at.success)
-    assert any("not sent in demo mode): would alert Member A (…333)" in i.value for i in at.info)
+    assert any("would notify Member A (…333). Not sent" in i.value for i in at.info)
     common = pytest.importorskip("common_event_model")
     common.IncidentEvent.model_validate(event)          # the existing Common Event Model
 

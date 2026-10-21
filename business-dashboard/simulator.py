@@ -87,20 +87,26 @@ def load_evidence_pools(path=EVIDENCE_FILE) -> dict:
 
 def build_event(*, analytics_type: str, event_type: str, severity: str, description: str, tenant_id: str,
                 site_id: str, evidence_pool: list | None, evidence_endpoint: str, evidence_container: str,
-                now: datetime | None = None, choose=secrets.choice, id_prefix: str = "EVT-SIM-") -> dict:
+                now: datetime | None = None, choose=secrets.choice, id_prefix: str = "EVT-SIM-",
+                source_id: str | None = None) -> dict:
     """A Common Event Model incident, marked as a test."""
     if severity not in SEVERITIES:
         raise ValueError("Unsupported severity.")
     if not SITE.fullmatch(site_id):
         raise ValueError("Unsupported site.")
     endpoint = (evidence_endpoint or "").strip().rstrip("/")
-    source_id, evidence_uri = "CAM-SIM-01", None
+    if source_id is not None and not SITE.fullmatch(source_id):
+        raise ValueError("Unsupported camera.")
+    evidence_uri = None
     if evidence_pool and endpoint:
         # A real evidence photograph already in the private container, so the
-        # Evidence page and the Telegram alert both show an image.
-        picked = choose(evidence_pool)
+        # Evidence page and the Telegram alert both show an image. A chosen
+        # camera narrows the choice to that camera's photographs.
+        candidates = [item for item in evidence_pool if item["source_id"] == source_id] or evidence_pool
+        picked = choose(candidates)
         source_id = picked["source_id"]
         evidence_uri = f"{endpoint}/{evidence_container or 'evidence'}/{picked['blob']}"
+    source_id = source_id or "CAM-SIM-01"
     return {
         "event_id": id_prefix + secrets.token_hex(4).upper(),
         "tenant_id": tenant_id,

@@ -51,10 +51,11 @@ class Catalog:
                 if name in self._by_type:
                     raise ValueError(f"analytics type listed twice: {name}")
                 self._by_type[name] = spec
-        self._events = {}
+        self._events, self._event_analytics = {}, {}
         for spec in self.analytics:
             for event in spec.events:
                 self._events.setdefault(event.type, event)
+                self._event_analytics.setdefault(event.type, spec)
 
     def analytics_name(self, value) -> str:
         spec = self._by_type.get(str(value))
@@ -63,6 +64,10 @@ class Catalog:
     def event_name(self, value) -> str:
         event = self._events.get(str(value))
         return event.display_name if event else humanise(value)
+
+    def analytics_for_event(self, event_type) -> str:
+        spec = self._event_analytics.get(str(event_type))
+        return spec.display_name if spec else "—"
 
     def spec(self, analytics_type) -> AnalyticsSpec | None:
         return self._by_type.get(str(analytics_type))
