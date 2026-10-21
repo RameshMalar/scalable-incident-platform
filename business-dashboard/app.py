@@ -304,7 +304,7 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        .block-container {{ padding-top: 1.5rem; max-width: 1600px; }}
+        .block-container {{ padding-top: 3rem; max-width: 1600px; }}
         .stApp {{ background: {PAGE_BG}; }}
         h1, h2, h3 {{ letter-spacing: -0.02em; }}
         [data-testid="stSidebar"] {{ border-right: 1px solid rgba(255,255,255,0.08); }}

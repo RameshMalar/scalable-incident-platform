@@ -53,6 +53,21 @@ def run_ui(code):
     return AppTest.from_string('import soc_dashboard as app\n' + code).run(timeout=15)
 
 
+def test_header_keeps_previous_toolbar_clearance_and_brand_content():
+    # SOC recovery reduced the previous 3rem clearance to 1.5rem, allowing
+    # Streamlit's positioned toolbar to cover the beginning of the brand.
+    at = run_ui('app.inject_css()\napp.render_header(None, "2026-10-22T00:10:00+00:00")')
+    assert not at.exception
+    css = next(m.value for m in at.markdown if '<style>' in m.value)
+    assert '.block-container { padding-top: 3rem; max-width: 1600px; }' in css
+    header = next(m.value for m in at.markdown if 'class="soc-header"' in m.value)
+    assert 'class="brand-emblem"' in header and 'data:image/png;base64,' in header
+    assert 'LML <span>SENTINEL</span>' in header
+    assert dashboard.TAGLINE in header and dashboard.ACADEMIC_TITLE in header
+    assert 'Azure Cosmos DB' in header and 'refreshed' in header
+    assert 'Unavailable' not in header
+
+
 def test_kpi_rows_render_as_html_not_code_blocks(monkeypatch, records):
     # Cards are joined into one markdown call. Markdown ends an HTML block at a
     # blank line and treats the following indented card as a code block, which
