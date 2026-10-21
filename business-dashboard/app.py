@@ -504,6 +504,7 @@ def main() -> None:
         st.stop()
 
     with st.sidebar:
+        st.link_button("Platform Observability", "https://incident-grafana.calmmushroom-4789bfc0.malaysiawest.azurecontainerapps.io/d/incident-platform-ops/incident-platform-7c-operations", icon=":material/monitoring:")
         st.header("Filters")
 
         tenants = sorted(df["tenant_id"].unique())
