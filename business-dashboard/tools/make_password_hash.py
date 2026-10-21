@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from local_auth import ROLES, USERNAME, VIEWER, LocalAuthUnavailable, hash_password, load_credentials  # noqa: E402
+from local_auth import ADMIN, ROLES, USERNAME, LocalAuthUnavailable, hash_password, load_credentials  # noqa: E402
 
 
 def strong(password):
@@ -38,7 +38,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", required=True, help="file to write")
     parser.add_argument("--username", default="admin")
-    parser.add_argument("--role", choices=ROLES, default=VIEWER, help="admin or viewer (default: viewer)")
+    parser.add_argument("--role", choices=ROLES, default=ADMIN, help="admin or viewer (default: admin)")
     parser.add_argument("--append", action="store_true", help="add or replace this account in an existing file")
     parser.add_argument("--local-testing", action="store_true", help="allow a weak password; marks the file test-only")
     parser.add_argument("--password-stdin", action="store_true", help="read the password from standard input")

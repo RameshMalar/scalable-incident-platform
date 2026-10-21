@@ -16,3 +16,6 @@ TEST_RESULTS.json
 # Local sign-in files never enter an image; Azure mounts them from Key Vault.
 *local-auth*.toml
 tools/
+
+# The full-resolution source artwork stays in the repository, not the image.
+assets/lml-sentinel-original.png

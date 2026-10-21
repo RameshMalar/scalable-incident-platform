@@ -120,7 +120,7 @@ def test_admin_and_viewer_see_different_navigation(two_roles, monkeypatch, recor
     at = tla.sign_in(tla.run_app(), "admin", PASSWORD)
     assert not at.exception
     assert sections == {"Monitor": ["Overview", "All incidents", "Evidence"],
-                        "Operations": ["Simulate Event"], "Admin": ["Administration"]}
+                        "Operations": ["Simulate Event", "Telegram subscribers"], "Admin": ["Administration"]}
     assert any('chip role-admin">ADMIN<' in m.value for m in at.markdown)
 
     at = tla.sign_in(tla.run_app(), "soc-viewer", VIEWER_PASSWORD)

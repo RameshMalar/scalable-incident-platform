@@ -84,8 +84,10 @@ def test_malformed_or_weak_hashes_never_verify(stored):
 
 def test_credentials_file_rules(tmp_path):
     good = write_credentials(tmp_path / "a.toml")
-    # A legacy single-account file without a role never grants more than Viewer.
-    assert local_auth.load_credentials(str(good)).accounts["admin"].role == "viewer"
+    # The single-account file is the team's administrator sign-in.
+    assert local_auth.load_credentials(str(good)).accounts["admin"].role == "admin"
+    viewer = write_credentials(tmp_path / "v.toml", extra='role = "viewer"\n')
+    assert local_auth.load_credentials(str(viewer)).accounts["admin"].role == "viewer"
     for bad in (tmp_path / "missing.toml",
                 write_credentials(tmp_path / "b.toml", extra='password = "plaintext"\n'),
                 tmp_path / "c.toml"):
@@ -184,7 +186,7 @@ def test_sign_in_shows_dashboard_and_sign_out_returns_to_form(local_mode, monkey
 
 
 def test_local_context_is_read_only_and_tenant_scoped(local_mode):
-    context = dashboard.local_operator_context("admin")
+    context = dashboard.local_operator_context("someone", "viewer")
     assert context.tenants == ("TENANT-01", "TENANT-02", "TENANT-03")
     assert context.permissions == frozenset({"Dashboard.Read"})
     assert not context.can_simulate and not context.can_manage_access

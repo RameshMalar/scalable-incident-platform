@@ -6,8 +6,9 @@ the production design and its code is untouched.
   * Credentials come from a TOML file named by DASHBOARD_LOCAL_AUTH_FILE (in
     Azure a Key Vault secret mounted as a file), holding only usernames, scrypt
     hashes and roles -- never a plaintext password. Nothing is hard-coded.
-  * Two roles: "admin" and "viewer". A legacy single-account file without a
-    role is a viewer, so an old secret can never grant more than it used to.
+  * Two roles: "admin" and "viewer". The single-account file is the team's
+    administrator sign-in (this mode's original design), so it is an admin
+    unless it says `role = "viewer"`. A multi-account file must name every role.
   * The role is read from the file on every request, never from the session,
     so removing an account or downgrading it takes effect immediately.
   * Verification is constant time, including for unknown usernames. Sessions
@@ -113,7 +114,7 @@ def load_credentials(path=None):
         [local_auth]                      [local_auth]
         local_testing_only = false        username = "admin"
         [[local_auth.accounts]]           password_hash = "scrypt$..."
-        username = "admin"                (role defaults to "viewer")
+        username = "admin"                (role defaults to "admin")
         password_hash = "scrypt$..."
         role = "admin"
 
@@ -134,7 +135,7 @@ def load_credentials(path=None):
                 raise ValueError("invalid accounts")
             accounts = [_account(entry, None) for entry in entries]
         else:
-            accounts = [_account(section, VIEWER)]
+            accounts = [_account(section, ADMIN)]
         by_name = {account.username: account for account in accounts}
         if len(by_name) != len(accounts):
             raise ValueError("duplicate username")
@@ -239,7 +240,7 @@ def attempt_sign_in(username, password, client, credentials=None, limiter=None):
     return False
 
 
-def require_signed_in(headers):
+def require_signed_in(headers, banner=None):
     """Return the signed-in LocalAccount, or draw the sign-in form and stop.
 
     Nothing after this call runs for an unauthenticated session, so no page
@@ -263,6 +264,10 @@ def require_signed_in(headers):
         # The account was removed or renamed since sign-in.
         logger.warning("local session ended: account no longer configured")
         sign_out()
+    if banner:
+        _, middle, _ = st.columns([1, 2, 1])
+        with middle:
+            st.image(banner, width="stretch")
     st.title("Smart Incident Monitoring Platform")
     st.caption("Security Operations Center · sign in")
     client = client_address(headers)

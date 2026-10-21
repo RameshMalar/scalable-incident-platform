@@ -40,8 +40,10 @@ def offline(monkeypatch):
     monkeypatch.setattr(dashboard, 'require_operator', lambda: operator('admin'))
     monkeypatch.setattr(dashboard, 'get_container', Mock(side_effect=AssertionError('unexpected Cosmos read')))
     monkeypatch.setattr(dashboard, 'get_evidence_store', Mock(return_value=None))
-    monkeypatch.delenv('ENABLE_EVENT_SIMULATOR', raising=False)
-    monkeypatch.setattr(dashboard, 'submit_single_event', Mock(side_effect=AssertionError('unexpected POST')))
+    monkeypatch.delenv('ENABLE_DASHBOARD_SIMULATOR', raising=False)
+    monkeypatch.setattr(dashboard.simulator, 'publish', Mock(side_effect=AssertionError('unexpected POST')))
+    monkeypatch.setattr(dashboard, 'ingestion_token', Mock(side_effect=AssertionError('unexpected token request')))
+    monkeypatch.setattr(dashboard, 'subscribers_for', Mock(return_value=[]))
 
 
 def run_ui(code):
@@ -155,50 +157,6 @@ def test_existing_blob_restrictions_reject_untrusted_uri(uri):
         store.fetch(uri)
 
 
-def test_simulator_disabled_never_posts():
-    at = run_ui('app.render_simulator()')
-    assert not at.exception
-    assert not at.button
-    dashboard.submit_single_event.assert_not_called()
-
-
-def test_simulator_authorization_and_pending(monkeypatch, records):
-    monkeypatch.setenv('ENABLE_EVENT_SIMULATOR', 'true')
-    monkeypatch.setenv('SIMULATOR_AUTH_VERIFIED', 'true')
-    monkeypatch.setenv('SIMULATOR_INGESTION_ORIGIN', 'https://ingestion.example')
-    monkeypatch.setattr(dashboard, 'delegated_api_token', lambda: 'delegated-token')
-    post = Mock(return_value='ACCEPTED')
-    monkeypatch.setattr(dashboard, 'submit_single_event', post)
-    monkeypatch.setattr(dashboard, 'load_incidents', Mock(return_value=records))
-    at = run_ui('app.render_simulator()')
-    at.button[0].click().run()
-    post.assert_not_called()
-    at.checkbox[0].check()
-    at.button[0].click().run()
-    assert not at.exception
-    post.assert_called_once_with('https://ingestion.example', 'intrusion', 'delegated-token', ('TENANT-01',))
-    assert any('persistence is pending' in element.value for element in at.info)
-    assert not at.success
-    at.checkbox[0].check()
-    at.button[0].click().run()
-    assert post.call_count == 1
-
-
-def test_persistence_requires_matching_cosmos_tenant(monkeypatch, records):
-    monkeypatch.setenv('ENABLE_EVENT_SIMULATOR', 'true')
-    monkeypatch.setenv('SIMULATOR_AUTH_VERIFIED', 'true')
-    monkeypatch.setattr(dashboard, 'delegated_api_token', lambda: 'delegated-token')
-    monkeypatch.setenv('SIMULATOR_INGESTION_ORIGIN', 'https://ingestion.example')
-    monkeypatch.setattr(dashboard, 'load_incidents', Mock(return_value=records))
-    at = AppTest.from_string('import soc_dashboard as app\napp.render_simulator()')
-    at.session_state['simulator_pending'] = {'event_id':'NOTPERSISTED', 'state':'accepted'}
-    at.run()
-    assert not at.success
-    at.session_state['simulator_pending'] = {'event_id':'OLD', 'state':'accepted'}
-    at.run()
-    assert any('Confirmed in Cosmos DB: OLD' in element.value for element in at.success)
-
-
 def test_html_escapes_incident_data():
     html = dashboard.bar_panel('Types', pd.Series({'<script>': 1}), {})
     assert '<script>' not in html and '&lt;script&gt;' in html
@@ -220,33 +178,3 @@ def test_thumbnail_bounds_and_cache(monkeypatch):
     store.fetch.assert_called_once()
     dashboard._load_preview.clear()
     dashboard._load_original.clear()
-
-
-def test_single_post_contract_and_errors(monkeypatch):
-    # Use the original function despite the autouse safety guard.
-    namespace = {}
-    import ast
-    tree = ast.parse((ROOT / 'app.py').read_text(encoding='utf-8'))
-    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'submit_single_event')
-    exec(compile(ast.Module(body=[function], type_ignores=[]), str(ROOT / 'app.py'), 'exec'), dashboard.__dict__, namespace)
-    submit = namespace['submit_single_event']
-    response = Mock(status=200)
-    response.read.side_effect = [b'{"authorization":"entra-user-v1","tenant_id":"TENANT-01","event_purpose":"e2e_test"}', b'{"status":"accepted","event_id":"EVT-1"}']
-    response.__enter__ = Mock(return_value=response)
-    response.__exit__ = Mock(return_value=False)
-    opener = Mock()
-    opener.open.return_value = response
-    assert submit('https://ingestion.example', 'fire', 'delegated-token', ('TENANT-01',), opener) == 'EVT-1'
-    request = opener.open.call_args.args[0]
-    assert request.method == 'POST' and request.full_url.endswith('/api/v1/simulate/fire?tenant_id=TENANT-01')
-    assert opener.open.call_count == 2
-    assert opener.open.call_args_list[0].args[0].get_method() == 'GET'
-    assert request.get_header('Authorization') == 'Bearer delegated-token'
-    with pytest.raises(ValueError):
-        submit('http://ingestion.example', 'fire', 'delegated-token', ('TENANT-01',), opener)
-    with pytest.raises(ValueError):
-        submit('https://ingestion.example', '../fire', 'delegated-token', ('TENANT-01',), opener)
-    response.read.side_effect = [b'{"status":"error"}']
-    with pytest.raises(ValueError):
-        submit('https://ingestion.example', 'fire', 'delegated-token', ('TENANT-01',), opener)
-

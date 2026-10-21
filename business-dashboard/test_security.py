@@ -139,7 +139,7 @@ def test_original_blob_transfer_is_bounded():
 def test_read_only_operator_never_sees_simulation_controls(monkeypatch):
     monkeypatch.setattr(dashboard,'require_operator',lambda:SimpleNamespace(tenants=('TENANT-01',),can_simulate=False))
     post=Mock()
-    monkeypatch.setattr(dashboard,'submit_single_event',post)
+    monkeypatch.setattr(dashboard.simulator,'publish',post)
     at=test_dashboard.run_ui('app.render_simulator()')
     assert not at.exception and at.error and not at.button
     post.assert_not_called()

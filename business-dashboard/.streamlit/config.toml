@@ -1,7 +1,9 @@
 [theme]
+# LML SENTINEL: dark navy, cyan and white (sampled from assets/).
+# primaryColor is a deeper cyan so white button and chip text stays readable.
 base = "dark"
-primaryColor = "#38bdf8"
-backgroundColor = "#081222"
-secondaryBackgroundColor = "#111f35"
+primaryColor = "#0891b2"
+backgroundColor = "#001227"
+secondaryBackgroundColor = "#082039"
 textColor = "#edf5ff"
 font = "sans serif"

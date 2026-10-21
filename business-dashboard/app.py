@@ -10,12 +10,11 @@ Data Contributor role -- a dashboard never needs to write). Locally that's
 identity with the same role.
 """
 
+import base64
 import json
 import time
 from html import escape
-from urllib.parse import urlparse, urlencode
-from urllib.request import Request, build_opener, HTTPRedirectHandler
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 import logging
 import os
@@ -38,13 +37,26 @@ from account_setup import render_account_setup
 from access_api import AccessAPIUnavailable, current_grant
 from access_roles import InvalidAccess
 from admin_access import render_admin_access
+from analytics_catalog import SEVERITIES, load_catalog, valid_custom_name, humanise
 import local_auth
+import simulator
+import telegram_subscribers
 
 logger = logging.getLogger("dashboard")
 
+# LML SENTINEL brand, sampled from the artwork in assets/.
+PRODUCT_NAME = "LML SENTINEL"
+TAGLINE = "Always Watching. Always Ready."
+ACADEMIC_TITLE = "Smart Incident Monitoring Platform"
+BRAND_CYAN = "#0cf0fe"
+ASSETS = Path(__file__).with_name("assets")
+EMBLEM = ASSETS / "lml-sentinel-emblem.png"
+FAVICON = ASSETS / "lml-sentinel-favicon.png"
+BANNER = ASSETS / "lml-sentinel-banner.jpg"
+
 # Magnitude charts (per type, per site, per day) are one series, so they take a
-# single accent rather than a hue per category.
-ACCENT = "#3987e5"
+# single accent -- the shield cyan -- rather than a hue per category.
+ACCENT = "#00d2fe"
 SERIES_COLORS = [ACCENT, "#d95926", "#199e70", "#9085e9"]
 # Severity is a state, not an identity, so it takes the status palette. Every
 # adjacent pair clears normal-vision Delta E 15 and CVD Delta E 13 on SURFACE
@@ -53,14 +65,6 @@ SEVERITY_COLORS = {"critical": "#d03b3b", "high": "#ec835a", "medium": "#f2cc3d"
 SEVERITY_ICONS = {"critical": "■", "high": "▲", "medium": "◆", "low": "●"}
 SEVERITY_ORDER = ["critical", "high", "medium", "low"]
 TREND_WORSE, TREND_BETTER = "#ec835a", "#0ca30c"
-# Readable names for the Common Event Model's analytics types.
-ANALYTICS_NAMES = {
-    "intrusion_detection": "Intrusion",
-    "PPE_detection": "PPE compliance",
-    "crowd_detection": "Crowd",
-    "people_counting": "People count",
-    "fire_smoke_detection": "Fire / smoke",
-}
 TEST_PURPOSES = ("e2e_test", "load_test")
 
 DATE_RANGE_PRESETS = {
@@ -71,9 +75,9 @@ DATE_RANGE_PRESETS = {
     "Last year": 365,
 }
 
-PAGE_BG = "#081222"
-SURFACE = "#111f35"
-GRIDLINE = "#263b56"
+PAGE_BG = "#001227"
+SURFACE = "#082039"
+GRIDLINE = "#1d3a5e"
 # Matches .streamlit/config.toml textColor. The custom panels always draw a
 # dark background, so they also set their own text colour rather than
 # inheriting it from whatever Streamlit theme is active.
@@ -83,7 +87,13 @@ INK_MUTED = "#9bafc7"
 
 
 @st.cache_resource
-def get_container():
+def get_credential():
+    # AZURE_CLIENT_ID selects the dashboard's user-assigned managed identity.
+    return DefaultAzureCredential()
+
+
+@st.cache_resource
+def get_database():
     endpoint = os.environ.get("COSMOS_ENDPOINT")
     if not endpoint:
         st.error(
@@ -91,13 +101,13 @@ def get_container():
             "https://incident-cosmos-xxxx.documents.azure.com:443/"
         )
         st.stop()
+    client = CosmosClient(endpoint, credential=get_credential())
+    return client.get_database_client(os.environ.get("COSMOS_DATABASE", "incidents"))
 
-    database_name = os.environ.get("COSMOS_DATABASE", "incidents")
-    container_name = os.environ.get("COSMOS_CONTAINER", "incidents")
 
-    credential = DefaultAzureCredential()
-    client = CosmosClient(endpoint, credential=credential)
-    return client.get_database_client(database_name).get_container_client(container_name)
+@st.cache_resource
+def get_container():
+    return get_database().get_container_client(os.environ.get("COSMOS_CONTAINER", "incidents"))
 
 
 @st.cache_resource
@@ -137,7 +147,7 @@ def delegated_api_token():
 def require_operator():
     if os.environ.get("DASHBOARD_AUTH_MODE", "oidc") == "local":
         # Draws the sign-in form and stops the page until signed in.
-        account = local_auth.require_signed_in(st.context.headers)
+        account = local_auth.require_signed_in(st.context.headers, banner=str(BANNER) if BANNER.exists() else None)
         return local_operator_context(account.username, account.role)
     try:
         verifier=get_operator_verifier()
@@ -278,10 +288,19 @@ def inject_css() -> None:
             font-size:12.5px; color:{INK_SECONDARY}; background:{SURFACE}; border:1px solid rgba(255,255,255,0.10);
             white-space:nowrap;
         }}
-        .chip.role-admin {{ color:{INK_PRIMARY}; border-color:{ACCENT}; background:rgba(57,135,229,0.18); font-weight:650; }}
+        .chip.role-admin {{ color:{INK_PRIMARY}; border-color:{ACCENT}; background:rgba(0,210,254,0.14); font-weight:650; }}
         .chip.role-viewer {{ color:{INK_PRIMARY}; font-weight:650; }}
         .chip .live {{ width:7px; height:7px; border-radius:50%; background:{TREND_BETTER}; }}
         .soc-filters {{ font-size:12.5px; color:{INK_MUTED}; margin:-6px 0 14px; }}
+        .brand {{ display:flex; align-items:center; gap:14px; }}
+        .brand-emblem {{ width:64px; height:auto; border-radius:10px; filter: drop-shadow(0 0 10px rgba(0,210,254,0.35)); }}
+        .brand-name {{ font-size:26px; font-weight:800; letter-spacing:.04em; color:#ffffff; line-height:1.1; }}
+        .brand-name span {{ color:{BRAND_CYAN}; }}
+        .brand-tagline {{ font-size:13px; color:{INK_SECONDARY}; letter-spacing:.05em; margin:2px 0 4px; }}
+        .side-brand {{ margin:-6px 0 12px; }}
+        .side-brand .brand-name {{ font-size:18px; }}
+        .side-brand .brand-tagline {{ font-size:11.5px; color:{INK_MUTED}; }}
+        @media(max-width:600px) {{ .brand-emblem {{ width:44px; }} .brand-name {{ font-size:20px; }} }}
 
         .soc-kpis {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-bottom:14px; }}
         .soc-kpis .kpi-card {{ border-top:3px solid var(--accent); min-height:132px; }}
@@ -339,7 +358,22 @@ def inject_css() -> None:
 
 
 def analytics_name(value) -> str:
-    return ANALYTICS_NAMES.get(str(value), str(value))
+    # Display name only; the stored value is never rewritten (analytics_catalog.json).
+    return load_catalog().analytics_name(value)
+
+
+def event_name(value) -> str:
+    return load_catalog().event_name(value)
+
+
+@st.cache_data(show_spinner=False)
+def _image_data_uri(path: str) -> str:
+    try:
+        data = Path(path).read_bytes()
+    except OSError:
+        return ""
+    kind = "jpeg" if path.endswith(".jpg") else "png"
+    return f"data:image/{kind};base64," + base64.b64encode(data).decode("ascii")
 
 
 def severity_badge(severity, count: int | None = None) -> str:
@@ -431,7 +465,7 @@ def render_latest_incidents(filtered: pd.DataFrame, limit: int = 8) -> None:
                     st.caption("Evidence unavailable" if uri else "No evidence image")
             with detail_col:
                 st.markdown(severity_badge(row["severity"]), unsafe_allow_html=True)
-                st.text(f"{row['event_type']} · {analytics_name(row['analytics_type'])}")
+                st.text(f"{event_name(row['event_type'])} · {analytics_name(row['analytics_type'])}")
                 st.caption(f"Tenant {row['tenant_id']} · Site {row['site_id']} · Camera/source {row.get('source_id', 'Unavailable')}")
                 st.caption(row["timestamp"].strftime("%Y-%m-%d %H:%M:%S UTC"))
                 purpose = row.get("event_purpose", "incident")
@@ -548,7 +582,7 @@ def activity_heatmap_figure(filtered: pd.DataFrame) -> go.Figure:
     fig = go.Figure(go.Heatmap(
         z=grid.values, x=[f"{hour:02d}" for hour in range(24)], y=WEEKDAYS,
         # One hue, dark (quiet) to bright (busy) on the dark surface.
-        colorscale=[[0, "#16263d"], [0.5, "#1f5eae"], [1, "#7fb2f0"]],
+        colorscale=[[0, "#0b2744"], [0.5, "#0a7fa8"], [1, "#5fe6ff"]],
         xgap=2, ygap=2, colorbar=dict(title=dict(text="Incidents", font=dict(color=INK_MUTED)), tickfont=dict(color=INK_MUTED), thickness=10),
         hovertemplate="%{y} %{x}:00 UTC · %{z} incidents<extra></extra>",
     ))
@@ -646,6 +680,8 @@ def filter_incidents(frame: pd.DataFrame, query: str = "", severities=None, purp
             if column in result:
                 hit |= result[column].astype("string").str.lower().str.contains(query, regex=False, na=False)
         hit |= result["analytics_type"].map(analytics_name).str.lower().str.contains(query, regex=False, na=False)
+        if "event_type" in result:
+            hit |= result["event_type"].map(event_name).str.lower().str.contains(query, regex=False, na=False)
         result = result[hit]
     if severities is not None:
         result = result[result["severity"].isin(severities)]
@@ -675,7 +711,7 @@ def incident_table(frame: pd.DataFrame) -> pd.DataFrame:
         "Severity": frame["severity"].map(lambda sev: f"{SEVERITY_ICONS.get(str(sev).lower(), '○')} {str(sev).upper()}"),
         "Event ID": frame["event_id"],
         "Analytics": frame["analytics_type"].map(analytics_name),
-        "Event": column("event_type"),
+        "Event": column("event_type").map(event_name),
         "Tenant": frame["tenant_id"],
         "Site": column("site_id"),
         "Camera": column("source_id"),
@@ -710,7 +746,7 @@ def render_incident_detail(row: pd.Series) -> None:
                 st.caption("Evidence unavailable" if uri else "No evidence image")
         with detail_col:
             st.markdown(severity_badge(row["severity"]), unsafe_allow_html=True)
-            st.markdown(f"**{escape(str(row['event_id']))}** · {escape(analytics_name(row['analytics_type']))} · {escape(str(row.get('event_type', '')))}")
+            st.markdown(f"**{escape(str(row['event_id']))}** · {escape(analytics_name(row['analytics_type']))} · {escape(event_name(row.get('event_type', '')))}")
             if isinstance(row.get("description"), str):
                 st.text(row["description"])
             st.caption(f"Tenant {row['tenant_id']} · Site {row.get('site_id', '')} · Camera/source {row.get('source_id', 'Unavailable')}")
@@ -897,45 +933,42 @@ def checkbox_filter(label: str, options: list, key: str) -> list:
     return [opt for opt in options if st.session_state[opt_keys[opt]]]
 
 
-SIMULATOR_TYPES = ("intrusion", "ppe", "crowd", "fire", "smoke")
+SIM_SITES = ("SITE-01", "SITE-02", "SITE-03")
+CUSTOM_CHOICE = "Custom analytics…"
+SIM_MIN_INTERVAL_SECONDS = 30
+SIM_CHECK_INTERVAL_SECONDS = 5
 
 
-class NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_subscribers(tenants: tuple[str, ...]) -> list:
+    return telegram_subscribers.load_subscribers(get_database(), tenants)
+
+
+def subscribers_for(tenants) -> list | None:
+    """The Telegram routing data for these tenants, or None if it cannot be read."""
+    try:
+        return _load_subscribers(tuple(tenants))
+    except Exception:  # read-only view; the Worker remains the authority
+        logger.warning("Telegram subscriber data unavailable")
         return None
 
 
-def submit_single_event(base_url: str, analytics_type: str, token: str, authorized_tenants: tuple[str, ...], opener=None) -> str:
-    """One POST, no retries or redirects. Acceptance is never persistence."""
-    parsed = urlparse(base_url)
-    if (parsed.scheme != "https" or not parsed.hostname or parsed.username
-            or parsed.password or parsed.query or parsed.fragment or parsed.path not in ("", "/")):
-        raise ValueError("Configure an HTTPS ingestion origin without a path or credentials.")
-    if analytics_type not in SIMULATOR_TYPES:
-        raise ValueError("Unsupported simulator analytics type.")
-    if not token or "\r" in token or "\n" in token:
-        raise ValueError("A delegated API token is required")
-    transport = opener or build_opener(NoRedirect())
-    if len(authorized_tenants) != 1:
-        raise ValueError("Select exactly one authorized tenant")
-    query = "?" + urlencode({"tenant_id": authorized_tenants[0]})
-    capability_request = Request(base_url.rstrip("/") + "/api/v1/simulation/capabilities" + query, headers={"Authorization": "Bearer " + token})
-    with transport.open(capability_request, timeout=10) as response:
-        capability = json.loads(response.read(65536))
-        if (response.status != 200 or not isinstance(capability, dict)
-                or capability.get("authorization") != "entra-user-v1"
-                or capability.get("tenant_id") not in authorized_tenants
-                or capability.get("event_purpose") != "e2e_test"):
-            raise ValueError("Backend authorization is not verified")
-    request = Request(base_url.rstrip("/") + "/api/v1/simulate/" + analytics_type + query, data=b"", method="POST", headers={"Authorization": "Bearer " + token})
-    # Never retry an ambiguous timeout: the service might already have published.
-    with transport.open(request, timeout=10) as response:
-        if response.status not in (200, 202):
-            raise ValueError("Ingestion did not accept the request.")
-        payload = json.loads(response.read(65536))
-    if not isinstance(payload, dict) or payload.get("status") != "accepted" or not isinstance(payload.get("event_id"), str) or not payload["event_id"]:
-        raise ValueError("Ingestion did not return an accepted event ID.")
-    return payload["event_id"]
+def ingestion_token(scope: str) -> str:
+    # The dashboard's own managed identity; no user token or secret is involved.
+    return get_credential().get_token(scope).token
+
+
+def incident_persisted(event_id: str, tenant_id: str) -> bool:
+    """Point read of one incident in its tenant partition."""
+    try:
+        get_container().read_item(item=event_id, partition_key=tenant_id)
+        return True
+    except Exception:
+        return False
+
+
+def _recipient_names(people) -> str:
+    return ", ".join(f"{p.label or p.kind} ({p.chat})" for p in people)
 
 
 def render_simulator() -> None:
@@ -944,56 +977,164 @@ def render_simulator() -> None:
         st.error("Simulation permission is required.")
         return
     st.subheader("Simulate Event")
-    st.caption("TEST event · single submission · existing API event-purpose routing applies.")
-    enabled = os.environ.get("ENABLE_EVENT_SIMULATOR", "").lower() == "true"
-    verified = os.environ.get("SIMULATOR_AUTH_VERIFIED", "").lower() == "true"
-    endpoint = os.environ.get("SIMULATOR_INGESTION_ORIGIN", "")
-    if not enabled or not verified or not endpoint:
-        st.info("Simulation remains disabled until dashboard and backend authorization have been verified.")
-        return
+    st.caption("Sends one TEST incident through the authorized ingestion API. It is stored, appears on every page "
+               "marked TEST, and alerts only the Telegram subscribers of that event type.")
     try:
-        token = delegated_api_token()
-    except AccessDenied:
-        st.error("A delegated API token is unavailable. Simulation is disabled.")
+        config = simulator.simulator_config()
+    except simulator.SimulatorUnavailable as exc:
+        st.info(str(exc))
         return
-    st.warning("A confirmed test may send real notifications to eligible subscribers. The existing API determines severity and evidence for the selected type.")
-    with st.form("single_event", clear_on_submit=True):
-        selected_tenant = st.selectbox("Authorized test tenant", context.tenants)
-        analytics = st.selectbox("Demo analytics", SIMULATOR_TYPES)
-        acknowledged = st.checkbox("Submit exactly one test event and allow its eligible notifications.")
-        submitted = st.form_submit_button("Confirm one test event")
+    if config.tenant not in context.tenants:
+        st.error("The simulator's tenant is outside your authorized scope.")
+        return
+
+    catalog = load_catalog()
+    specs = {spec.display_name: spec for spec in catalog.analytics}
+    form_col, info_col = st.columns([3, 2])
+    with form_col:
+        choice = st.selectbox("Analytics", [*specs, CUSTOM_CHOICE], key="sim_analytics")
+        if choice == CUSTOM_CHOICE:
+            analytics_type = st.text_input("Custom analytics type", placeholder="e.g. vehicle_wrong_way_detection",
+                                           max_chars=48, key="sim_custom_type").strip()
+            event_type = st.text_input("Custom event type", placeholder="e.g. wrong_way_driving",
+                                       max_chars=48, key="sim_custom_event").strip()
+            default_severity, pool = "medium", None
+            description = f"{humanise(event_type)} detected in monitored area" if event_type else ""
+            valid = valid_custom_name(analytics_type) and valid_custom_name(event_type)
+        else:
+            spec = specs[choice]
+            events = {event.display_name: event for event in spec.events}
+            event = events[st.selectbox("Event", list(events), key=f"sim_event_{spec.type}")]
+            analytics_type, event_type, default_severity = spec.type, event.type, event.severity
+            description, pool, valid = event.description, event.evidence_pool, True
+        severity = st.selectbox("Severity", SEVERITIES, index=SEVERITIES.index(default_severity),
+                                format_func=lambda sev: f"{SEVERITY_ICONS[sev]} {sev.title()}",
+                                key=f"sim_severity_{analytics_type}_{event_type}")
+        site = st.selectbox("Site", SIM_SITES, key="sim_site")
+        if choice == CUSTOM_CHOICE and (analytics_type or event_type) and not valid:
+            st.error("Custom names use lowercase letters, digits and underscores: 3–48 characters, starting with a letter.")
+
+    pools = simulator.load_evidence_pools()
+    with info_col:
+        with st.container(border=True):
+            st.markdown("**Who will be alerted**")
+            subscribers = subscribers_for((config.tenant,))
+            if subscribers is None:
+                st.warning("Subscriber list unavailable. Delivery is still decided by the Worker's routing.")
+            elif not valid:
+                st.caption("Enter a valid event type to see its subscribers.")
+            else:
+                people = telegram_subscribers.recipients(subscribers, config.tenant, event_type)
+                if people:
+                    st.success(f"{len(people)} Telegram subscriber{'s' if len(people) != 1 else ''}: {_recipient_names(people)}")
+                else:
+                    st.info("No subscriber for this event type. The incident is stored; no Telegram message is sent.")
+            st.markdown("**Evidence**")
+            if pool and pools.get(pool) and os.environ.get("EVIDENCE_BLOB_ENDPOINT"):
+                st.caption(f"A stored photograph from the {pool} set ({len(pools[pool])} images) is attached.")
+            else:
+                st.caption("No evidence image for this type; the alert is text only.")
+            st.caption(f"Tenant {config.tenant} · purpose e2e_test · one event per confirmation")
+
+    with st.form("simulate_event", clear_on_submit=True):
+        st.markdown(f"{severity_badge(severity)} &nbsp; **{escape(catalog.analytics_name(analytics_type) if analytics_type else '—')}** · "
+                    f"{escape(catalog.event_name(event_type) if event_type else '—')} · {escape(config.tenant)} · {escape(site)}",
+                    unsafe_allow_html=True)
+        acknowledged = st.checkbox("Send exactly one TEST event and alert its subscribers.")
+        submitted = st.form_submit_button("Send test event", type="primary", disabled=not valid)
+
     if submitted:
         now = time.monotonic()
-        pending = st.session_state.get("simulator_pending")
-        if pending:
-            st.warning("Resolve the previous request before another submission.")
+        if st.session_state.get("simulator_pending"):
+            st.warning("Resolve the previous event before sending another.")
         elif not acknowledged:
-            st.error("Explicit confirmation is required.")
-        elif now - st.session_state.get("simulator_last_attempt", -60) < 60:
-            st.warning("Wait 60 seconds between attempts.")
+            st.error("Tick the confirmation to send the event.")
+        elif now - st.session_state.get("simulator_last_attempt", -SIM_MIN_INTERVAL_SECONDS) < SIM_MIN_INTERVAL_SECONDS:
+            st.warning(f"Wait {SIM_MIN_INTERVAL_SECONDS} seconds between events.")
         else:
             st.session_state["simulator_last_attempt"] = now
-            # Retain an ambiguous outcome across reruns; never retry automatically.
-            st.session_state["simulator_pending"] = {"event_id": None, "state": "unknown"}
+            event = simulator.build_event(
+                analytics_type=analytics_type, event_type=event_type, severity=severity, description=description,
+                tenant_id=config.tenant, site_id=site, evidence_pool=pools.get(pool) if pool else None,
+                evidence_endpoint=os.environ.get("EVIDENCE_BLOB_ENDPOINT", ""),
+                evidence_container=os.environ.get("EVIDENCE_CONTAINER", "evidence"))
             try:
-                event_id = submit_single_event(endpoint, analytics, token, (selected_tenant,))
-            except (ValueError, URLError, TimeoutError, OSError):
-                st.error("Acceptance is unknown. Check persisted incidents and backend logs before another attempt.")
+                token = ingestion_token(config.scope)
+            except Exception:
+                logger.warning("simulator could not obtain an ingestion token")
+                st.error("The dashboard identity could not obtain an ingestion token. Nothing was sent.")
             else:
-                st.session_state["simulator_pending"] = {"event_id": event_id, "state": "accepted"}
+                # Kept across reruns so an ambiguous outcome is never retried automatically.
+                st.session_state["simulator_pending"] = {"event_id": event["event_id"], "tenant_id": config.tenant,
+                                                         "state": "unknown", "checked": 0.0}
+                try:
+                    simulator.publish(config.origin, token, event)
+                except HTTPError as exc:
+                    if 400 <= exc.code < 500:
+                        # A definite refusal: nothing was published.
+                        st.session_state.pop("simulator_pending", None)
+                        logger.warning("simulator event refused status=%s", exc.code)
+                        st.error(f"Ingestion refused the event (HTTP {exc.code}). Nothing was published.")
+                    else:
+                        st.error("Ingestion's answer was unclear. Check All incidents before sending again.")
+                except (ValueError, URLError, TimeoutError, OSError):
+                    st.error("Ingestion's answer was unclear. Check All incidents before sending again.")
+                else:
+                    st.session_state["simulator_pending"]["state"] = "accepted"
+                    logger.info("simulator event accepted event_id=%s", event["event_id"])
+
     pending = st.session_state.get("simulator_pending")
     if pending:
         event_id = pending["event_id"]
-        records = load_incidents()
-        if event_id and records["event_id"].eq(event_id).any():
-            st.success(f"Confirmed in Cosmos DB: {event_id}")
-        elif event_id:
-            st.info(f"API accepted {event_id}; Cosmos persistence is pending. Refresh incidents to check.")
+        if pending["state"] == "stored":
+            st.success(f"Stored in Cosmos DB: {event_id}. It now appears on Overview, All incidents and Evidence.")
+        elif pending["state"] == "accepted":
+            if incident_persisted(event_id, pending["tenant_id"]):
+                pending["state"] = "stored"
+                _load_incidents.clear()
+                st.success(f"Stored in Cosmos DB: {event_id}. It now appears on Overview, All incidents and Evidence.")
+            else:
+                st.info(f"Ingestion accepted {event_id}; waiting for the Worker to store it.")
+                if st.button("Check again", key="sim_check"):
+                    st.rerun()
         else:
-            st.warning("Previous request outcome is unknown; no automatic retry will occur.")
-        if st.button("I reviewed the previous request; allow a new test"):
+            st.warning(f"The outcome of {event_id} is unknown. It is not retried automatically.")
+        if st.button("Send another event", key="sim_reset"):
             st.session_state.pop("simulator_pending", None)
             st.rerun()
+
+
+def render_telegram_subscribers() -> None:
+    context = require_operator()
+    if not getattr(context, "is_admin", False):
+        st.error("Administrator role is required.")
+        return
+    st.subheader("Telegram subscribers")
+    st.caption("Alerts are subscriber-only. An incident is sent to a chat only when that chat has an enabled "
+               "subscription for the incident's tenant and exact event type, and an operator has approved the chat "
+               "for that tenant. Load-test traffic is never sent. This page is read-only.")
+    subscribers = subscribers_for(context.tenants)
+    if subscribers is None:
+        st.error("Subscriber data could not be read.")
+        return
+    active = [s for s in subscribers if s.receives_alerts]
+    covered = sorted({event for s in active for event in s.event_types})
+    st.markdown('<div class="soc-kpis">' + "".join([
+        kpi_card("Receiving alerts", str(len(active)), "✓", ACCENT, None, "approved and subscribed"),
+        kpi_card("People", str(sum(s.kind == "Person" for s in active)), "◉", ACCENT, None, "private chats"),
+        kpi_card("Groups", str(sum(s.kind == "Group" for s in active)), "◎", ACCENT, None, "group chats"),
+        kpi_card("Event types covered", str(len(covered)), "◆", ACCENT, None, "with at least one subscriber"),
+    ]) + '</div>', unsafe_allow_html=True)
+    if not subscribers:
+        st.info("No Telegram destination is configured for your tenants.")
+        return
+    st.dataframe(pd.DataFrame([{
+        "Tenant": s.tenant_id, "Name": s.label or "—", "Chat": s.chat, "Type": s.kind, "Approved": s.approved,
+        "Alerts for": ", ".join(event_name(e) for e in s.event_types) or "—", "Receives alerts": s.receives_alerts,
+    } for s in subscribers]), hide_index=True, width="stretch", column_config={
+        "Approved": st.column_config.CheckboxColumn(), "Receives alerts": st.column_config.CheckboxColumn()})
+    st.caption("Chat IDs are masked. Members are added, changed or removed by an operator with "
+               "scripts/telegram-demo-subscribers.py; nothing here can change who is alerted.")
 
 
 ROLE_MATRIX = pd.DataFrame(
@@ -1002,7 +1143,8 @@ ROLE_MATRIX = pd.DataFrame(
         ("Search and filter incidents", True, True),
         ("Open Platform Observability (Grafana)", True, True),
         ("Export incidents as CSV", True, False),
-        ("Simulate Event (when enabled)", True, False),
+        ("Simulate Event", True, False),
+        ("Telegram subscribers (read-only)", True, False),
         ("Administration console", True, False),
     ],
     columns=["Capability", "Admin", "Viewer"],
@@ -1066,10 +1208,13 @@ def render_header(context, refreshed_at: str) -> None:
         refreshed = datetime.fromisoformat(refreshed_at).strftime("%Y-%m-%d %H:%M UTC")
     except (TypeError, ValueError):
         refreshed = "Unavailable"
+    emblem = _image_data_uri(str(EMBLEM))
     st.markdown(
-        '<div class="soc-header"><div>'
-        '<div class="soc-eyebrow">Smart Incident Monitoring Platform</div>'
-        '<div class="soc-title">Security Operations Center</div></div>'
+        '<div class="soc-header"><div class="brand">'
+        + (f'<img class="brand-emblem" src="{emblem}" alt="{PRODUCT_NAME} emblem">' if emblem else "")
+        + '<div><div class="brand-name">LML <span>SENTINEL</span></div>'
+        f'<div class="brand-tagline">{TAGLINE}</div>'
+        f'<div class="soc-eyebrow">{ACADEMIC_TITLE} · Security Operations Center</div></div></div>'
         '<div class="soc-chips">'
         f'<span class="chip {role_class}">{escape(role.upper())}</span>'
         f'<span class="chip">{escape(operator_display_name(context))}</span>'
@@ -1080,11 +1225,19 @@ def render_header(context, refreshed_at: str) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="SOC · Smart Incident Monitoring", page_icon="🛡️", layout="wide")
+    st.set_page_config(page_title=f"{PRODUCT_NAME} · {ACADEMIC_TITLE}",
+                       page_icon=str(FAVICON) if FAVICON.exists() else "🛡️", layout="wide")
     inject_css()
     context = require_operator()
     mode = os.environ.get("DASHBOARD_AUTH_MODE", "oidc")
+    if EMBLEM.exists():
+        st.logo(str(EMBLEM), size="large")
     with st.sidebar:
+        st.markdown(
+            f'<div class="side-brand"><div class="brand-name">LML <span>SENTINEL</span></div>'
+            f'<div class="brand-tagline">{TAGLINE}</div></div>',
+            unsafe_allow_html=True,
+        )
         st.markdown(
             f'<div class="user-card"><div class="u">{escape(operator_display_name(context))}</div>'
             f'<div class="m">{escape(getattr(context, "role", "") or "Unassigned")} · tenant scope enforced</div></div>',
@@ -1132,8 +1285,9 @@ def main() -> None:
         tenants = sorted(df["tenant_id"].unique())
         tenant_filter = checkbox_filter("Tenant", tenants, "tenant")
 
-        analytics_types = sorted(df["analytics_type"].unique())
-        analytics_filter = checkbox_filter("Analytics type", analytics_types, "analytics")
+        # Filter by display name, so stored aliases (PPE_detection, ppe_detection) are one choice.
+        analytics_names = sorted({analytics_name(a) for a in df["analytics_type"].unique()})
+        analytics_filter = checkbox_filter("Analytics type", analytics_names, "analytics")
 
         severities = [s for s in SEVERITY_ORDER if s in df["severity"].unique()] + sorted(set(df["severity"].dropna()) - set(SEVERITY_ORDER))
         severity_filter = checkbox_filter("Severity", severities, "severity")
@@ -1161,7 +1315,7 @@ def main() -> None:
     def apply_dims(frame: pd.DataFrame) -> pd.DataFrame:
         return frame[
             frame["tenant_id"].isin(tenant_filter)
-            & frame["analytics_type"].isin(analytics_filter)
+            & frame["analytics_type"].map(analytics_name).isin(analytics_filter)
             & frame["severity"].isin(severity_filter)
         ]
 
@@ -1189,9 +1343,15 @@ def main() -> None:
         st.Page(lambda: render_evidence(filtered), title="Evidence", icon=":material/photo_library:",
                 url_path="evidence"),
     ]}
+    operations = []
     if context.can_simulate:
-        sections["Operations"] = [st.Page(render_simulator, title="Simulate Event", icon=":material/science:",
-                                          url_path="simulator")]
+        operations.append(st.Page(render_simulator, title="Simulate Event", icon=":material/science:",
+                                  url_path="simulator"))
+    if getattr(context, "is_admin", False):
+        operations.append(st.Page(render_telegram_subscribers, title="Telegram subscribers",
+                                  icon=":material/notifications_active:", url_path="telegram"))
+    if operations:
+        sections["Operations"] = operations
     admin_pages = []
     if getattr(context, "is_admin", False):
         admin_pages.append(st.Page(render_admin_console, title="Administration", icon=":material/admin_panel_settings:",
@@ -1210,7 +1370,7 @@ def main() -> None:
     render_header(context, df.attrs.get("refreshed_at", ""))
     st.markdown(
         f'<div class="soc-filters">Tenants: {escape(", ".join(tenant_filter) or "None")} · '
-        f'Analytics: {escape(", ".join(analytics_name(a) for a in analytics_filter) or "None")} · '
+        f'Analytics: {escape(", ".join(analytics_filter) or "None")} · '
         f'Severity: {escape(", ".join(severity_filter) or "None")} · {start_date} to {end_date} (UTC)</div>',
         unsafe_allow_html=True,
     )
