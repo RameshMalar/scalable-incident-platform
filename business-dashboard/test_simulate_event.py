@@ -19,7 +19,7 @@ ROOT = Path(__file__).parent
 REAL_PUBLISH = simulator.publish
 REAL_REQUIRE_OPERATOR = dashboard.require_operator
 SCOPE = "api://fbbe63e1-1f8f-4d4d-b695-0f9982842081/.default"
-ENV = {"ENABLE_DASHBOARD_SIMULATOR": "true", "SIMULATOR_INGESTION_ORIGIN": "https://ingestion.example",
+ENV = {"DASHBOARD_SIMULATOR_MODE": "live", "ENABLE_DASHBOARD_SIMULATOR": "true", "SIMULATOR_INGESTION_ORIGIN": "https://ingestion.example",
        "SIMULATOR_API_SCOPE": SCOPE, "SIMULATOR_TENANT": "TENANT-01"}
 
 
@@ -124,7 +124,8 @@ def send(at):
     return at.run(timeout=20)
 
 
-def test_disabled_simulator_explains_and_never_posts():
+def test_disabled_simulator_explains_and_never_posts(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_SIMULATOR_MODE", "live")
     at = page()
     assert not at.exception and any("not enabled" in i.value for i in at.info)
     assert not at.button
@@ -355,3 +356,95 @@ def test_three_team_members_share_the_existing_login_concurrently(monkeypatch, t
     assert [b.label for b in sessions[0].button] == ["Sign in"]
     sessions[1].run(timeout=20)
     assert any('chip role-admin">ADMIN<' in m.value for m in sessions[1].markdown)  # the others stay signed in
+
+
+# --- DEMO MODE (the default): session-only incidents, no ingestion, no Cosmos, no Telegram ---------
+
+POOL_BLOB = "https://acct.blob.core.windows.net/evidence/TENANT-DEV/intrusion/"
+
+
+@pytest.fixture
+def demo(monkeypatch):
+    for key in ("DASHBOARD_SIMULATOR_MODE", "ENABLE_DASHBOARD_SIMULATOR", "SIMULATOR_INGESTION_ORIGIN", "SIMULATOR_API_SCOPE"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("EVIDENCE_BLOB_ENDPOINT", "https://acct.blob.core.windows.net/")
+    # Any real path would trip these.
+    monkeypatch.setattr(dashboard, "incident_persisted", Mock(side_effect=AssertionError("Cosmos read for demo")))
+
+
+def create(at):
+    at.checkbox[0].check()
+    next(b for b in at.button if b.label == "Create demo incident").click()
+    return at.run(timeout=20)
+
+
+def test_demo_mode_is_the_default_and_clearly_labelled(demo):
+    assert simulator.demo_mode({}) and not simulator.demo_mode({"DASHBOARD_SIMULATOR_MODE": "live"})
+    at = page()
+    assert not at.exception
+    assert any("DEMO MODE" in m.value for m in at.markdown)
+    assert any("never sent to ingestion or stored in Cosmos DB" in c.value for c in at.caption)
+
+
+def test_demo_incident_stays_in_the_session_and_calls_nothing_real(monkeypatch, demo):
+    monkeypatch.setattr(dashboard, "subscribers_for", Mock(return_value=[person("Member A", "111222333", ["intrusion_detected"])]))
+    at = create(page())
+    assert not at.exception
+    dashboard.simulator.publish.assert_not_called()      # no ingestion call
+    dashboard.ingestion_token.assert_not_called()        # no token requested
+    incidents = at.session_state["demo_incidents"]
+    assert len(incidents) == 1
+    event = incidents[0]
+    assert event["event_id"].startswith("DEMO-") and event["event_purpose"] == "e2e_test"
+    assert event["evidence_uri"].startswith(POOL_BLOB)
+    assert any("created in this session" in s.value and event["event_id"] in s.value for s in at.success)
+    assert any("not sent in demo mode): would alert Member A (…333)" in i.value for i in at.info)
+    common = pytest.importorskip("common_event_model")
+    common.IncidentEvent.model_validate(event)          # the existing Common Event Model
+
+
+def test_demo_custom_analytics(demo):
+    at = page()
+    at.selectbox(key="sim_analytics").select("Custom analytics…").run(timeout=20)
+    at.text_input(key="sim_custom_type").input("vehicle_wrong_way_detection").run(timeout=20)
+    at.text_input(key="sim_custom_event").input("wrong_way_driving").run(timeout=20)
+    at = create(at)
+    event = at.session_state["demo_incidents"][0]
+    assert (event["analytics_type"], event["event_type"]) == ("vehicle_wrong_way_detection", "wrong_way_driving")
+    dashboard.simulator.publish.assert_not_called()
+
+
+def test_demo_incidents_join_every_view_marked_demo(demo):
+    import pandas as pd
+    real = pd.DataFrame([dict(event_id="E1", tenant_id="TENANT-01", site_id="SITE-01", source_id="CAM-1",
+                              analytics_type="intrusion_detection", event_type="intrusion_detected", severity="high",
+                              timestamp=pd.Timestamp("2026-10-20T10:00:00Z"), evidence_uri=None)])
+    real.attrs["refreshed_at"] = "2026-10-20T10:01:00+00:00"
+    event = simulator.build_event(analytics_type="crowd_detection", event_type="crowd_threshold_exceeded", severity="critical",
+                                  description="d", tenant_id="TENANT-01", site_id="SITE-02", evidence_pool=None,
+                                  evidence_endpoint="", evidence_container="evidence", id_prefix="DEMO-")
+    dashboard.st.session_state["demo_incidents"] = [event]
+    try:
+        merged = dashboard.with_demo_incidents(real)
+    finally:
+        dashboard.st.session_state.clear()
+    assert len(merged) == 2 and merged.attrs["refreshed_at"] == "2026-10-20T10:01:00+00:00"
+    assert merged.loc[merged["event_id"] == event["event_id"], "demo"].item() is True
+    assert merged.loc[merged["event_id"] == "E1", "demo"].item() is False
+    assert "demo" not in real  # the cached real data is never modified
+    table = dashboard.incident_table(merged)
+    assert dict(zip(table["Event ID"], table["Purpose"])) == {event["event_id"]: "DEMO · session only", "E1": "Incident"}
+    cards = dashboard.overview_kpis(merged, merged.iloc[:0])
+    assert ">2<" in cards[0] and ">1<" in cards[1]  # total and critical include the demo incident
+
+
+def test_demo_evidence_is_limited_to_packaged_photographs(monkeypatch, demo):
+    pools = simulator.load_evidence_pools()
+    blob = pools["intrusion"][0]["blob"]
+    good = f"https://acct.blob.core.windows.net/evidence/{blob}"
+    dashboard.st.session_state["demo_incidents"] = [{"evidence_uri": good}, {"evidence_uri": "https://evil.example/x.jpg"},
+                                                    {"evidence_uri": "https://acct.blob.core.windows.net/evidence/TENANT-02/private.jpg"}]
+    try:
+        assert dashboard.demo_evidence_in_session() == frozenset({good})
+    finally:
+        dashboard.st.session_state.clear()

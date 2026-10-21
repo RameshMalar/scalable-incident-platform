@@ -29,6 +29,27 @@ SITE = re.compile(r"^[A-Z0-9][A-Z0-9-]{0,39}$")
 MAX_RESPONSE_BYTES = 65536
 
 
+DEMO_PREFIX = "DEMO-"
+
+
+def demo_mode(env=os.environ) -> bool:
+    """Demo mode unless the real ingestion path is explicitly selected.
+
+    In demo mode an incident lives only in the signed-in browser session: it is
+    never sent to ingestion, never stored in Cosmos DB and never alerts anyone.
+    """
+    return env.get("DASHBOARD_SIMULATOR_MODE", "demo").strip().lower() != "live"
+
+
+def demo_evidence_uris(pools: dict, endpoint: str, container: str) -> frozenset:
+    """Evidence a demo incident may show: only the packaged pool's photographs."""
+    endpoint = (endpoint or "").strip().rstrip("/")
+    if not endpoint:
+        return frozenset()
+    return frozenset(f"{endpoint}/{container or 'evidence'}/{item['blob']}"
+                     for items in pools.values() for item in items)
+
+
 class SimulatorUnavailable(Exception):
     """Simulation is switched off or misconfigured; never attempt a request."""
 
@@ -66,7 +87,7 @@ def load_evidence_pools(path=EVIDENCE_FILE) -> dict:
 
 def build_event(*, analytics_type: str, event_type: str, severity: str, description: str, tenant_id: str,
                 site_id: str, evidence_pool: list | None, evidence_endpoint: str, evidence_container: str,
-                now: datetime | None = None, choose=secrets.choice) -> dict:
+                now: datetime | None = None, choose=secrets.choice, id_prefix: str = "EVT-SIM-") -> dict:
     """A Common Event Model incident, marked as a test."""
     if severity not in SEVERITIES:
         raise ValueError("Unsupported severity.")
@@ -81,7 +102,7 @@ def build_event(*, analytics_type: str, event_type: str, severity: str, descript
         source_id = picked["source_id"]
         evidence_uri = f"{endpoint}/{evidence_container or 'evidence'}/{picked['blob']}"
     return {
-        "event_id": "EVT-SIM-" + secrets.token_hex(4).upper(),
+        "event_id": id_prefix + secrets.token_hex(4).upper(),
         "tenant_id": tenant_id,
         "site_id": site_id,
         "source_id": source_id,

@@ -220,10 +220,43 @@ def load_evidence(evidence_uri: str, thumbnail: bool = True) -> bytes | None:
     if get_evidence_store() is None:
         return None
     records = _load_incidents(context.tenants)
-    if (not isinstance(evidence_uri, str) or "evidence_uri" not in records
-            or not records["evidence_uri"].eq(evidence_uri).any()):
+    known = ("evidence_uri" in records and records["evidence_uri"].eq(evidence_uri).any())
+    if not isinstance(evidence_uri, str) or not (known or evidence_uri in demo_evidence_in_session()):
         return None
     return (_load_preview if thumbnail else _load_original)(context.tenants, evidence_uri)
+
+
+# --- Demo mode: incidents that exist only in this signed-in session ------------------------
+DEMO_KEY = "demo_incidents"
+MAX_DEMO_INCIDENTS = 50
+
+
+def demo_incidents() -> list[dict]:
+    return st.session_state.setdefault(DEMO_KEY, [])
+
+
+def demo_evidence_in_session() -> frozenset:
+    """Evidence URIs of this session's demo incidents that are packaged pool photographs."""
+    allowed = simulator.demo_evidence_uris(simulator.load_evidence_pools(), os.environ.get("EVIDENCE_BLOB_ENDPOINT", ""),
+                                           os.environ.get("EVIDENCE_CONTAINER", "evidence"))
+    return frozenset(i["evidence_uri"] for i in demo_incidents() if i.get("evidence_uri") in allowed)
+
+
+def with_demo_incidents(frame: pd.DataFrame) -> pd.DataFrame:
+    """Real incidents plus this session's demo incidents, marked demo=True. Never written anywhere."""
+    demos = demo_incidents()
+    if not demos:
+        return frame
+    demo_frame = pd.DataFrame(demos)
+    demo_frame["timestamp"] = pd.to_datetime(demo_frame["timestamp"], format="ISO8601", utc=True)
+    demo_frame["demo"] = True
+    merged = ordered_incidents(pd.concat([demo_frame, frame.assign(demo=False)], ignore_index=True))
+    merged.attrs = dict(frame.attrs)
+    return merged
+
+
+def is_demo(row) -> bool:
+    return row.get("demo") is True
 
 
 @st.cache_data(ttl=60, max_entries=2, show_spinner=False)
@@ -290,6 +323,7 @@ def inject_css() -> None:
         }}
         .chip.role-admin {{ color:{INK_PRIMARY}; border-color:{ACCENT}; background:rgba(0,210,254,0.14); font-weight:650; }}
         .chip.role-viewer {{ color:{INK_PRIMARY}; font-weight:650; }}
+        .chip.demo-chip {{ color:#1a1300; background:#f2cc3d; border-color:#f2cc3d; font-weight:750; letter-spacing:.04em; }}
         .chip .live {{ width:7px; height:7px; border-radius:50%; background:{TREND_BETTER}; }}
         .soc-filters {{ font-size:12.5px; color:{INK_MUTED}; margin:-6px 0 14px; }}
         .brand {{ display:flex; align-items:center; gap:14px; }}
@@ -469,7 +503,8 @@ def render_latest_incidents(filtered: pd.DataFrame, limit: int = 8) -> None:
                 st.caption(f"Tenant {row['tenant_id']} · Site {row['site_id']} · Camera/source {row.get('source_id', 'Unavailable')}")
                 st.caption(row["timestamp"].strftime("%Y-%m-%d %H:%M:%S UTC"))
                 purpose = row.get("event_purpose", "incident")
-                st.caption(f"TEST · {purpose}" if is_test_purpose(purpose) else "Purpose: incident")
+                st.caption("DEMO · this session only, not stored" if is_demo(row)
+                           else f"TEST · {purpose}" if is_test_purpose(purpose) else "Purpose: incident")
                 st.text(f"Event ID: {row['event_id']}")
 
 
@@ -715,7 +750,8 @@ def incident_table(frame: pd.DataFrame) -> pd.DataFrame:
         "Tenant": frame["tenant_id"],
         "Site": column("site_id"),
         "Camera": column("source_id"),
-        "Purpose": column("event_purpose", "incident").fillna("incident").map(lambda p: f"TEST · {p}" if is_test_purpose(p) else "Incident"),
+        "Purpose": [("DEMO · session only" if demo is True else f"TEST · {p}" if is_test_purpose(p) else "Incident")
+                    for p, demo in zip(column("event_purpose", "incident").fillna("incident"), column("demo", False))],
         "Evidence": column("evidence_uri", None).map(lambda uri: isinstance(uri, str) and bool(uri)),
     })
 
@@ -854,7 +890,7 @@ def _render_evidence_grid(
                 caption=(
                     f"{row['event_id']} · {analytics_name(row['analytics_type'])} · "
                     f"{row['severity']} · {relative_time(row['timestamp'])} · "
-                    + ("TEST" if row.get("event_purpose") in ("e2e_test", "load_test") else "Incident")
+                    + ("DEMO" if is_demo(row) else "TEST" if row.get("event_purpose") in ("e2e_test", "load_test") else "Incident")
                 ),
                 width="stretch",
             )
@@ -972,22 +1008,38 @@ def _recipient_names(people) -> str:
     return ", ".join(f"{p.label or p.kind} ({p.chat})" for p in people)
 
 
+DEMO_MIN_INTERVAL_SECONDS = 3
+
+
+def demo_tenant(context) -> str:
+    preferred = os.environ.get("SIMULATOR_TENANT", "TENANT-01")
+    return preferred if preferred in context.tenants else context.tenants[0]
+
+
 def render_simulator() -> None:
     context = require_operator()
     if not context.can_simulate:
         st.error("Simulation permission is required.")
         return
+    demo = simulator.demo_mode()
     st.subheader("Simulate Event")
-    st.caption("Sends one TEST incident through the authorized ingestion API. It is stored, appears on every page "
-               "marked TEST, and alerts only the Telegram subscribers of that event type.")
-    try:
-        config = simulator.simulator_config()
-    except simulator.SimulatorUnavailable as exc:
-        st.info(str(exc))
-        return
-    if config.tenant not in context.tenants:
-        st.error("The simulator's tenant is outside your authorized scope.")
-        return
+    if demo:
+        st.markdown('<span class="chip demo-chip">DEMO MODE</span>', unsafe_allow_html=True)
+        st.caption("Creates a TEST incident in your signed-in session only. It appears on every page marked DEMO, "
+                   "is never sent to ingestion or stored in Cosmos DB, and no Telegram message is sent.")
+        config, tenant = None, demo_tenant(context)
+    else:
+        st.caption("Sends one TEST incident through the authorized ingestion API. It is stored, appears on every page "
+                   "marked TEST, and alerts only the Telegram subscribers of that event type.")
+        try:
+            config = simulator.simulator_config()
+        except simulator.SimulatorUnavailable as exc:
+            st.info(str(exc))
+            return
+        if config.tenant not in context.tenants:
+            st.error("The simulator's tenant is outside your authorized scope.")
+            return
+        tenant = config.tenant
 
     catalog = load_catalog()
     specs = {spec.display_name: spec for spec in catalog.analytics}
@@ -1016,73 +1068,80 @@ def render_simulator() -> None:
             st.error("Custom names use lowercase letters, digits and underscores: 3–48 characters, starting with a letter.")
 
     pools = simulator.load_evidence_pools()
+    people = None
     with info_col:
         with st.container(border=True):
-            st.markdown("**Who will be alerted**")
-            subscribers = subscribers_for((config.tenant,))
+            st.markdown("**Would be alerted on Telegram**" if demo else "**Who will be alerted**")
+            subscribers = subscribers_for((tenant,))
             if subscribers is None:
-                st.warning("Subscriber list unavailable. Delivery is still decided by the Worker's routing.")
+                st.warning("Subscriber list unavailable. Delivery is decided by the Worker's routing.")
             elif not valid:
                 st.caption("Enter a valid event type to see its subscribers.")
             else:
-                people = telegram_subscribers.recipients(subscribers, config.tenant, event_type)
+                people = telegram_subscribers.recipients(subscribers, tenant, event_type)
                 if people:
                     st.success(f"{len(people)} Telegram subscriber{'s' if len(people) != 1 else ''}: {_recipient_names(people)}")
                 else:
-                    st.info("No subscriber for this event type. The incident is stored; no Telegram message is sent.")
+                    st.info("No subscriber for this event type, so no Telegram alert would be sent.")
+            if demo:
+                st.caption("Demo mode: this is the real routing data, but no message is sent.")
             st.markdown("**Evidence**")
             if pool and pools.get(pool) and os.environ.get("EVIDENCE_BLOB_ENDPOINT"):
                 st.caption(f"A stored photograph from the {pool} set ({len(pools[pool])} images) is attached.")
             else:
                 st.caption("No evidence image for this type; the alert is text only.")
-            st.caption(f"Tenant {config.tenant} · purpose e2e_test · one event per confirmation")
+            st.caption(f"Tenant {tenant} · purpose e2e_test · one incident per confirmation")
 
     with st.form("simulate_event", clear_on_submit=True):
         st.markdown(f"{severity_badge(severity)} &nbsp; **{escape(catalog.analytics_name(analytics_type) if analytics_type else '—')}** · "
-                    f"{escape(catalog.event_name(event_type) if event_type else '—')} · {escape(config.tenant)} · {escape(site)}",
+                    f"{escape(catalog.event_name(event_type) if event_type else '—')} · {escape(tenant)} · {escape(site)}",
                     unsafe_allow_html=True)
-        acknowledged = st.checkbox("Send exactly one TEST event and alert its subscribers.")
-        submitted = st.form_submit_button("Send test event", type="primary", disabled=not valid)
+        acknowledged = st.checkbox("Create exactly one DEMO incident in this session." if demo
+                                   else "Send exactly one TEST event and alert its subscribers.")
+        submitted = st.form_submit_button("Create demo incident" if demo else "Send test event", type="primary",
+                                          disabled=not valid)
 
     if submitted:
         now = time.monotonic()
-        if st.session_state.get("simulator_pending"):
+        interval = DEMO_MIN_INTERVAL_SECONDS if demo else SIM_MIN_INTERVAL_SECONDS
+        if not demo and st.session_state.get("simulator_pending"):
             st.warning("Resolve the previous event before sending another.")
         elif not acknowledged:
-            st.error("Tick the confirmation to send the event.")
-        elif now - st.session_state.get("simulator_last_attempt", -SIM_MIN_INTERVAL_SECONDS) < SIM_MIN_INTERVAL_SECONDS:
-            st.warning(f"Wait {SIM_MIN_INTERVAL_SECONDS} seconds between events.")
+            st.error("Tick the confirmation first.")
+        elif now - st.session_state.get("simulator_last_attempt", -interval) < interval:
+            st.warning(f"Wait {interval} seconds between events.")
         else:
             st.session_state["simulator_last_attempt"] = now
             event = simulator.build_event(
                 analytics_type=analytics_type, event_type=event_type, severity=severity, description=description,
-                tenant_id=config.tenant, site_id=site, evidence_pool=pools.get(pool) if pool else None,
+                tenant_id=tenant, site_id=site, evidence_pool=pools.get(pool) if pool else None,
                 evidence_endpoint=os.environ.get("EVIDENCE_BLOB_ENDPOINT", ""),
-                evidence_container=os.environ.get("EVIDENCE_CONTAINER", "evidence"))
-            try:
-                token = ingestion_token(config.scope)
-            except Exception:
-                logger.warning("simulator could not obtain an ingestion token")
-                st.error("The dashboard identity could not obtain an ingestion token. Nothing was sent.")
+                evidence_container=os.environ.get("EVIDENCE_CONTAINER", "evidence"),
+                id_prefix=simulator.DEMO_PREFIX if demo else "EVT-SIM-")
+            if demo:
+                incidents = demo_incidents()
+                incidents.insert(0, event)
+                del incidents[MAX_DEMO_INCIDENTS:]
+                st.session_state["demo_last"] = {"event_id": event["event_id"],
+                                                 "alerted": _recipient_names(people) if people else ""}
+                logger.info("demo incident created in session event_id=%s", event["event_id"])
+                st.rerun()  # so the header, KPIs and every page include it at once
             else:
-                # Kept across reruns so an ambiguous outcome is never retried automatically.
-                st.session_state["simulator_pending"] = {"event_id": event["event_id"], "tenant_id": config.tenant,
-                                                         "state": "unknown", "checked": 0.0}
-                try:
-                    simulator.publish(config.origin, token, event)
-                except HTTPError as exc:
-                    if 400 <= exc.code < 500:
-                        # A definite refusal: nothing was published.
-                        st.session_state.pop("simulator_pending", None)
-                        logger.warning("simulator event refused status=%s", exc.code)
-                        st.error(f"Ingestion refused the event (HTTP {exc.code}). Nothing was published.")
-                    else:
-                        st.error("Ingestion's answer was unclear. Check All incidents before sending again.")
-                except (ValueError, URLError, TimeoutError, OSError):
-                    st.error("Ingestion's answer was unclear. Check All incidents before sending again.")
-                else:
-                    st.session_state["simulator_pending"]["state"] = "accepted"
-                    logger.info("simulator event accepted event_id=%s", event["event_id"])
+                _send_live(config, event)
+
+    if demo:
+        last = st.session_state.get("demo_last")
+        if last:
+            st.success(f"DEMO incident {last['event_id']} created in this session. It now appears on Overview, "
+                       "All incidents and Evidence, marked DEMO. Nothing was sent to ingestion or stored in Cosmos DB.")
+            st.info(f"Telegram (not sent in demo mode): would alert {last['alerted']}." if last["alerted"]
+                    else "Telegram (not sent in demo mode): no subscriber for this event type.")
+        count = len(demo_incidents())
+        if count and st.button(f"Clear {count} demo incident{'s' if count != 1 else ''}", key="sim_clear_demo"):
+            st.session_state[DEMO_KEY] = []
+            st.session_state.pop("demo_last", None)
+            st.rerun()
+        return
 
     pending = st.session_state.get("simulator_pending")
     if pending:
@@ -1103,6 +1162,34 @@ def render_simulator() -> None:
         if st.button("Send another event", key="sim_reset"):
             st.session_state.pop("simulator_pending", None)
             st.rerun()
+
+
+def _send_live(config, event) -> None:
+    """The real path: one authorized POST to ingestion (DASHBOARD_SIMULATOR_MODE=live only)."""
+    try:
+        token = ingestion_token(config.scope)
+    except Exception:
+        logger.warning("simulator could not obtain an ingestion token")
+        st.error("The dashboard identity could not obtain an ingestion token. Nothing was sent.")
+        return
+    # Kept across reruns so an ambiguous outcome is never retried automatically.
+    st.session_state["simulator_pending"] = {"event_id": event["event_id"], "tenant_id": config.tenant,
+                                             "state": "unknown", "checked": 0.0}
+    try:
+        simulator.publish(config.origin, token, event)
+    except HTTPError as exc:
+        if 400 <= exc.code < 500:
+            # A definite refusal: nothing was published.
+            st.session_state.pop("simulator_pending", None)
+            logger.warning("simulator event refused status=%s", exc.code)
+            st.error(f"Ingestion refused the event (HTTP {exc.code}). Nothing was published.")
+        else:
+            st.error("Ingestion's answer was unclear. Check All incidents before sending again.")
+    except (ValueError, URLError, TimeoutError, OSError):
+        st.error("Ingestion's answer was unclear. Check All incidents before sending again.")
+    else:
+        st.session_state["simulator_pending"]["state"] = "accepted"
+        logger.info("simulator event accepted event_id=%s", event["event_id"])
 
 
 def render_telegram_subscribers() -> None:
@@ -1210,16 +1297,21 @@ def render_header(context, refreshed_at: str) -> None:
     except (TypeError, ValueError):
         refreshed = "Unavailable"
     emblem = _image_data_uri(str(EMBLEM))
+    emblem_img = f'<img class="brand-emblem" src="{emblem}" alt="{PRODUCT_NAME} emblem">' if emblem else ""
+    count = len(demo_incidents())
+    demo_chip = (f'<span class="chip demo-chip">DEMO MODE · {count} session incident{"" if count == 1 else "s"}</span>'
+                 if simulator.demo_mode() else "")
     st.markdown(
         '<div class="soc-header"><div class="brand">'
-        + (f'<img class="brand-emblem" src="{emblem}" alt="{PRODUCT_NAME} emblem">' if emblem else "")
-        + '<div><div class="brand-name">LML <span>SENTINEL</span></div>'
+        f'{emblem_img}'
+        '<div><div class="brand-name">LML <span>SENTINEL</span></div>'
         f'<div class="brand-tagline">{TAGLINE}</div>'
         f'<div class="soc-eyebrow">{ACADEMIC_TITLE}</div></div></div>'
         '<div class="soc-chips">'
         f'<span class="chip {role_class}">{escape(role.upper())}</span>'
         f'<span class="chip">{escape(operator_display_name(context))}</span>'
         f'<span class="chip"><span class="live"></span>Cosmos refreshed {escape(refreshed)}</span>'
+        f'{demo_chip}'
         '</div></div>',
         unsafe_allow_html=True,
     )
@@ -1276,7 +1368,7 @@ def main() -> None:
             st.rerun()
     with st.sidebar:
         refresh_clock()
-    df = load_incidents()
+    df = with_demo_incidents(load_incidents())
 
     with st.sidebar:
         st.link_button("Platform Observability", GRAFANA_DASHBOARD_URL, icon=":material/monitoring:", width="stretch")
