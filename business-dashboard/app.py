@@ -1397,8 +1397,9 @@ def render_admin_console() -> None:
                        "change them with tools/make_password_hash.py and a new secret version.")
 
 
-GRAFANA_DASHBOARD_URL = ("https://incident-grafana.calmmushroom-4789bfc0.malaysiawest.azurecontainerapps.io"
-                         "/d/incident-platform-ops/incident-platform-7c-operations")
+GRAFANA_DASHBOARD_URL = ("https://incident-grafana--sys-events-3aac3b8e.calmmushroom-4789bfc0.malaysiawest.azurecontainerapps.io"
+                         "/d/incident-platform-ops/platform-observability-7c-health-and-performance"
+                         "?orgId=1&from=now-6h&to=now&timezone=Asia%2FSingapore")
 
 
 def render_header(context, refreshed_at: str) -> None:

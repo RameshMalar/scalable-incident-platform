@@ -32,7 +32,12 @@ def test_complete_overview_and_single_external_controls(monkeypatch):
     links=at.get('link_button')
     assert sum(b.proto.label=='Simulate Event' for b in links)==1
     assert next(b for b in links if b.proto.label=='Simulate Event').proto.url==app.INGESTION_SIMULATOR_URL
-    assert next(b for b in links if b.proto.label=='Platform Observability').proto.url==app.GRAFANA_DASHBOARD_URL
+    expected_grafana_url = ('https://incident-grafana--sys-events-3aac3b8e.calmmushroom-4789bfc0.malaysiawest.azurecontainerapps.io'
+                            '/d/incident-platform-ops/platform-observability-7c-health-and-performance'
+                            '?orgId=1&from=now-6h&to=now&timezone=Asia%2FSingapore')
+    assert next(b for b in links if b.proto.label=='Platform Observability').proto.url==expected_grafana_url
+    assert app.GRAFANA_DASHBOARD_URL==expected_grafana_url
+    assert 'utm_source' not in app.GRAFANA_DASHBOARD_URL
     assert any(b.label=='Sign out' for b in at.button)
     assert not hasattr(app,'render_observability')
     publish.assert_not_called()

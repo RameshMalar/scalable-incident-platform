@@ -24,7 +24,9 @@ def test_streamlit_links_directly_to_existing_grafana():
     assert links[0].args[1].id=='GRAFANA_DASHBOARD_URL'
     import ast as _ast
     constants={n.targets[0].id:_ast.literal_eval(n.value) for n in tree.body if isinstance(n,_ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],_ast.Name) and n.targets[0].id=='GRAFANA_DASHBOARD_URL'}
-    assert constants['GRAFANA_DASHBOARD_URL']=='https://incident-grafana.calmmushroom-4789bfc0.malaysiawest.azurecontainerapps.io/d/incident-platform-ops/incident-platform-7c-operations'
+    assert constants['GRAFANA_DASHBOARD_URL']==('https://incident-grafana--sys-events-3aac3b8e.calmmushroom-4789bfc0.malaysiawest.azurecontainerapps.io'
+                                               '/d/incident-platform-ops/platform-observability-7c-health-and-performance'
+                                               '?orgId=1&from=now-6h&to=now&timezone=Asia%2FSingapore')
     assert not any(isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name=='render_observability' for n in ast.walk(tree))
 
 @pytest.mark.parametrize('mutation',['formula','queue','overlap','refresh','missing_zero'])
