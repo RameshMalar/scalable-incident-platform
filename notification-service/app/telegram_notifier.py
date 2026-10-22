@@ -44,9 +44,12 @@ class TelegramNotifier(Notifier):
         session_factory=None,
         sleep=None,
         clock=None,
+        require_global_chat: bool = True,
     ) -> None:
         self.bot_token = bot_token or os.environ.get("TELEGRAM_BOT_TOKEN")
-        self.chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID")
+        # The global chat serves only legacy flat messages. Subscriber-only
+        # deployments reject those, so they need no global chat at all.
+        self.chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID") or None
         self.min_send_interval_seconds = (
             min_send_interval_seconds
             if min_send_interval_seconds is not None
@@ -71,7 +74,7 @@ class TelegramNotifier(Notifier):
         if not self.bot_token:
             raise ValueError("TELEGRAM_BOT_TOKEN is required")
 
-        if not self.chat_id:
+        if not self.chat_id and require_global_chat:
             raise ValueError("TELEGRAM_CHAT_ID is required")
 
         if self.min_send_interval_seconds < 0:
@@ -99,6 +102,8 @@ class TelegramNotifier(Notifier):
             self.chat_id if telegram_chat_id is None
             else TypeAdapter(TelegramChatId).validate_python(telegram_chat_id)
         )
+        if not destination:
+            raise ValueError("no Telegram destination: legacy global chat is not configured")
         # Fetched before the send lock is taken: blob IO must not stall the
         # throttle that the whole Telegram chat shares.
         evidence = await self._load_evidence(event)

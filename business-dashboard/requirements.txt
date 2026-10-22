@@ -1,4 +1,6 @@
-streamlit==1.63.0
+streamlit[auth]==1.66.1
+# Streamlit 1.66.1 permits the Pillow security fixes in 13.0.0.
+Pillow==13.0.0
 azure-cosmos==4.16.4
 azure-identity==1.25.3
 # Same pin as notification-service, which reads the same private container with
@@ -9,3 +11,7 @@ plotly==5.24.1
 # Transitive dep of streamlit/pandas; pinned directly to pull in the fix for
 # PYSEC-2026-113 (use-after-free reading Arrow IPC files with pre-buffering).
 pyarrow==25.0.1
+
+# Validate signed Entra operator identities at the application boundary.
+PyJWT[crypto]==2.15.0
+Authlib==1.9.1

@@ -39,6 +39,10 @@ class Subscription(SubscriptionCreate):
     tenant_id: str
     created_at: datetime
     updated_at: datetime
+    # Set only by authenticated account setup (app.telegram_self_service).
+    # Such a subscription is delivered only while its owner stays authorized
+    # for the tenant and verified for the chat. Clients cannot set it.
+    owner_object_id: str | None = None
 
 
 class SubscriptionPage(BaseModel):

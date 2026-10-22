@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 from app.notification_models import InvalidSubscription
 from app.notification_handler import should_notify
 from app.notification_models import NotificationEnvelope
+from app.owner_eligibility import owner_eligible
 from app.subscription_store import (
     SubscriptionReader,
     matches,
@@ -41,6 +42,12 @@ class SubscriptionRouter:
             if not matches(record, incident.tenant_id, incident.event_type):
                 continue
             if not await self.authorized(record.tenant_id, record.telegram_chat_id):
+                continue
+            if record.owner_object_id is not None and not await owner_eligible(
+                    self.reader.read_platform_record, record.owner_object_id,
+                    record.tenant_id, record.telegram_chat_id):
+                # Revoked/disabled owner, removed tenant or replaced chat.
+                logger.info("owner no longer eligible; route skipped")
                 continue
             routes.append(NotificationEnvelope(
                 subscription_id=record.id,

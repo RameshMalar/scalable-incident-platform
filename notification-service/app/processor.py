@@ -32,10 +32,12 @@ def should_notify(event: IncidentEvent) -> bool:
 
 
 class NotificationProcessor:
-    def __init__(self, notifier: Notifier, *, accept_legacy: bool = True) -> None:
+    def __init__(self, notifier: Notifier, *, accept_legacy: bool = True, eligibility=None) -> None:
         self._notifier = notifier
         # Temporary compatibility while the worker still sends flat incidents.
         self.accept_legacy = accept_legacy
+        # app.delivery_eligibility; None keeps the pre-send recheck off.
+        self.eligibility = eligibility
 
     async def process(self, body: bytes | str) -> None:
         try:
@@ -73,6 +75,13 @@ class NotificationProcessor:
             return
 
         if routed:
+            # Read failures propagate: abandon, retry, then dead-letter.
+            if self.eligibility is not None and not await self.eligibility.eligible(envelope):
+                logger.info(
+                    "routed notification no longer eligible; not sent event_id=%s",
+                    event.event_id,
+                )
+                return
             await self._notifier.notify(
                 event, telegram_chat_id=envelope.telegram_chat_id
             )

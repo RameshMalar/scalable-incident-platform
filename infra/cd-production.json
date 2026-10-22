@@ -8,5 +8,8 @@
   "routing_configuration_approved": false,
   "routing_approval_reference": "",
   "notification_queue_review_reference": "",
-  "rollback_worker_image": ""
+  "rollback_worker_image": "",
+  "dashboard_release": "keep",
+  "dashboard_auth_client_id": "",
+  "dashboard_signin_reference": ""
 }

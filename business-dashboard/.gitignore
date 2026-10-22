@@ -1,0 +1,4 @@
+.streamlit/secrets.toml
+# Local sign-in files (username + password hash) are never committed.
+.streamlit/local-auth.toml
+*local-auth*.toml
