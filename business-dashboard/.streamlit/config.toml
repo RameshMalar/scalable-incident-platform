@@ -1,6 +1,13 @@
 [theme]
+# LML SENTINEL: dark navy, cyan and white (sampled from assets/).
+# primaryColor is a deeper cyan so white button and chip text stays readable.
 base = "dark"
-primaryColor = "#3987e5"
-backgroundColor = "#0d0d0d"
-secondaryBackgroundColor = "#1a1a19"
-textColor = "#ffffff"
+primaryColor = "#0891b2"
+backgroundColor = "#001227"
+secondaryBackgroundColor = "#082039"
+textColor = "#edf5ff"
+font = "sans serif"
+
+[client]
+# No developer menu or "Deploy" button for viewers, wherever the app is served.
+toolbarMode = "viewer"

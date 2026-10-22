@@ -1,0 +1,69 @@
+import copy
+import json
+import sys
+from pathlib import Path
+import pytest
+import yaml
+import ast
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
+from validate_consolidation import validate
+
+def inputs():
+    return (json.loads((ROOT/'dashboards/incident-platform-operations.json').read_text()),yaml.safe_load((ROOT/'provisioning/datasources/azure-monitor.yaml').read_text()),yaml.safe_load((ROOT/'provisioning/dashboards/dashboard-provider.yaml').read_text()))
+
+def test_configuration_passes():
+    validate(*inputs())
+
+def test_streamlit_links_directly_to_existing_grafana():
+    tree=ast.parse((ROOT.parent/'business-dashboard/app.py').read_text(encoding='utf-8'))
+    calls=[n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr=='link_button']
+    links=[n for n in calls if len(n.args)>1 and isinstance(n.args[0],ast.Constant) and n.args[0].value=='Platform Observability']
+    assert len(links)==1
+    assert isinstance(links[0].args[1],ast.Name)
+    assert links[0].args[1].id=='GRAFANA_DASHBOARD_URL'
+    import ast as _ast
+    constants={n.targets[0].id:_ast.literal_eval(n.value) for n in tree.body if isinstance(n,_ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],_ast.Name) and n.targets[0].id=='GRAFANA_DASHBOARD_URL'}
+    assert constants['GRAFANA_DASHBOARD_URL']==('https://incident-grafana--sys-events-3aac3b8e.calmmushroom-4789bfc0.malaysiawest.azurecontainerapps.io'
+                                               '/d/incident-platform-ops/platform-observability-7c-health-and-performance'
+                                               '?orgId=1&from=now-6h&to=now&timezone=Asia%2FSingapore')
+    assert not any(isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name=='render_observability' for n in ast.walk(tree))
+
+@pytest.mark.parametrize('mutation',['formula','queue','overlap','refresh','missing_zero','peak_as_current','normalized_as_consumed','missing_ru_zero','missing_restored_panel','restored_transform','restored_time_range','restored_title','system_environment','system_count_null','system_range','system_source'])
+def test_rejects_semantic_regressions(mutation):
+    dashboard,sources,provisioning=inputs()
+    panels={p['id']:p for p in dashboard['panels']}
+    if mutation=='formula':
+        panels[25]['targets'][0]['azureLogAnalytics']['query']=panels[25]['targets'][0]['azureLogAnalytics']['query'].replace('percentile(Maximum, 95)','avg(Average)')
+    elif mutation=='queue':
+        panels[1]['targets'][0]['azureMonitor']['aggregation']='Total'
+    elif mutation=='overlap':
+        panels[21]['gridPos']=copy.deepcopy(panels[20]['gridPos'])
+    elif mutation=='refresh':
+        dashboard['refresh']='5s'
+    elif mutation=='missing_zero':
+        panels[9]['fieldConfig']['defaults']['noValue']='0'
+    elif mutation=='peak_as_current':
+        panels[33]['targets'][0]['azureLogAnalytics']['query']=panels[33]['targets'][0]['azureLogAnalytics']['query'].replace('arg_max(TimeGenerated, Maximum)','max(Maximum)')
+    elif mutation=='normalized_as_consumed':
+        panels[35]['targets'][0]['azureMonitor']['metricName']='NormalizedRUConsumption'
+    elif mutation=='missing_ru_zero':
+        panels[34]['fieldConfig']['defaults']['noValue']='0'
+    elif mutation=='missing_restored_panel':
+        dashboard['panels'].remove(panels[11])
+    elif mutation=='restored_transform':
+        panels[13]['transformations'][0]['options']['reducers']=['mean']
+    elif mutation=='restored_time_range':
+        panels[12]['timeFrom']='1h'
+    elif mutation=='restored_title':
+        panels[11]['title']='Changed traffic definition'
+    elif mutation=='system_environment':
+        panels[5]['targets'][0]['azureLogAnalytics']['query']=panels[5]['targets'][0]['azureLogAnalytics']['query'].replace('calmmushroom-4789bfc0','incident-env')
+    elif mutation=='system_count_null':
+        panels[5]['targets'][0]['azureLogAnalytics']['query']=panels[5]['targets'][0]['azureLogAnalytics']['query'].replace('long(null)','long(0)')
+    elif mutation=='system_range':
+        panels[5]['targets'][0]['azureLogAnalytics']['dashboardTime']=True
+    else:
+        panels[5]['targets'][0]['azureLogAnalytics']['workspace']='wrong-workspace'
+    with pytest.raises(AssertionError):
+        validate(dashboard,sources,provisioning)

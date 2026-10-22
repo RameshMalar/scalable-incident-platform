@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import re
 import subprocess
 import shutil
 import sys
@@ -51,6 +52,13 @@ def test_existing_unprivileged_ci_jobs_preserved():
         for step in job.get('steps', []):
             if step.get('uses') == 'aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25':
                 step['uses'] = 'aquasecurity/trivy-action@v0.36.0'
+            # The dashboard image now refuses to start without sign-in; its
+            # smoke test proves that first, then checks health with platform
+            # sign-in (business-dashboard/auth_preflight.py). Remove only that.
+            if step.get('name') == 'Smoke test the dashboard container':
+                refusal, rest = step['run'].split('\n\n', 1)
+                assert 'dashboard auth preflight FAILED' in refusal
+                step['run'] = rest.replace(' -e DASHBOARD_AUTH_MODE=easyauth', '', 1)
         assert semantic_hash(job) == digest
     assert set(CI['jobs']) == set(EXPECTED_CI_CONTRACT['jobs']) | {'workflow-safety', 'gate'}
 
@@ -412,6 +420,27 @@ def test_subscription_cd_remains_manual_and_semantically_unchanged():
     prepare = preserved['jobs']['prepare']
     prepare['outputs'].pop('notification_queue')
     prepare['steps'] = [step for step in prepare['steps'] if step.get('id') != 'queue']
+    # The dashboard release guard (test_dashboard_release.py): a merge keeps the
+    # running dashboard, and only an explicit signin-test/promote redeploys it.
+    # Remove exactly those additions; any other change still fails the hash.
+    dashboard_inputs = ('dashboard_release', 'dashboard_auth_client_id', 'dashboard_signin_reference')
+    for name in dashboard_inputs:
+        preserved['on']['workflow_dispatch']['inputs'].pop(name)
+    validate_step = next(step for step in preserved['jobs']['preflight']['steps'] if 'validate-rollout-config.py' in step.get('run', ''))
+    for env in (validate_step['env'], prepare['env']):
+        for name in ('DASHBOARD_RELEASE', 'DASHBOARD_AUTH_CLIENT_ID', 'DASHBOARD_SIGNIN_REFERENCE'):
+            env.pop(name)
+    prepare['steps'] = [step for step in prepare['steps'] if step.get('name') != 'Leave the business dashboard unchanged']
+    for step in prepare['steps']:
+        if step.get('name') == 'Deploy the business dashboard':
+            del step['if'], step['env']
+            run = step['run'][step['run'].index('url=$(az deployment group create'):]
+            for parameter in ('release', 'authClientId', 'authSecretUri', 'stableRevision', 'apiScope'):
+                run, removed = re.subn(rf'\n    {parameter}=[^\n]*', '', run)
+                assert removed == 1
+            step['run'] = run.replace('outputs.signInUrl.value', 'outputs.url.value')
+        if step.get('name') == 'Verify the dashboard is serving':
+            del step['if']
     for step in prepare['steps']:
         if step.get('id') == 'notification':
             step['run'] = step['run'].replace("steps.queue.outputs.name", "steps.baseline.outputs.notificationQueueName")

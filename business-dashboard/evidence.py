@@ -167,13 +167,26 @@ class EvidenceStore:
                         f"above the {self.max_bytes} byte limit"
                     )
 
+                # A ranged read of a 0-byte blob is answered 416 by the
+                # service; an empty blob has no image to show anyway.
+                if size == 0:
+                    raise EvidenceUnavailable(f"evidence {blob_name} is empty")
+
                 content_type = self._image_content_type(properties, blob_name)
 
-                data = client.download_blob().readall()
+                # Bound the transfer even if the Blob grows after properties
+                # were read. A limit+1 response is rejected below. The SDK
+                # refuses a length without an offset (ValueError), so the
+                # range is stated in full: bytes 0 .. max_bytes.
+                data = client.download_blob(
+                    offset=0, length=self.max_bytes + 1
+                ).readall()
 
-        except AzureError as exc:
+        # ValueError covers the SDK's own argument and response validation:
+        # whatever goes wrong fetching one image, the incident still renders.
+        except (AzureError, ValueError) as exc:
             raise EvidenceUnavailable(
-                f"could not download evidence {blob_name}: {exc}"
+                f"could not download evidence {blob_name}: {type(exc).__name__}"
             ) from exc
 
         # A blob can grow between the properties call and the download.

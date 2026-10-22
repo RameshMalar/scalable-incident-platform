@@ -2,11 +2,64 @@ targetScope = 'resourceGroup'
 
 // Business dashboard. A read-only Streamlit view over the incident store.
 //
-// Ingress is external with no authentication in front of it -- a deliberate,
-// accepted choice rather than an oversight: anyone with the URL can see every
-// tenant's incident data. If that ever needs locking down, Container Apps'
-// built-in Entra authentication (an `authConfig` sub-resource) gates requests
-// before they reach the app, with no code change here.
+// release = 'standard' (the default) renders exactly the template that has
+// always been deployed: external ingress with no sign-in, so anyone with the
+// URL can see every tenant's incident data.
+//
+// Microsoft sign-in (Entra, verified in the app) is introduced without risking
+// an Admin lockout, in two separately approved steps:
+//
+//   'signin-test'  New revision at 0% traffic, reachable only on its own
+//                  label URL (<app>---signin-test.<domain>). The revision that
+//                  serves production now keeps 100%. Sign in there first.
+//   'promote'      The new revision takes 100%; the previous one stays active
+//                  at 0% under the label 'previous' for instant rollback.
+//
+// Both mount the Streamlit [auth] TOML from a Key Vault secret the dashboard
+// identity reads, outside /app/.streamlit so the SOC theme config stays put.
+// The image's auth_preflight.py refuses to start if that file does not match
+// this revision, so a bad configuration never takes traffic.
+//
+//   'demo-login'   Demonstration fallback while Entra consent is pending: a
+//                  new revision at 0% traffic on its own label URL
+//                  (<app>---demo-login.<domain>), signing in with one
+//                  username and a scrypt password hash mounted from Key
+//                  Vault (business-dashboard/local_auth.py). The production
+//                  revision keeps 100% and the Entra signin-test revision keeps
+//                  its label and secret. Read-only: no Entra-only feature runs.
+
+@description('standard (today), signin-test (0% traffic, label URL), promote (100%, previous kept) or demo-login (local sign-in, 0% traffic, label URL).')
+@allowed([
+  'standard'
+  'signin-test'
+  'promote'
+  'demo-login'
+])
+param release string = 'standard'
+
+@description('demo-login: Key Vault secret URI (versionless) holding [local_auth] username + password_hash.')
+param localAuthSecretUri string = ''
+
+@description('demo-login: the Entra signin-test revision to keep reachable at 0% under its label (empty: none).')
+param entraTestRevision string = ''
+
+@description('demo-login: label for the NEW revision and its URL (<app>---<label>.<domain>).')
+param stagingLabel string = 'demo-login'
+
+@description('demo-login: earlier labelled revisions to keep at 0% by name, e.g. [{ revisionName: "incident-dashboard--0000034", label: "demo-login" }]. Without this, a label bound to "latest" would move to the new revision.')
+param keptRevisions array = []
+
+@description('signin-test/promote: dashboard login app registration (client) ID.')
+param authClientId string = ''
+
+@description('signin-test/promote: Key Vault secret URI (versionless) holding this revision\'s Streamlit [auth] TOML.')
+param authSecretUri string = ''
+
+@description('signin-test/promote: revision currently serving production (kept at 100% for a test, at 0% as "previous" on promote).')
+param stableRevision string = ''
+
+@description('Optional: delegated API scope the dashboard requests, checked at startup when central access is enabled.')
+param apiScope string = ''
 
 @description('Region for all resources.')
 param location string = 'malaysiawest'
@@ -51,6 +104,145 @@ param minReplicas int = 0
 param maxReplicas int = 3
 
 var registryServer = split(image, '/')[0]
+var appName = '${namePrefix}-dashboard'
+var signIn = release != 'standard'
+var localLogin = release == 'demo-login'
+var entraLogin = signIn && !localLogin
+
+resource environment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
+  name: last(split(environmentId, '/'))
+}
+
+// The callback this revision serves: the label URL while testing, the
+// production URL once promoted. It must also be registered on the login app.
+var publicHost = release == 'signin-test' || localLogin
+  ? '${appName}---${localLogin ? stagingLabel : release}.${environment.properties.defaultDomain}'
+  : '${appName}.${environment.properties.defaultDomain}'
+var redirectUri = 'https://${publicHost}/oauth2callback'
+
+var localLoginEnv = [
+  {
+    name: 'DASHBOARD_AUTH_MODE'
+    value: 'local'
+  }
+  {
+    name: 'DASHBOARD_LOCAL_AUTH_FILE'
+    value: '/mnt/dashboard-local-auth/local-auth.toml'
+  }
+]
+
+var signInEnv = localLogin ? localLoginEnv : entraLogin
+  ? [
+      {
+        name: 'DASHBOARD_AUTH_MODE'
+        value: 'oidc'
+      }
+      {
+        name: 'DASHBOARD_AUTH_CLIENT_ID'
+        value: authClientId
+      }
+      {
+        name: 'DASHBOARD_EXPECTED_REDIRECT_URI'
+        value: redirectUri
+      }
+      {
+        name: 'STREAMLIT_SECRETS_FILES'
+        value: '/mnt/dashboard-auth/secrets.toml'
+      }
+      {
+        name: 'DASHBOARD_API_SCOPE'
+        value: apiScope
+      }
+    ]
+  : []
+
+var keptTraffic = [for kept in keptRevisions: {
+  revisionName: kept.revisionName
+  weight: 0
+  label: kept.label
+}]
+
+var demoLoginTraffic = concat(
+  [
+    {
+      revisionName: stableRevision
+      weight: 100
+      label: 'stable'
+    }
+  ],
+  empty(entraTestRevision)
+    ? []
+    : [
+        {
+          revisionName: entraTestRevision
+          weight: 0
+          label: 'signin-test'
+        }
+      ],
+  keptTraffic,
+  [
+    {
+      latestRevision: true
+      weight: 0
+      label: stagingLabel
+    }
+  ]
+)
+
+// Container Apps replaces the whole secret list on update, so a demo-login
+// release keeps the Entra secret that the signin-test revision still mounts.
+var appSecrets = concat(
+  empty(authSecretUri)
+    ? []
+    : [
+        {
+          name: 'dashboard-auth'
+          keyVaultUrl: authSecretUri
+          identity: identityId
+        }
+      ],
+  localLogin
+    ? [
+        {
+          name: 'dashboard-local-auth'
+          keyVaultUrl: localAuthSecretUri
+          identity: identityId
+        }
+      ]
+    : []
+)
+
+var traffic = localLogin ? demoLoginTraffic : release == 'signin-test'
+  ? [
+      {
+        revisionName: stableRevision
+        weight: 100
+        label: 'stable'
+      }
+      {
+        latestRevision: true
+        weight: 0
+        label: 'signin-test'
+      }
+    ]
+  : concat(
+      [
+        {
+          latestRevision: true
+          weight: 100
+          label: 'production'
+        }
+      ],
+      empty(stableRevision)
+        ? []
+        : [
+            {
+              revisionName: stableRevision
+              weight: 0
+              label: 'previous'
+            }
+          ]
+    )
 
 resource dashboard 'Microsoft.App/containerApps@2024-03-01' = {
   name: '${namePrefix}-dashboard'
@@ -63,20 +255,31 @@ resource dashboard 'Microsoft.App/containerApps@2024-03-01' = {
   }
   properties: {
     managedEnvironmentId: environmentId
-    configuration: {
-      ingress: {
-        external: true
-        targetPort: 8501
-        transport: 'auto'
-        allowInsecure: false
-      }
-      registries: [
-        {
-          server: registryServer
-          identity: identityId
-        }
-      ]
-    }
+    configuration: union(
+      {
+        ingress: union(
+          {
+            external: true
+            targetPort: 8501
+            transport: 'auto'
+            allowInsecure: false
+          },
+          signIn ? { traffic: traffic } : {}
+        )
+        registries: [
+          {
+            server: registryServer
+            identity: identityId
+          }
+        ]
+      },
+      signIn
+        ? {
+            activeRevisionsMode: 'Multiple'
+            secrets: appSecrets
+          }
+        : {}
+    )
     template: {
       containers: [
         {
@@ -86,7 +289,22 @@ resource dashboard 'Microsoft.App/containerApps@2024-03-01' = {
             cpu: json('0.5')
             memory: '1Gi'
           }
-          env: [
+          volumeMounts: localLogin
+            ? [
+                {
+                  volumeName: 'dashboard-local-auth'
+                  mountPath: '/mnt/dashboard-local-auth'
+                }
+              ]
+            : entraLogin
+                ? [
+                    {
+                      volumeName: 'dashboard-auth'
+                      mountPath: '/mnt/dashboard-auth'
+                    }
+                  ]
+                : null
+          env: concat([
             // Selects the dashboard identity for DefaultAzureCredential.
             {
               name: 'AZURE_CLIENT_ID'
@@ -112,7 +330,7 @@ resource dashboard 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'EVIDENCE_CONTAINER'
               value: evidenceContainer
             }
-          ]
+          ], signInEnv)
           probes: [
             // Streamlit's own health endpoint; does not touch Cosmos, so a
             // Cosmos-side problem surfaces in the app (an error banner) rather
@@ -130,6 +348,33 @@ resource dashboard 'Microsoft.App/containerApps@2024-03-01' = {
           ]
         }
       ]
+      volumes: localLogin
+        ? [
+            {
+              name: 'dashboard-local-auth'
+              storageType: 'Secret'
+              secrets: [
+                {
+                  secretRef: 'dashboard-local-auth'
+                  path: 'local-auth.toml'
+                }
+              ]
+            }
+          ]
+        : entraLogin
+            ? [
+                {
+                  name: 'dashboard-auth'
+                  storageType: 'Secret'
+                  secrets: [
+                    {
+                      secretRef: 'dashboard-auth'
+                      path: 'secrets.toml'
+                    }
+                  ]
+                }
+              ]
+            : null
       scale: {
         minReplicas: minReplicas
         maxReplicas: maxReplicas
@@ -167,3 +412,5 @@ resource dashboardDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-
 
 output appName string = dashboard.name
 output url string = 'https://${dashboard.properties.configuration.ingress.fqdn}'
+@description('The URL this release serves sign-in on: the label URL for signin-test and demo-login, otherwise production.')
+output signInUrl string = 'https://${publicHost}'

@@ -1,0 +1,56 @@
+{
+  "dashboard": {
+    "exit_code": 0,
+    "output": "........................................................................ [ 92%]\n......                                                                   [100%]\n78 passed in 5.21s\n",
+    "python": "C:\\Users\\rames\\Documents\\scalable-incident-platform\\.soc-work\\unified\\py312\\Scripts\\python.exe",
+    "scope": "local dashboard and unchanged backend regressions"
+  },
+  "ingestion": {
+    "exit_code": 0,
+    "output": ".......................................................................  [100%]\n============================== warnings summary ===============================\n..\\..\\scalable-incident-platform\\.venv\\Lib\\site-packages\\fastapi\\testclient.py:1\n  C:\\Users\\rames\\Documents\\scalable-incident-platform\\.venv\\Lib\\site-packages\\fastapi\\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient as TestClient  # noqa\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n71 passed, 1 warning in 2.49s\n",
+    "python": "C:\\Users\\rames\\Documents\\scalable-incident-platform\\.venv\\Scripts\\python.exe",
+    "scope": "local dashboard and unchanged backend regressions"
+  },
+  "subscriptions": {
+    "exit_code": 0,
+    "output": "........................................................................ [ 73%]\n..........................                                               [100%]\n============================== warnings summary ===============================\n..\\..\\scalable-incident-platform\\.venv\\Lib\\site-packages\\fastapi\\testclient.py:1\n  C:\\Users\\rames\\Documents\\scalable-incident-platform\\.venv\\Lib\\site-packages\\fastapi\\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient as TestClient  # noqa\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n98 passed, 1 warning in 1.30s\n",
+    "python": "C:\\Users\\rames\\Documents\\scalable-incident-platform\\.venv\\Scripts\\python.exe",
+    "scope": "local dashboard and unchanged backend regressions"
+  },
+  "notification": {
+    "exit_code": 0,
+    "output": "........................................................................ [ 90%]\n........                                                                 [100%]\n80 passed in 1.19s\n",
+    "python": "C:\\Users\\rames\\Documents\\scalable-incident-platform\\.venv\\Scripts\\python.exe",
+    "scope": "local dashboard and unchanged backend regressions"
+  },
+  "worker": {
+    "exit_code": 0,
+    "output": "........................................................................ [ 43%]\n........................................................................ [ 86%]\n......................                                                   [100%]\n166 passed in 1.28s\n",
+    "python": "C:\\Users\\rames\\Documents\\scalable-incident-platform\\.venv\\Scripts\\python.exe",
+    "scope": "local dashboard and unchanged backend regressions"
+  },
+  "load-simulator": {
+    "exit_code": 0,
+    "output": "........................................................................ [ 83%]\n..............                                                           [100%]\n86 passed in 1.44s\n",
+    "python": "C:\\Users\\rames\\Documents\\scalable-incident-platform\\.venv\\Scripts\\python.exe",
+    "scope": "local dashboard and unchanged backend regressions"
+  },
+  "common-model": {
+    "exit_code": 0,
+    "output": "......................                                                   [100%]\n22 passed in 0.12s\n",
+    "python": "C:\\Users\\rames\\Documents\\scalable-incident-platform\\.venv\\Scripts\\python.exe",
+    "scope": "local dashboard and unchanged backend regressions"
+  },
+  "producer-sdk": {
+    "exit_code": 0,
+    "output": "......................................................                   [100%]\n54 passed in 0.61s\n",
+    "python": "C:\\Users\\rames\\Documents\\scalable-incident-platform\\.venv\\Scripts\\python.exe",
+    "scope": "local dashboard and unchanged backend regressions"
+  },
+  "proposed-ingestion-only": {
+    "exit_code": 0,
+    "output": "........................................................................ [ 80%]\n..................                                                       [100%]\n============================== warnings summary ===============================\n..\\..\\..\\..\\.venv\\Lib\\site-packages\\fastapi\\testclient.py:1\n  C:\\Users\\rames\\Documents\\scalable-incident-platform\\.venv\\Lib\\site-packages\\fastapi\\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient as TestClient  # noqa\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n90 passed, 1 warning in 3.15s\n",
+    "python": "C:\\Users\\rames\\Documents\\scalable-incident-platform\\.venv\\Scripts\\python.exe",
+    "scope": "proposal-copy"
+  }
+}
