@@ -1,4 +1,6 @@
-streamlit[auth]==1.63.0
+streamlit[auth]==1.66.1
+# Streamlit 1.66.1 permits the Pillow security fixes in 13.0.0.
+Pillow==13.0.0
 azure-cosmos==4.16.4
 azure-identity==1.25.3
 # Same pin as notification-service, which reads the same private container with
