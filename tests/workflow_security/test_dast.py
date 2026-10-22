@@ -64,6 +64,17 @@ def test_targets_and_preflight_come_before_any_scan():
     assert names.index("Fail on any High-risk alert") > first_scan
 
 
+def test_dashboard_is_warmed_before_its_baseline_scan():
+    names = [s.get("name", "") for s in steps()]
+    warmup = names.index("Warm the dashboard before baseline scanning")
+    baseline = names.index("Passive baseline scan of the dashboard")
+
+    assert warmup < baseline
+    assert '"$DAST_DASHBOARD/_stcore/health"' in steps()[warmup]["run"]
+    assert "seq 1 20" in steps()[warmup]["run"]
+    assert "for attempt in 1 2 3" in steps()[baseline]["run"]
+
+
 def test_active_scans_only_attack_filtered_definitions():
     for step in steps():
         run = step.get("run", "")

@@ -1124,6 +1124,10 @@ in `tests/workflow_security/test_dast.py`:
   attacks exactly the operations in the OpenAPI definition it imports and runs
   no spider, so the path is removed from that definition. The dashboard only
   gets ZAP's passive baseline, which sends no attacks.
+- **Dashboard cold-start handling.** The dashboard is allowed to scale to zero.
+  Before its baseline scan, DAST waits for Streamlit's health endpoint and
+  retries a transient baseline connection failure. A dashboard that never
+  becomes healthy still fails the run.
 
 The run fails on any High-risk alert and uploads the HTML, Markdown and JSON
 reports as the `dast-reports` artifact. Medium and Low alerts, such as missing

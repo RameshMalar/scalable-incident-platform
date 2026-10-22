@@ -88,13 +88,44 @@ jobs:
             -J zap-subscription.json -r zap-subscription.html -w zap-subscription.md \
             -I -z "$ZAP_OPTIONS"
 
+      # The dashboard intentionally scales to zero when idle. ZAP's first
+      # request otherwise has a short read timeout and can race its cold start.
+      # Use Streamlit's lightweight health endpoint to start and wait for the
+      # revision before asking ZAP to fetch the dashboard's root page.
+      - name: Warm the dashboard before baseline scanning
+        if: env.DAST_DASHBOARD != ''
+        run: |
+          for attempt in $(seq 1 20); do
+            if curl -fsS --max-time 20 "$DAST_DASHBOARD/_stcore/health"; then
+              echo "::notice::Dashboard is ready after ${attempt} attempt(s)"
+              exit 0
+            fi
+
+            sleep 6
+          done
+
+          echo "::error::${DAST_DASHBOARD}/_stcore/health did not respond after warm-up" >&2
+          exit 1
+
       - name: Passive baseline scan of the dashboard
         if: env.DAST_DASHBOARD != ''
         run: |
-          docker run --rm -v "$PWD/dast:/zap/wrk:rw" "$ZAP_IMAGE" zap-baseline.py \
-            -t "$DAST_DASHBOARD" -m 2 \
-            -J zap-dashboard.json -r zap-dashboard.html -w zap-dashboard.md \
-            -I
+          for attempt in 1 2 3; do
+            if docker run --rm -v "$PWD/dast:/zap/wrk:rw" "$ZAP_IMAGE" zap-baseline.py \
+              -t "$DAST_DASHBOARD" -m 2 \
+              -J zap-dashboard.json -r zap-dashboard.html -w zap-dashboard.md \
+              -I; then
+              exit 0
+            fi
+
+            status=$?
+            if [ "$attempt" -eq 3 ]; then
+              exit "$status"
+            fi
+
+            echo "::warning::Dashboard baseline attempt ${attempt} failed; retrying after 15 seconds"
+            sleep 15
+          done
 
       - name: Fail on any High-risk alert
         run: python3 scripts/dast.py gate dast/zap-*.json
