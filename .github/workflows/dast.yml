@@ -55,6 +55,34 @@ jobs:
           DASHBOARD_URL: ${{ inputs.dashboard_url }}
         run: python3 scripts/dast.py targets
 
+      # Both APIs intentionally scale to zero when idle. Give their liveness
+      # endpoint time to bring up a revision before the security preflight
+      # makes its first request, rather than mistaking a cold start for an
+      # authentication or scanner failure.
+      - name: Warm the APIs before security preflight
+        run: |
+          wait_for_health() {
+            service="$1"
+            url="$2"
+
+            for attempt in $(seq 1 20); do
+              if curl -fsS --connect-timeout 10 --max-time 20 "$url/health" >/dev/null; then
+                echo "::notice::${service} is ready after ${attempt} attempt(s)"
+                return 0
+              fi
+
+              sleep 6
+            done
+
+            echo "::error::${service} did not answer ${url}/health after warm-up" >&2
+            return 1
+          }
+
+          wait_for_health Ingestion "$DAST_INGESTION"
+          if [ -n "${DAST_SUBSCRIPTION:-}" ]; then
+            wait_for_health Subscription "$DAST_SUBSCRIPTION"
+          fi
+
       - name: Refuse to scan unless anonymous calls are rejected
         run: |
           python3 scripts/dast.py preflight ingestion "$DAST_INGESTION"

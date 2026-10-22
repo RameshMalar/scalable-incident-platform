@@ -1128,6 +1128,10 @@ in `tests/workflow_security/test_dast.py`:
   Before its baseline scan, DAST waits for Streamlit's health endpoint and
   retries a transient baseline connection failure. A dashboard that never
   becomes healthy still fails the run.
+- **API cold-start handling.** Ingestion and Subscription can also scale to
+  zero. DAST waits for their liveness endpoints before testing their anonymous
+  access controls, so a cold start is reported separately from a genuine
+  authorization regression.
 
 The run fails on any High-risk alert and uploads the HTML, Markdown and JSON
 reports as the `dast-reports` artifact. Medium and Low alerts, such as missing
