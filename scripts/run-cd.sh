@@ -61,7 +61,8 @@ while IFS= read -r pair; do
 done < <(gh variable list --repo "$REPO" --json name,value --jq '.[] | "\(.name)=\(.value)"')
 env "${validator_env[@]}" python3 scripts/validate-rollout-config.py
 
-REPOSITORY="$REPO" DEPLOY_SHA="$(git rev-parse origin/main)" python3 scripts/verify-approved-merge.py
+deploy_sha="$(git rev-parse origin/main)"
+REPOSITORY="$REPO" DEPLOY_SHA="$deploy_sha" python3 scripts/verify-approved-merge.py
 
 echo
 echo "CD inputs (from origin/main:${CONFIG}):"
@@ -77,6 +78,7 @@ inputs=()
 while IFS= read -r pair; do
   inputs+=(-f "$pair")
 done < <(jq -r 'to_entries[] | "\(.key)=\(.value | tostring)"' <<<"$config")
+inputs+=(-f "expected_deploy_sha=${deploy_sha}")
 gh workflow run cd.yml --repo "$REPO" --ref main "${inputs[@]}"
 
 # The run takes a moment to appear after dispatch.

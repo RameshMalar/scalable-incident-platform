@@ -1,9 +1,14 @@
 name: CD
 
-# Manual, reviewed rollout only. An ordinary merge never deploys production.
+# Dispatch-only production executor. cd-on-merge.yml dispatches it after each
+# deployable merge; scripts/run-cd.sh retains an explicit manual rerun path.
 on:
   workflow_dispatch:
     inputs:
+      expected_deploy_sha:
+        description: "Exact main commit authorized by the dispatcher"
+        type: string
+        required: true
       core_deployment_name:
         description: "Approved existing successful core deployment name (existing environment only)"
         type: string
@@ -85,6 +90,16 @@ jobs:
       pull-requests: read
     steps:
       - uses: actions/checkout@v7
+      - name: Require the exact merge commit selected by the dispatcher
+        env:
+          EXPECTED_DEPLOY_SHA: ${{ inputs.expected_deploy_sha }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EXPECTED_DEPLOY_SHA" != "$DEPLOY_SHA" ]; then
+            echo "::error::main moved after dispatch: expected ${EXPECTED_DEPLOY_SHA}, selected ${DEPLOY_SHA}" >&2
+            exit 1
+          fi
+
       - name: Validate explicit approval and required configuration without cloud access
         env:
           DEPLOY_REF: ${{ github.ref }}

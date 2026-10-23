@@ -7,16 +7,14 @@ This integration preserves the working demo without deploying anything. Base:
 
 ## Deployment boundary
 
-Source pushes and PRs run CI, including security gates. They do not dispatch
-production CD. `.github/workflows/cd-on-merge.yml` is now a **manual-only**
-dispatcher restricted to main. `cd.yml` is still manual and retains its
-reviewed-merge, configuration, baseline and queue gates. Evidence upload,
-Azure preview and DAST remain manual. No CI or security gate is disabled.
-This source change is reversible through normal reviewed Git changes; do not
-restore automatic deployment without explicit rollout approval.
-
-Merging this source does not authorize a deployment, change feature flags,
-grant permissions, create secrets, move labels or promote revisions.
+Source pushes and PRs run CI, including security gates. Following explicit
+rollout approval, deployable merges to `main` now dispatch production CD through
+`.github/workflows/cd-on-merge.yml`. The dispatcher has no Azure credential and
+reads the reviewed inputs from `infra/cd-production.json`; it also pins the
+triggering merge SHA, which `cd.yml` verifies before its reviewed-merge,
+configuration, baseline and queue gates. Evidence upload, Azure
+preview and DAST remain manual. Feature flags, permission grants, label moves
+and revision promotion remain separately gated by the reviewed configuration.
 
 ## Preserved implementations
 

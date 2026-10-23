@@ -416,6 +416,13 @@ def test_subscription_cd_remains_manual_and_semantically_unchanged():
     # Phase 4 adds an independently tested read-only queue gate. Remove only
     # those additions when comparing the preserved Phase 1-3 contract.
     preserved = load(text)
+    # Automatic and manual dispatch now bind CD to the exact main SHA. This is
+    # an outer dispatch-safety gate, not a change to the preserved rollout.
+    preserved['on']['workflow_dispatch']['inputs'].pop('expected_deploy_sha')
+    preserved['jobs']['preflight']['steps'] = [
+        step for step in preserved['jobs']['preflight']['steps']
+        if step.get('name') != 'Require the exact merge commit selected by the dispatcher'
+    ]
     preserved['on']['workflow_dispatch']['inputs'].pop('notification_queue_review_reference')
     prepare = preserved['jobs']['prepare']
     prepare['outputs'].pop('notification_queue')
