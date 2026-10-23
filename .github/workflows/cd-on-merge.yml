@@ -1,8 +1,8 @@
-name: Reviewed CD dispatch
+name: CD on merge
 
-# Manual-only dispatcher: merging source must never start an Azure rollout.
-# This reads the reviewed infra/cd-production.json and dispatches CD on main
-# only after a deliberate workflow_dispatch, as scripts/run-cd.sh does by hand.
+# Deploys every deployable merge to main. CD itself stays dispatch-only, so its
+# inputs remain explicit: this reads the reviewed infra/cd-production.json at
+# the merged commit and dispatches CD with it, as scripts/run-cd.sh does by hand.
 # CD's preflight still refuses anything but the merge of an approved pull
 # request, so a direct push to main produces a refused run, not a deployment.
 #
@@ -11,7 +11,15 @@ name: Reviewed CD dispatch
 # This workflow never signs in to Azure.
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    # These paths do not change a deployed workload. Evidence images are
+    # uploaded by the Evidence workflows; a manifest change still deploys
+    # because the ingestion image packages it.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'evidence_images/**'
 
 permissions:
   contents: read
@@ -20,7 +28,6 @@ permissions:
 jobs:
   dispatch:
     name: Dispatch CD with the reviewed inputs
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -32,5 +39,6 @@ jobs:
           while IFS= read -r pair; do
             inputs+=(-f "$pair")
           done < <(jq -r 'to_entries[] | "\(.key)=\(.value | tostring)"' infra/cd-production.json)
+          inputs+=(-f "expected_deploy_sha=${GITHUB_SHA}")
           gh workflow run cd.yml --repo "$GITHUB_REPOSITORY" --ref main "${inputs[@]}"
-          echo "Manually dispatched CD for ${GITHUB_SHA::7} with the inputs in infra/cd-production.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "Dispatched CD after ${GITHUB_SHA::7} with the inputs in infra/cd-production.json" >> "$GITHUB_STEP_SUMMARY"

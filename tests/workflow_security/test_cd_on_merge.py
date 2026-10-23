@@ -1,4 +1,4 @@
-"""Source merges stay deployment-free; CD dispatch remains deliberate and reviewed."""
+"""Automatic CD dispatch keeps production inputs explicit and reviewed."""
 import json
 from pathlib import Path
 import yaml
@@ -13,44 +13,73 @@ def load(name):
     return workflow
 
 
-def test_dispatcher_is_manual_only_on_main_with_minimal_rights():
+def test_dispatcher_runs_on_merges_to_main_only_with_minimal_rights():
     workflow = load("cd-on-merge.yml")
-    assert set(workflow["on"]) == {"workflow_dispatch"}
+    assert set(workflow["on"]) == {"push"}
+    assert workflow["on"]["push"]["branches"] == ["main"]
+    assert set(workflow["on"]["push"]["paths-ignore"]) == {
+        "**.md",
+        "docs/**",
+        "evidence_images/**",
+    }
     assert workflow["permissions"] == {"contents": "read", "actions": "write"}
     (job,) = workflow["jobs"].values()
-    assert job['if'] == "github.ref == 'refs/heads/main'"
     assert "permissions" not in job and "environment" not in job
     run = "\n".join(step.get("run", "") for step in job["steps"])
     assert "gh workflow run cd.yml" in run and "--ref main" in run
     assert "infra/cd-production.json" in run
+    assert 'expected_deploy_sha=${GITHUB_SHA}' in run
     assert "az " not in run and "azure/" not in str(job["steps"])
 
 
-def test_no_automatic_production_or_follow_on_dispatch():
-    # Ordinary pushes/PRs may run CI, never a workflow with cloud credentials
-    # or permission to start a downstream deployment.
-    for path in (ROOT / '.github/workflows').glob('*.yml'):
-        workflow = load(path.name)
-        events = set(workflow['on'])
-        if events & {'push', 'pull_request', 'workflow_run', 'pull_request_target'}:
-            assert workflow.get('permissions', {}).get('id-token', 'none') != 'write'
-            assert workflow.get('permissions', {}).get('actions', 'read') != 'write'
-            for job in workflow.get('jobs', {}).values():
-                assert job.get('permissions', {}).get('id-token', 'none') != 'write'
-                assert job.get('permissions', {}).get('actions', 'read') != 'write'
-                for step in job.get('steps', []):
-                    assert not step.get('uses', '').startswith('azure/')
-                    run = step.get('run', '')
-                    assert 'gh workflow run' not in run
-                    assert 'az deployment' not in run
+def test_automatic_dispatcher_never_receives_cloud_credentials():
+    workflow = load("cd-on-merge.yml")
+    assert workflow["permissions"].get("id-token", "none") != "write"
+    (job,) = workflow["jobs"].values()
+    assert job.get("permissions", {}).get("id-token", "none") != "write"
+    assert all(not step.get("uses", "").startswith("azure/") for step in job["steps"])
+    run = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "az login" not in run and "az deployment" not in run
+
+
+def test_cd_keeps_explicit_dispatch_inputs():
+    cd = load("cd.yml")
+    assert set(cd["on"]) == {"workflow_dispatch"}
+    assert cd["on"]["workflow_dispatch"]["inputs"]["expected_deploy_sha"] == {
+        "description": "Exact main commit authorized by the dispatcher",
+        "type": "string",
+        "required": True,
+    }
+
+    preflight = cd["jobs"]["preflight"]
+    exact_sha = next(
+        step for step in preflight["steps"]
+        if step.get("name") == "Require the exact merge commit selected by the dispatcher"
+    )
+    assert exact_sha["env"] == {
+        "EXPECTED_DEPLOY_SHA": "${{ inputs.expected_deploy_sha }}",
+        "DEPLOY_SHA": "${{ github.sha }}",
+    }
+    assert '"$EXPECTED_DEPLOY_SHA" != "$DEPLOY_SHA"' in exact_sha["run"]
 
 
 def test_reviewed_inputs_are_exactly_what_cd_accepts():
-    # A name CD does not declare would make every dispatch fail.
+    # Reviewed configuration supplies every production value. The dispatcher
+    # adds the exact triggering commit dynamically.
     inputs = load("cd.yml")["on"]["workflow_dispatch"]["inputs"]
     config = json.loads((ROOT / "infra/cd-production.json").read_text())
-    assert set(config) == set(inputs)
-    assert all(name in config for name, spec in inputs.items() if spec.get("required"))
+    assert set(config) | {"expected_deploy_sha"} == set(inputs)
+    assert all(
+        name in config or name == "expected_deploy_sha"
+        for name, spec in inputs.items()
+        if spec.get("required")
+    )
+
+
+def test_manual_dispatch_also_pins_origin_main_sha():
+    script = (ROOT / "scripts/run-cd.sh").read_text()
+    assert 'deploy_sha="$(git rev-parse origin/main)"' in script
+    assert 'expected_deploy_sha=${deploy_sha}' in script
 
 
 def test_cd_resolves_the_latest_core_deployment_itself():

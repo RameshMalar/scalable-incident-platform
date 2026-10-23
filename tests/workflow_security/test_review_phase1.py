@@ -46,6 +46,8 @@ def test_trivy_pin_preserves_exact_scan_configuration(name, count):
     for original, actual in zip(before, after):
         expected = copy.deepcopy(original)
         expected['uses'] = 'aquasecurity/trivy-action@' + SHA
+        if original.get('name') == 'Scan the exact dashboard deployment image':
+            expected['if'] = "inputs.dashboard_release == 'signin-test' || inputs.dashboard_release == 'promote'"
         assert actual == expected
 
 

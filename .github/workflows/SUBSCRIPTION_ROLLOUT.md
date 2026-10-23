@@ -4,8 +4,9 @@
 
 This branch includes subscription-based Worker routing, backward-compatible
 Notification envelopes, API infrastructure and automatic cloud-free CI.
-Azure preview is manual-only from main; CD is also manual-only, with production
-approval and optional separately approved Worker activation. The phase commands,
+Azure preview remains manual-only from main. Deployable merges dispatch CD
+automatically, with approved-merge validation and optional separately approved
+Worker activation. The phase commands,
 counts and unverified results below are historical records, not current CI status.
 The readiness review verified successful CI at `f68e068`; subsequent local edits
 require their own validation. No live deployment is established by this report.
@@ -90,14 +91,12 @@ branch-protection settings were read or changed.
 
 ## CD trigger and dependency graph
 
-The **automatic push-to-main deployment trigger was removed**. CD can only be
-dispatched, and its offline preflight rejects refs other than main.
-
-*Update after the rollout:* merges deploy again, without giving CD a push
-trigger. `cd-on-merge.yml` runs on each push to `main` (except Markdown,
+CD keeps a dispatch-only interface so all production inputs remain explicit.
+`cd-on-merge.yml` runs on each push to `main` (except Markdown,
 `docs/` and `evidence_images/` changes), reads the reviewed
-`infra/cd-production.json` and dispatches CD with it, so CD's inputs are
-still explicit and its approved-merge preflight still applies.
+`infra/cd-production.json` and dispatches CD with it plus the triggering merge
+SHA. CD refuses a mismatched SHA, so its inputs remain explicit and its
+approved-merge preflight still applies.
 
 ```text
 CI checks at selected commit ---------+
@@ -229,9 +228,13 @@ scan results. These intentionally block deployment until verified/approved.
 ## Images, scanning and runtime verification
 
 CD keeps the existing ACR OIDC login and three-attempt build/push convention,
-adds `./subscription-service`, and builds all six images for linux/amd64.
-Commit-SHA tags are still published for traceability; **latest is no longer updated**.
-Buildx metadata supplies content digests, and every workload receives an immutable
+adds `./subscription-service`, and builds five workload images for linux/amd64
+by default. The dashboard is the sixth image only for an explicit
+`signin-test` or `promote` release; `dashboard_release=keep` neither rebuilds
+nor scans an image that will not be deployed. BuildKit reuses per-image ACR
+cache layers after the approved-merge preflight, while deployable images remain
+separate commit-SHA tags; **latest is no longer updated**. Buildx metadata
+supplies content digests, and every workload receives an immutable
 `registry/repository@sha256:...` image reference. The exact rebuilt deployment
 digests are scanned again with the existing Trivy action/severity/failure rules
 before any Container App update, since a CD rebuild can differ from a CI build

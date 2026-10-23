@@ -123,7 +123,8 @@ python -m pytest tests -v
 
 CD builds, deploys and verifies `main`. **Every merge to `main` deploys**:
 `cd-on-merge.yml` reads the reviewed inputs in `infra/cd-production.json` and
-dispatches `cd.yml` with them. Changes to Markdown, `docs/` or
+dispatches `cd.yml` with them and the exact triggering commit SHA. CD fails
+closed if `main` moves before the downstream run is created. Changes to Markdown, `docs/` or
 `evidence_images/` alone deploy nothing. There is no server to log into.
 
 ### Running CD by hand
