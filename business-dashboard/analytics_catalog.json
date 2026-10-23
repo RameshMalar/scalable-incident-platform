@@ -1,0 +1,64 @@
+{
+  "_comment": "Display names only. Stored analytics_type and event_type values are never rewritten. Add a custom analytics type by appending an entry; the dashboard and Simulate Event pick it up on the next deployment.",
+  "analytics": [
+    {
+      "type": "intrusion_detection",
+      "display_name": "Intrusion Detection",
+      "aliases": [],
+      "evidence_pool": "intrusion",
+      "events": [
+        {"type": "intrusion_detected", "display_name": "Intrusion detected", "severity": "high", "description": "Person detected inside restricted area"},
+        {"type": "perimeter_breach", "display_name": "Perimeter breach", "severity": "high", "description": "Perimeter fence line crossed"}
+      ]
+    },
+    {
+      "type": "PPE_detection",
+      "display_name": "PPE Compliance",
+      "aliases": ["ppe_detection"],
+      "evidence_pool": null,
+      "events": [
+        {"type": "helmet_missing", "display_name": "Helmet missing", "severity": "medium", "description": "Worker detected without helmet"},
+        {"type": "vest_missing", "display_name": "Safety vest missing", "severity": "medium", "description": "Worker detected without high-visibility vest"}
+      ]
+    },
+    {
+      "type": "crowd_detection",
+      "display_name": "Crowd Monitoring",
+      "aliases": [],
+      "evidence_pool": "crowd",
+      "events": [
+        {"type": "crowd_threshold_exceeded", "display_name": "Crowd threshold exceeded", "severity": "high", "description": "Crowd threshold exceeded in monitored area"},
+        {"type": "crowd_density_exceeded", "display_name": "Crowd density exceeded", "severity": "high", "description": "Crowd density above the configured limit"}
+      ]
+    },
+    {
+      "type": "people_counting",
+      "display_name": "People Counting",
+      "aliases": [],
+      "evidence_pool": "crowd",
+      "events": [
+        {"type": "people_count_observed", "display_name": "People count observed", "severity": "low", "description": "People count observed in monitored area"}
+      ]
+    },
+    {
+      "type": "fire_smoke_detection",
+      "display_name": "Fire & Smoke Detection",
+      "aliases": [],
+      "evidence_pool": null,
+      "events": [
+        {"type": "fire_detected", "display_name": "Fire detected", "severity": "high", "description": "Fire detected in monitored area", "evidence_pool": "fire"},
+        {"type": "smoke_detected", "display_name": "Smoke detected", "severity": "high", "description": "Smoke detected in monitored area", "evidence_pool": "smoke"}
+      ]
+    },
+    {
+      "type": "abandoned_object_detection",
+      "display_name": "Abandoned Object Detection",
+      "aliases": [],
+      "evidence_pool": null,
+      "custom": true,
+      "events": [
+        {"type": "object_left_unattended", "display_name": "Object left unattended", "severity": "medium", "description": "Object left unattended in monitored area"}
+      ]
+    }
+  ]
+}

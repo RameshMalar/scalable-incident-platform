@@ -8,17 +8,19 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from azure.cosmos.aio import CosmosClient
+from azure.cosmos.exceptions import CosmosResourceNotFoundError
 from azure.identity.aio import DefaultAzureCredential
 from pydantic import ValidationError
 
 from app.notification_models import InvalidSubscription, SubscriptionRecord
+from app.owner_eligibility import ACCESS_PARTITION
 
 
 logger = logging.getLogger("app.subscription_store")
 
 MATCH_QUERY = (
     "SELECT c.id, c.tenant_id, c.event_type, c.channel, "
-    "c.telegram_chat_id, c.enabled FROM c "
+    "c.telegram_chat_id, c.enabled, c.owner_object_id FROM c "
     "WHERE c.tenant_id = @tenant AND c.event_type = @event_type "
     "AND c.enabled = true AND c.channel = 'telegram'"
 )
@@ -53,6 +55,10 @@ class SubscriptionReader(ABC):
         self, tenant_id: str, event_type: str
     ) -> list[SubscriptionRecord]:
         """Return matches or raise; outages must never become an empty list."""
+
+    async def read_platform_record(self, document_id: str) -> dict | None:
+        """Read an access or Telegram ownership record; None only if absent."""
+        raise NotImplementedError("this reader cannot check account-owned subscriptions")
 
 
 class CosmosSubscriptionReader(SubscriptionReader):
@@ -121,6 +127,20 @@ class CosmosSubscriptionReader(SubscriptionReader):
                 records.append(record)
         return records
 
+    async def read_platform_record(self, document_id: str) -> dict | None:
+        await self.start()
+        try:
+            return await self._container.read_item(
+                item=document_id, partition_key=ACCESS_PARTITION
+            )
+        except CosmosResourceNotFoundError:
+            # A missing container raises the same exception as a missing
+            # item; only a confirmed container makes "absent" trustworthy.
+            metadata = await self._container.read()
+            if metadata.get("partitionKey", {}).get("paths") != ["/tenant_id"]:
+                raise
+            return None
+
     async def close(self) -> None:
         try:
             if self._client is not None:
@@ -137,8 +157,17 @@ class CosmosSubscriptionReader(SubscriptionReader):
 class InMemorySubscriptionReader(SubscriptionReader):
     """Injected local/test configuration; not selected by the current worker."""
 
-    def __init__(self, documents: Iterable[Mapping[str, Any]] = ()):
+    def __init__(
+        self,
+        documents: Iterable[Mapping[str, Any]] = (),
+        platform_records: Mapping[str, Mapping[str, Any]] | None = None,
+    ):
         self._records = [validate_subscription(document) for document in documents]
+        self.platform_records = dict(platform_records or {})
+
+    async def read_platform_record(self, document_id: str) -> dict | None:
+        record = self.platform_records.get(document_id)
+        return dict(record) if record is not None else None
 
     async def find_matches(
         self, tenant_id: str, event_type: str

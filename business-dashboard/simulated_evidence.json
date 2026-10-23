@@ -1,0 +1,183 @@
+{
+  "intrusion": [
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-10CD0439CF0E5DEE8AD33A360F0CE02E.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-140C5AEA27F15B5AB254A04C11F26AB7.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-489984C9AAFB53DF8602A4A3E5FE1A28.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-5AD552A50D4D5C6A9FAEA49E802D9239.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-837BBC8152495E18B918DE65DA4594CA.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-A227666A63FB5A5CB964FFD67EF7DFE2.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-A855333437A15387BBC431E24B49A7F9.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-BD10EFD33D155E5AB221BAE6C0760459.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-C4C1C464EE995ACDA289711E7FC840A3.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-D2D921DD1B3453E190BE045A6B0E01B5.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-E9D7032AE057565C83DA8BCD1B1744B4.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-EFA30512C4DB5462995D4DD6C69213E4.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-F826089F7ABB5E83AD75BA34444EE7C5.jpg"
+    },
+    {
+      "source_id": "CAM-01",
+      "blob": "TENANT-DEV/intrusion/EVT-SYNTH-FD982C55215E575D9094D1336067A8CA.jpg"
+    }
+  ],
+  "crowd": [
+    {
+      "source_id": "CAM-101",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-01F40A119FE85136A5752C5B41DE97FA.jpg"
+    },
+    {
+      "source_id": "CAM-110",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-05C751CA7C47553A9BB750D5A23B4EB8.jpg"
+    },
+    {
+      "source_id": "CAM-102",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-112C5BC0CB7A568AA123BC84764BAD93.jpg"
+    },
+    {
+      "source_id": "CAM-103",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-32053D4934F555BCBDD75633B629EE3F.jpg"
+    },
+    {
+      "source_id": "CAM-107",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-76B2E77FD33B50499B4265448545E46E.jpg"
+    },
+    {
+      "source_id": "CAM-106",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-8A72E9ACEBB75F35AF4DCA99F413BC07.jpg"
+    },
+    {
+      "source_id": "CAM-108",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-9298C814D7CC55CA9451387E3160E523.jpg"
+    },
+    {
+      "source_id": "CAM-112",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-AC020397047355DC8039FAAE848BBA31.jpg"
+    },
+    {
+      "source_id": "CAM-111",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-B5CEF4C28D1D5C5AB70EA140DD887FC0.jpg"
+    },
+    {
+      "source_id": "CAM-114",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-BD35024EA26D5831A65DB2A72BC9A7DF.jpg"
+    },
+    {
+      "source_id": "CAM-105",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-CE989907B7EA5A95973CA516A6E4D22F.jpg"
+    },
+    {
+      "source_id": "CAM-113",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-D143AEC0BD4A50B482EC3802065DCACF.jpg"
+    },
+    {
+      "source_id": "CAM-109",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-D53822039CEB5F48ACEEA91B22556B0A.jpg"
+    },
+    {
+      "source_id": "CAM-104",
+      "blob": "TENANT-DEV/people_counting/EVT-SYNTH-DFB16DE3DCA85005B8C7E72FC86A93FF.jpg"
+    }
+  ],
+  "ppe": [],
+  "fire": [
+    {
+      "source_id": "CAM-215",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-19CB53AEFE75510CB63272D7FCBE2DB1.jpg"
+    },
+    {
+      "source_id": "CAM-211",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-1B6FD963C5115FEBBC2921E96B783AFB.jpg"
+    },
+    {
+      "source_id": "CAM-201",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-57D7400C995F50D5BBF2FE928A5C3223.jpg"
+    },
+    {
+      "source_id": "CAM-207",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-79018C283A2C5B4FB37B079ED81154C9.jpg"
+    },
+    {
+      "source_id": "CAM-203",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-9BE78F6E921A5072AA27C71C76A2CE59.jpg"
+    },
+    {
+      "source_id": "CAM-213",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-D0B4188565FF53EBAB87E7B3D3F74ED9.jpg"
+    },
+    {
+      "source_id": "CAM-209",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-D68CD096CA0F5900B6B37CFB78247BD9.jpg"
+    },
+    {
+      "source_id": "CAM-205",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-D78D32E60D5F5A4CBCBFCD8F5B44B83D.jpg"
+    }
+  ],
+  "smoke": [
+    {
+      "source_id": "CAM-204",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-3687C0B7BD015A7197CC187561881300.jpg"
+    },
+    {
+      "source_id": "CAM-208",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-46917259AB315FD2971DD641C0248FEB.jpg"
+    },
+    {
+      "source_id": "CAM-210",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-748A3D30F5E152DBAFE89768D9F0AEF7.jpg"
+    },
+    {
+      "source_id": "CAM-214",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-7D3696EBF17450C19211A3F03F2D0D1B.jpg"
+    },
+    {
+      "source_id": "CAM-202",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-9839B1936E435C1181BBF0E042604045.jpg"
+    },
+    {
+      "source_id": "CAM-206",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-A251ACEF65CE53F08D98C70CCB9C56A3.jpg"
+    },
+    {
+      "source_id": "CAM-212",
+      "blob": "TENANT-DEV/fire_smoke/EVT-SYNTH-F3A02D2C47D4529FB2023269454908C7.jpg"
+    }
+  ]
+}

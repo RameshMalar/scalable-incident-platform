@@ -44,6 +44,9 @@ class SubscriptionStore(ABC):
     async def delete(self, tenant_id: str, subscription_id: str) -> bool:
         pass
 
+    async def list_owned(self, tenant_id: str, owner_object_id: str) -> "list[Subscription]":
+        raise NotImplementedError("this store does not support account-owned subscriptions")
+
 
 class InMemorySubscriptionStore(SubscriptionStore):
     mode = "memory"
@@ -78,6 +81,10 @@ class InMemorySubscriptionStore(SubscriptionStore):
 
     async def delete(self, tenant_id: str, subscription_id: str) -> bool:
         return self.items.pop((tenant_id, subscription_id), None) is not None
+
+    async def list_owned(self, tenant_id: str, owner_object_id: str) -> "list[Subscription]":
+        return [item.model_copy(deep=True) for (tenant, _), item in sorted(self.items.items())
+                if tenant == tenant_id and item.owner_object_id == owner_object_id]
 
 
 class CosmosSubscriptionStore(SubscriptionStore):
@@ -139,6 +146,14 @@ class CosmosSubscriptionStore(SubscriptionStore):
         except CosmosResourceNotFoundError:
             return False
         return True
+
+    async def list_owned(self, tenant_id: str, owner_object_id: str) -> "list[Subscription]":
+        query = "SELECT * FROM c WHERE c.tenant_id = @tenant AND c.owner_object_id = @owner ORDER BY c.id"
+        rows = self.container.query_items(
+            query=query, partition_key=tenant_id,
+            parameters=[{"name": "@tenant", "value": tenant_id}, {"name": "@owner", "value": owner_object_id}],
+        )
+        return [Subscription.model_validate({k: v for k, v in row.items() if not k.startswith("_")}) async for row in rows]
 
     async def close(self) -> None:
         if self.client is not None:

@@ -33,8 +33,16 @@ def parse_tenant_map(raw: str) -> dict[str, str]:
             raise ValueError("TENANT_MAP must contain clientId:tenant entries")
         if client.strip() in mapping:
             raise ValueError("TENANT_MAP contains a duplicate client")
+        if is_reserved_partition(tenant.strip()):
+            raise ValueError("TENANT_MAP cannot bind a client to a reserved partition")
         mapping[client.strip()] = tenant.strip()
     return mapping
+
+
+def is_reserved_partition(tenant_id: str) -> bool:
+    # Platform access records share the subscriptions container under a
+    # reserved partition. No tenant-scoped client route may ever address it.
+    return tenant_id.startswith("__")
 
 
 def unauthorized(detail: str) -> HTTPException:
@@ -83,7 +91,7 @@ class DevelopmentVerifier:
     mode = "development"
 
     def __init__(self, tenant_id: str):
-        if not tenant_id:
+        if not tenant_id or is_reserved_partition(tenant_id):
             raise ValueError("DEV_TENANT_ID is required in development mode")
         self.context = TenantContext("local-development", tenant_id, frozenset({"Subscriptions.Read", "Subscriptions.Write"}))
 

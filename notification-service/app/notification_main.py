@@ -4,6 +4,7 @@ import os
 import signal
 
 from app.consumer import NotificationConsumer
+from app.delivery_eligibility import build_eligibility
 from app.evidence import EvidenceStore
 from app.notifier import MockNotifier
 from app.processor import NotificationProcessor
@@ -18,12 +19,20 @@ logging.basicConfig(
 logger = logging.getLogger("app.main")
 
 
-def build_notifier():
+def accept_legacy() -> bool:
+    """False makes delivery subscriber-only: a flat (unrouted) message is
+    rejected and dead-lettered instead of going to the global chat. Only the
+    Worker's routed envelopes -- one per approved, matching subscription --
+    are sent. Defaults to true so an unchanged deployment behaves as before."""
+    return os.environ.get("NOTIFICATION_ACCEPT_LEGACY", "true").strip().lower() != "false"
+
+
+def build_notifier(legacy: bool = True):
 
     mode = os.environ.get("NOTIFIER", "mock").lower()
 
     if mode == "telegram":
-        return TelegramNotifier(evidence_store=EvidenceStore.from_env())
+        return TelegramNotifier(evidence_store=EvidenceStore.from_env(), require_global_chat=legacy)
 
     return MockNotifier()
 
@@ -39,8 +48,10 @@ async def run() -> None:
             # Windows event loops may not support add_signal_handler.
             pass
 
-    notifier = build_notifier()
-    processor = NotificationProcessor(notifier)
+    legacy = accept_legacy()
+    notifier = build_notifier(legacy)
+    eligibility = build_eligibility()
+    processor = NotificationProcessor(notifier, accept_legacy=legacy, eligibility=eligibility)
 
     consumer = NotificationConsumer(processor=processor)
 
@@ -48,8 +59,9 @@ async def run() -> None:
         await consumer.start()
 
         logger.info(
-            "notification service ready notifier=%s",
+            "notification service ready notifier=%s delivery=%s",
             notifier.__class__.__name__,
+            "legacy+subscribers" if legacy else "subscribers-only",
         )
 
         await consumer.run(stop)
@@ -57,6 +69,8 @@ async def run() -> None:
     finally:
         await consumer.close()
         await notifier.close()
+        if eligibility is not None:
+            await eligibility.close()
 
         logger.info("notification service stopped")
 

@@ -1,0 +1,25 @@
+let Source = materialize(
+    ContainerAppSystemLogs_CL
+    | where TimeGenerated > ago(7d) or $__timeFilter(TimeGenerated)
+    | where EnvironmentName_s == 'calmmushroom-4789bfc0'
+    | where isnotempty(ContainerAppName_s)
+    | project TimeGenerated, ContainerAppName_s, Type_s, EventSource_s
+);
+let LastSourceEvent = toscalar(Source | summarize max(TimeGenerated));
+let Selected = materialize(Source | where $__timeFilter(TimeGenerated));
+let SelectedCount = toscalar(Selected | count);
+union
+    (Selected
+    | summarize Events=count(), LastEventAt=max(TimeGenerated)
+        by TimeGenerated=bin(TimeGenerated, $__interval), ContainerAppName_s, Type_s, EventSource_s
+    | extend Status='Observed events'),
+    (print TimeGenerated=$__timeTo(), ContainerAppName_s='All monitored apps', Type_s='Not applicable',
+        EventSource_s='ContainerAppSystemLogs_CL',
+        Events=iff(isnotnull(LastSourceEvent) and LastSourceEvent >= ago(1h), long(0), long(null)),
+        LastEventAt=LastSourceEvent,
+        Status=iff(isnotnull(LastSourceEvent) and LastSourceEvent >= ago(1h),
+            'Zero events in selected range', 'Telemetry unavailable')
+    | where SelectedCount == 0)
+| project TimeGenerated, Source=ContainerAppName_s, Severity=Type_s,
+    EventSource=EventSource_s, Events, LastEventAt, Status
+| order by TimeGenerated asc

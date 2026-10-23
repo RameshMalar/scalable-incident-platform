@@ -47,6 +47,18 @@ on:
         description: "Approved pre-routing Worker image in the existing ACR, pinned as repository@sha256:digest"
         type: string
         required: false
+      dashboard_release:
+        description: "keep (default: leave the running dashboard untouched) | signin-test (0% traffic, label URL) | promote"
+        type: string
+        required: false
+      dashboard_auth_client_id:
+        description: "Approved dashboard login app registration (client) ID; required unless dashboard_release is keep"
+        type: string
+        required: false
+      dashboard_signin_reference:
+        description: "Evidence that an Admin signed in on the signin-test label URL; required to promote"
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -85,6 +97,9 @@ jobs:
           ROUTING_CONFIGURATION_APPROVED: ${{ inputs.routing_configuration_approved }}
           ROUTING_APPROVAL_REFERENCE: ${{ inputs.routing_approval_reference }}
           ROLLBACK_WORKER_IMAGE: ${{ inputs.rollback_worker_image }}
+          DASHBOARD_RELEASE: ${{ inputs.dashboard_release }}
+          DASHBOARD_AUTH_CLIENT_ID: ${{ inputs.dashboard_auth_client_id }}
+          DASHBOARD_SIGNIN_REFERENCE: ${{ inputs.dashboard_signin_reference }}
           AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
@@ -134,6 +149,9 @@ jobs:
       SUBSCRIPTION_CONFIGURATION_APPROVED: ${{ inputs.subscription_configuration_approved }}
       ROUTING_CONFIGURATION_APPROVED: ${{ inputs.routing_configuration_approved }}
       ROUTING_APPROVAL_REFERENCE: ${{ inputs.routing_approval_reference }}
+      DASHBOARD_RELEASE: ${{ inputs.dashboard_release }}
+      DASHBOARD_AUTH_CLIENT_ID: ${{ inputs.dashboard_auth_client_id }}
+      DASHBOARD_SIGNIN_REFERENCE: ${{ inputs.dashboard_signin_reference }}
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
@@ -525,9 +543,33 @@ jobs:
 
           echo "url=${url}" >> "$GITHUB_OUTPUT"
 
+      # A merge never replaces the running dashboard: the image above is built
+      # and scanned, but only an explicit signin-test or promote deploys it.
+      # The new image requires Microsoft sign-in, and an unconfigured release
+      # would otherwise leave nobody, the Admin included, able to use it.
+      - name: Leave the business dashboard unchanged
+        if: inputs.dashboard_release != 'signin-test' && inputs.dashboard_release != 'promote'
+        run: echo "::notice::dashboard_release is keep; the running dashboard revision was not changed"
+
       - name: Deploy the business dashboard
         id: dashboard
+        if: inputs.dashboard_release == 'signin-test' || inputs.dashboard_release == 'promote'
+        env:
+          RELEASE: ${{ inputs.dashboard_release }}
+          AUTH_CLIENT_ID: ${{ inputs.dashboard_auth_client_id }}
+          KEY_VAULT: ${{ steps.core.outputs.keyVaultName }}
+          API_SCOPE: ${{ inputs.subscription_auth_audience }}/user_impersonation
         run: |
+          # The revision serving production now: kept at 100% while testing,
+          # retained at 0% as "previous" on promotion for instant rollback.
+          stable=$(az containerapp revision list \
+            --resource-group "$RESOURCE_GROUP" \
+            --name incident-dashboard \
+            --query "[?properties.trafficWeight==\`100\`].name | [0]" \
+            -o tsv)
+          test -n "$stable"
+          secret_name=$([ "$RELEASE" = signin-test ] && echo dashboard-auth-signin-test || echo dashboard-auth-production)
+
           url=$(az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/dashboard.bicep \
@@ -543,12 +585,20 @@ jobs:
               evidenceBlobEndpoint='${{ steps.core.outputs.evidenceBlobEndpoint }}' \
               evidenceContainer='${{ steps.core.outputs.evidenceContainerName }}' \
               image='${{ steps.image.outputs.dashboard }}' \
-            --query properties.outputs.url.value \
+              release="$RELEASE" \
+              authClientId="$AUTH_CLIENT_ID" \
+              authSecretUri="https://${KEY_VAULT}.vault.azure.net/secrets/${secret_name}" \
+              stableRevision="$stable" \
+              apiScope="$API_SCOPE" \
+            --query properties.outputs.signInUrl.value \
             -o tsv)
 
           echo "url=${url}" >> "$GITHUB_OUTPUT"
 
+      # Healthy here also proves auth_preflight.py accepted the mounted
+      # sign-in configuration; a person must still sign in before promote.
       - name: Verify the dashboard is serving
+        if: inputs.dashboard_release == 'signin-test' || inputs.dashboard_release == 'promote'
         run: |
           url='${{ steps.dashboard.outputs.url }}'
 

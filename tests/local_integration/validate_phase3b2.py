@@ -106,7 +106,9 @@ def main():
             verify_no_incident_requests(workflow)
     assert set(cd["on"]) == {"workflow_dispatch"}
     inputs = cd["on"]["workflow_dispatch"]["inputs"]
-    assert len(inputs) <= 10
+    # GitHub raised workflow_dispatch's top-level input limit to 25.
+    # https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_dispatchinputs
+    assert len(inputs) <= 25
     for flag in ["activate_routing", "routing_configuration_approved", "subscription_configuration_approved"]:
         assert inputs[flag]["type"] == "boolean" and inputs[flag]["default"] is False
     assert "workflow_call" in ci["on"]

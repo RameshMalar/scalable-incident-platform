@@ -6,5 +6,8 @@ azure-servicebus==7.14.3
 azure-identity==1.25.3
 azure-core[aio]==1.41.0
 azure-storage-blob==12.30.3
+# Send-time eligibility recheck (app/delivery_eligibility.py); same pin as the
+# Worker and Subscription API. Only used when NOTIFICATION_ELIGIBILITY=enforce.
+azure-cosmos==4.16.4
 pydantic==2.13.5
 aiohttp
