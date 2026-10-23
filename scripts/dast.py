@@ -80,6 +80,9 @@ def http_get(url):
             return response.status, response.read()
     except urllib.error.HTTPError as error:
         return error.code, error.read()
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        reason = getattr(error, "reason", error)
+        raise Refused(f"request to {url} failed: {reason}") from error
 
 
 def preflight(role, base, get=http_get):

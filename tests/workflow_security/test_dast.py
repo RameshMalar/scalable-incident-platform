@@ -64,6 +64,29 @@ def test_targets_and_preflight_come_before_any_scan():
     assert names.index("Fail on any High-risk alert") > first_scan
 
 
+def test_apis_are_warmed_before_the_security_preflight():
+    names = [s.get("name", "") for s in steps()]
+    warmup = names.index("Warm the APIs before security preflight")
+    preflight = names.index("Refuse to scan unless anonymous calls are rejected")
+
+    assert warmup < preflight
+    run = steps()[warmup]["run"]
+    assert '"$DAST_INGESTION"' in run
+    assert '"$DAST_SUBSCRIPTION"' in run
+    assert "seq 1 20" in run
+
+
+def test_dashboard_is_warmed_before_its_baseline_scan():
+    names = [s.get("name", "") for s in steps()]
+    warmup = names.index("Warm the dashboard before baseline scanning")
+    baseline = names.index("Passive baseline scan of the dashboard")
+
+    assert warmup < baseline
+    assert '"$DAST_DASHBOARD/_stcore/health"' in steps()[warmup]["run"]
+    assert "seq 1 20" in steps()[warmup]["run"]
+    assert "for attempt in 1 2 3" in steps()[baseline]["run"]
+
+
 def test_active_scans_only_attack_filtered_definitions():
     for step in steps():
         run = step.get("run", "")
@@ -132,6 +155,15 @@ def test_subscription_preflight_requires_401():
     for status in (200, 403, 404, 500):
         with pytest.raises(dast.Refused):
             dast.preflight("subscription", "https://x", get=fake(status))
+
+
+def test_http_get_turns_a_transport_timeout_into_a_refusal(monkeypatch):
+    def timeout(*args, **kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(dast.urllib.request, "urlopen", timeout)
+    with pytest.raises(dast.Refused, match="request to https://example.test failed: timed out"):
+        dast.http_get("https://example.test")
 
 
 def report(tmp_path, name, riskcodes):
