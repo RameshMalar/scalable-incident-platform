@@ -425,6 +425,41 @@ def test_subscription_cd_remains_manual_and_semantically_unchanged():
     ]
     preserved['on']['workflow_dispatch']['inputs'].pop('notification_queue_review_reference')
     prepare = preserved['jobs']['prepare']
+    # CD now has a registry-backed BuildKit cache.  It is deliberately removed
+    # from this older rollout-contract comparison: the dedicated assertion
+    # below verifies its isolation, while the pre-existing deployment sequence
+    # remains frozen by this test.
+    prepare['steps'] = [
+        step for step in prepare['steps']
+        if step.get('name') != 'Set up isolated Buildx cache builder'
+    ]
+    image_step = next(step for step in prepare['steps'] if step.get('id') == 'image')
+    image_step['run'] = image_step['run'].replace(
+        '# `keep` is the normal release mode: CI still validates the dashboard\n'
+        '# image, but CD neither deploys it nor needs a second build and scan.\n',
+        '',
+    ).replace(
+        '  cache_ref="${registry}/$1:buildcache"\n'
+        '  cache_from=()\n'
+        '  if docker buildx imagetools inspect "$cache_ref" >/dev/null 2>&1; then\n'
+        '    cache_from+=(--cache-from "type=registry,ref=${cache_ref}")\n'
+        '  fi\n\n',
+        '',
+    ).replace(
+        '    "${cache_from[@]}" \\\n'
+        '    --cache-to "type=registry,ref=${cache_ref},mode=max,oci-mediatypes=true,image-manifest=true" \\\n',
+        '',
+    ).replace(
+        '    && { [ "$DASHBOARD_RELEASE" = keep ] || [ -z "$DASHBOARD_RELEASE" ] || build_and_push incident-dashboard business-dashboard ./business-dashboard; } \\\n',
+        '    && build_and_push incident-dashboard business-dashboard ./business-dashboard \\\n',
+    ).replace(
+        '    if [ "$DASHBOARD_RELEASE" != keep ] && [ -n "$DASHBOARD_RELEASE" ]; then\n'
+        '      digest=$(jq -er \'."containerimage.digest"\' "${RUNNER_TEMP}/incident-dashboard.json")\n'
+        '      echo "dashboard=${registry}/incident-dashboard@${digest}" >> "$GITHUB_OUTPUT"\n'
+        '    fi\n',
+        '    digest=$(jq -er \'."containerimage.digest"\' "${RUNNER_TEMP}/incident-dashboard.json")\n'
+        '    echo "dashboard=${registry}/incident-dashboard@${digest}" >> "$GITHUB_OUTPUT"\n',
+    )
     prepare['outputs'].pop('notification_queue')
     prepare['steps'] = [step for step in prepare['steps'] if step.get('id') != 'queue']
     # The dashboard release guard (test_dashboard_release.py): a merge keeps the
@@ -446,8 +481,8 @@ def test_subscription_cd_remains_manual_and_semantically_unchanged():
                 run, removed = re.subn(rf'\n    {parameter}=[^\n]*', '', run)
                 assert removed == 1
             step['run'] = run.replace('outputs.signInUrl.value', 'outputs.url.value')
-        if step.get('name') == 'Verify the dashboard is serving':
-            del step['if']
+        if step.get('name') in {'Verify the dashboard is serving', 'Scan the exact dashboard deployment image'}:
+            step.pop('if', None)
     for step in prepare['steps']:
         if step.get('id') == 'notification':
             step['run'] = step['run'].replace("steps.queue.outputs.name", "steps.baseline.outputs.notificationQueueName")
@@ -485,6 +520,21 @@ def test_subscription_cd_remains_manual_and_semantically_unchanged():
     # Subscription API check (test_cd_prepare_preflight.py).
     prepare['steps'] = [step for step in prepare['steps'] if step.get('name') != 'Sign in to Azure again for a fresh federated token']
     assert semantic_hash(preserved) == '5b90522ad5fb167b48c6c79b9f4d6ac6f0508719716b0bfc4844385f030ef7b2'
+
+
+def test_cd_registry_build_cache_cannot_replace_a_deployable_image():
+    cd = load((ROOT / '.github/workflows/cd.yml').read_text(encoding='utf-8-sig'))
+    prepare = cd['jobs']['prepare']
+    setup = next(step for step in prepare['steps'] if step.get('name') == 'Set up isolated Buildx cache builder')
+    assert setup['run'] == 'docker buildx create --name cd-cache-builder --driver docker-container --use'
+
+    image = next(step for step in prepare['steps'] if step.get('id') == 'image')['run']
+    assert 'cache_ref="${registry}/$1:buildcache"' in image
+    assert 'docker buildx imagetools inspect "$cache_ref"' in image
+    assert 'cache_from+=(--cache-from "type=registry,ref=${cache_ref}")' in image
+    assert '--cache-to "type=registry,ref=${cache_ref},mode=max,oci-mediatypes=true,image-manifest=true"' in image
+    assert '--tag "${registry}/$1:${GITHUB_SHA}"' in image
+    assert 'containerimage.digest' in image
 
 
 

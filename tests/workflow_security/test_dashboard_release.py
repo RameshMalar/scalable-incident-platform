@@ -34,12 +34,20 @@ def test_dashboard_is_deployed_only_on_explicit_release():
     named = steps()
     assert named["Deploy the business dashboard"]["if"] == explicit
     assert named["Verify the dashboard is serving"]["if"] == explicit
+    assert named["Scan the exact dashboard deployment image"]["if"] == explicit
     assert "keep" in named["Leave the business dashboard unchanged"]["run"]
     deploy = named["Deploy the business dashboard"]
     # Inputs reach the shell through env, never interpolated into the script.
     assert "${{ inputs." not in deploy["run"]
     assert {"RELEASE", "AUTH_CLIENT_ID", "KEY_VAULT"} <= set(deploy["env"])
     assert "signInUrl" in deploy["run"] and "trafficWeight" in deploy["run"]
+
+
+def test_dashboard_image_is_not_rebuilt_when_the_release_is_kept():
+    image = next(step for step in load("cd.yml")["jobs"]["prepare"]["steps"] if step.get("id") == "image")["run"]
+    assert '[ "$DASHBOARD_RELEASE" = keep ] || [ -z "$DASHBOARD_RELEASE" ]' in image
+    assert 'build_and_push incident-dashboard business-dashboard ./business-dashboard' in image
+    assert 'if [ "$DASHBOARD_RELEASE" != keep ] && [ -n "$DASHBOARD_RELEASE" ]; then' in image
 
 
 def test_every_other_dashboard_template_parameter_keeps_its_default():

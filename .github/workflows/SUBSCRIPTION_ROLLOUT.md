@@ -228,9 +228,13 @@ scan results. These intentionally block deployment until verified/approved.
 ## Images, scanning and runtime verification
 
 CD keeps the existing ACR OIDC login and three-attempt build/push convention,
-adds `./subscription-service`, and builds all six images for linux/amd64.
-Commit-SHA tags are still published for traceability; **latest is no longer updated**.
-Buildx metadata supplies content digests, and every workload receives an immutable
+adds `./subscription-service`, and builds five workload images for linux/amd64
+by default. The dashboard is the sixth image only for an explicit
+`signin-test` or `promote` release; `dashboard_release=keep` neither rebuilds
+nor scans an image that will not be deployed. BuildKit reuses per-image ACR
+cache layers after the approved-merge preflight, while deployable images remain
+separate commit-SHA tags; **latest is no longer updated**. Buildx metadata
+supplies content digests, and every workload receives an immutable
 `registry/repository@sha256:...` image reference. The exact rebuilt deployment
 digests are scanned again with the existing Trivy action/severity/failure rules
 before any Container App update, since a CD rebuild can differ from a CI build

@@ -138,9 +138,10 @@ No business logic, dependency specifications, Dockerfiles or Bicep resources cha
 5. Dispatch preview only under explicit authorization for the exact SHA and scope;
    a different authorized reviewer approves the compiled hash before Azure login.
 6. Production publication and manual CD require separate scope-specific approvals.
-   Existing CD preparation publishes all six images and redeploys core and other
-   services; it is not a Subscription-only deployment. Optional Worker routing
-   requires its separate production approval and rollback configuration.
+   Existing CD preparation publishes five workload images by default and adds
+   the dashboard image only for an explicit dashboard release; it is not a
+   Subscription-only deployment. Optional Worker routing requires its separate
+   production approval and rollback configuration.
 
 These are prerequisites, not actions performed by this local integration.
 

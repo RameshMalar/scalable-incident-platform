@@ -273,14 +273,29 @@ jobs:
             | jq -e --arg expected "$ROLLBACK_WORKER_IMAGE" 'index($expected) != null' >/dev/null
           echo "Approved pre-routing Worker digest matches the currently deployed image" >> "$GITHUB_STEP_SUMMARY"
 
+      # Each GitHub-hosted runner starts empty.  A registry-backed BuildKit
+      # cache keeps the immutable, deployable image tag separate from the
+      # mutable cache tag and is populated only after this workflow's
+      # approved-merge preflight has passed.
+      - name: Set up isolated Buildx cache builder
+        run: docker buildx create --name cd-cache-builder --driver docker-container --use
+
       - name: Build and push images
         id: image
         run: |
           registry='${{ steps.baseline.outputs.registryLoginServer }}'
 
           build_and_push() {
+            cache_ref="${registry}/$1:buildcache"
+            cache_from=()
+            if docker buildx imagetools inspect "$cache_ref" >/dev/null 2>&1; then
+              cache_from+=(--cache-from "type=registry,ref=${cache_ref}")
+            fi
+
             docker buildx build \
               --platform linux/amd64 \
+              "${cache_from[@]}" \
+              --cache-to "type=registry,ref=${cache_ref},mode=max,oci-mediatypes=true,image-manifest=true" \
               --tag "${registry}/$1:${GITHUB_SHA}" \
               --file "$2/Dockerfile" \
               --metadata-file "${RUNNER_TEMP}/$1.json" \
@@ -288,6 +303,8 @@ jobs:
               "$3"
           }
 
+          # `keep` is the normal release mode: CI still validates the dashboard
+          # image, but CD neither deploys it nor needs a second build and scan.
           for attempt in 1 2 3; do
             if az acr login \
               --name '${{ steps.baseline.outputs.registryName }}' \
@@ -295,7 +312,7 @@ jobs:
               && build_and_push incident-worker worker-service . \
               && build_and_push incident-notification notification-service . \
               && build_and_push incident-subscription subscription-service ./subscription-service \
-              && build_and_push incident-dashboard business-dashboard ./business-dashboard \
+              && { [ "$DASHBOARD_RELEASE" = keep ] || [ -z "$DASHBOARD_RELEASE" ] || build_and_push incident-dashboard business-dashboard ./business-dashboard; } \
               && build_and_push incident-load-simulator load-simulator ./load-simulator; then
 
               digest=$(jq -er '."containerimage.digest"' "${RUNNER_TEMP}/incident-ingestion.json")
@@ -306,8 +323,10 @@ jobs:
               echo "notification=${registry}/incident-notification@${digest}" >> "$GITHUB_OUTPUT"
               digest=$(jq -er '."containerimage.digest"' "${RUNNER_TEMP}/incident-subscription.json")
               echo "subscription=${registry}/incident-subscription@${digest}" >> "$GITHUB_OUTPUT"
-              digest=$(jq -er '."containerimage.digest"' "${RUNNER_TEMP}/incident-dashboard.json")
-              echo "dashboard=${registry}/incident-dashboard@${digest}" >> "$GITHUB_OUTPUT"
+              if [ "$DASHBOARD_RELEASE" != keep ] && [ -n "$DASHBOARD_RELEASE" ]; then
+                digest=$(jq -er '."containerimage.digest"' "${RUNNER_TEMP}/incident-dashboard.json")
+                echo "dashboard=${registry}/incident-dashboard@${digest}" >> "$GITHUB_OUTPUT"
+              fi
               digest=$(jq -er '."containerimage.digest"' "${RUNNER_TEMP}/incident-load-simulator.json")
               echo "simulator=${registry}/incident-load-simulator@${digest}" >> "$GITHUB_OUTPUT"
               exit 0
@@ -364,6 +383,7 @@ jobs:
           skip-setup-trivy: true
 
       - name: Scan the exact dashboard deployment image
+        if: inputs.dashboard_release == 'signin-test' || inputs.dashboard_release == 'promote'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ steps.image.outputs.dashboard }}
